@@ -1,0 +1,238 @@
+import * as THREE from "three";
+import { resolveNum, safeEval, linspace } from "../core/math.js";
+import { hexToThree } from "./three-helpers.js";
+import { buildCurve3d, buildSurf, buildGlyphFieldGPU } from "./builders.js";
+
+// ── Transformer: render a pure map (fnMap) over a domain ─────────────────────
+// A transformer takes a function ℝ^inDim → ℝ^outDim and turns it into geometry
+// in two ways:
+//   graph  — assign each input component to a spatial axis and each output
+//            component to a spatial axis; the (input→output) graph is drawn as a
+//            curve (1 input) or surface (2 inputs).
+//   field  — at each sampled input point (placed in world by the input-axis
+//            assignment), draw the output vector as an arrow (quiver/glyph).
+//
+// The domain is either inline (a grid over the input box at `res`) or a wired
+// paramSpace whose manifold points supply the input coordinates.
+
+const AXIS_INDEX = { x:0, y:1, z:2, none:-1 };
+// World axis order is (x, z, y) elsewhere in the renderer; we assemble a math
+// triple [X,Y,Z] then swap when writing positions.
+
+function fnSpec(fnNode){
+  const p=fnNode?.props||{};
+  const inDim=clampDim(p.inDim,1), outDim=clampDim(p.outDim,1);
+  const outs=[p.out0,p.out1,p.out2,p.out3].slice(0,outDim).map(e=>e||"0");
+  return { inDim, outDim, outs };
+}
+function clampDim(v,d){ const n=Math.round(Number(v)); return isFinite(n)?Math.max(1,Math.min(4,n)):d; }
+
+// Evaluate the map at an input vector [x,y,z,w] (only first inDim used). The
+// canonical input symbols are x,y,z,w; outputs may be up to four scalars.
+function evalMap(outs, scope, inVec){
+  const sc={...scope, x:inVec[0]??0, y:inVec[1]??0, z:inVec[2]??0, w:inVec[3]??0};
+  const r=[]; for(const e of outs){ const v=safeEval(e,sc); r.push(v==null||!isFinite(v)?0:v); }
+  return r;
+}
+
+// Is gradient coloring active on this transformer?
+function colorOn(tp){ return (tp.colorMode||"off")==="gradient"; }
+// Per-sample color scalar: colorExpr with input symbols, out0..out3, domain
+// param p (and i index) in scope. If colorExpr is blank, falls back to
+// defaultVal (used by field mode to color by the reserved last output).
+function colorScalar(tp, scope, inVec, outVec, param, i, defaultVal){
+  const expr=tp.colorExpr;
+  if((expr==null||expr==="") && defaultVal!=null) return isFinite(defaultVal)?defaultVal:0;
+  const sc={...scope, x:inVec[0]??0, y:inVec[1]??0, z:inVec[2]??0, w:inVec[3]??0,
+    out0:outVec[0]??0, out1:outVec[1]??0, out2:outVec[2]??0, out3:outVec[3]??0,
+    t:param??0, u:param??0, v:param??0, n:i??0, i:i??0};
+  const val=safeEval(expr||"out0",sc);
+  return (val==null||!isFinite(val))?0:val;
+}
+// Map an array of scalars onto the lo→hi ramp across [min,max] (auto when blank).
+function rampColors(vals, tp, scope){
+  const lo=new THREE.Color(tp.colorLo||"#3a6aff"), hi=new THREE.Color(tp.colorHi||"#ff5ea8");
+  let mn=(tp.colorMin!==""&&tp.colorMin!=null)?resolveNum(tp.colorMin,scope,0):Math.min(...vals);
+  let mx=(tp.colorMax!==""&&tp.colorMax!=null)?resolveNum(tp.colorMax,scope,1):Math.max(...vals);
+  if(!isFinite(mn))mn=0; if(!isFinite(mx))mx=1;
+  const span=(mx-mn)||1, c=new THREE.Color();
+  return vals.map(v=>{let t=(v-mn)/span;t=t<0?0:t>1?1:t;c.copy(lo).lerp(hi,t);return [c.r,c.g,c.b];});
+}
+
+// Build the list of input sample vectors for the domain.
+//   inline 1D → [[a],[a..],...]  (res points)
+//   inline 2D → res×res grid (row-major, returns {pts, nu, nv})
+//   inline 3D → res×res×res
+//   param     → manifold points from the paramSpace node
+function sampleDomain(tp, scope, inDim, paramNode){
+  if(tp.domainSrc==="param" && paramNode){
+    return sampleParamSpace(paramNode, scope);
+  }
+  const res=Math.max(2,Math.min(inDim>=3?40:(inDim===2?120:2000),Math.round(resolveNum(tp.res,scope,inDim===1?300:40))));
+  const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
+  if(inDim===1){
+    const xs=linspace(aMin,aMax,res);
+    return { pts:xs.map(x=>[x,0,0]), grid:false, n:res };
+  }
+  const bMin=resolveNum(tp.bMin,scope,-5),bMax=resolveNum(tp.bMax,scope,5);
+  if(inDim===2){
+    const xs=linspace(aMin,aMax,res), ys=linspace(bMin,bMax,res);
+    const pts=[]; for(const y of ys) for(const x of xs) pts.push([x,y,0]);
+    return { pts, grid:true, nu:res, nv:res };
+  }
+  const cMin=resolveNum(tp.cMin,scope,-3),cMax=resolveNum(tp.cMax,scope,3);
+  const r3=Math.min(res,40);
+  const xs=linspace(aMin,aMax,r3), ys=linspace(bMin,bMax,r3), zs=linspace(cMin,cMax,r3);
+  if(inDim===3){
+    const pts=[]; for(const x of xs) for(const y of ys) for(const z of zs) pts.push([x,y,z]);
+    return { pts, grid:false, n:pts.length };
+  }
+  // inDim===4: a 4D box is impractical to grid densely, so we sample a coarse
+  // (x,y,z) volume across a few w-slices. The 4th input is most often a
+  // parameter; for finer control, drive the domain from a paramSpace instead.
+  const dMin=resolveNum(tp.dMin,scope,-3),dMax=resolveNum(tp.dMax,scope,3);
+  const r4=Math.min(r3,16), ws=linspace(dMin,dMax,Math.min(r4,8));
+  const xs4=linspace(aMin,aMax,r4), ys4=linspace(bMin,bMax,r4), zs4=linspace(cMin,cMax,r4);
+  const pts=[]; for(const w of ws) for(const x of xs4) for(const y of ys4) for(const z of zs4) pts.push([x,y,z,w]);
+  return { pts, grid:false, n:pts.length };
+}
+
+// Sample a paramSpace node's manifold → input vectors. degree 1 → a line of
+// points (t); degree 2 → a grid of points (u,v). The manifold's (x,y,z) become
+// the function input coordinates.
+function sampleParamSpace(node, scope){
+  const p=node.props||{};
+  const degree=clampDim(p.degree,1);
+  if(degree>=2){
+    const ur=Math.max(2,Math.min(80,resolveNum(p.uRes,scope,40))), vr=Math.max(2,Math.min(80,resolveNum(p.vRes,scope,30)));
+    const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur);
+    const vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);
+    const pts=[];
+    for(const v of vs) for(const u of us){
+      const x=safeEval(p.exprXu,{...scope,u,v})??0, y=safeEval(p.exprYu,{...scope,u,v})??0, z=safeEval(p.exprZu,{...scope,u,v})??0;
+      pts.push([x,y,z]);
+    }
+    return { pts, grid:true, nu:ur, nv:vr };
+  }
+  const res=Math.max(2,Math.min(2000,resolveNum(p.res,scope,300)));
+  const ts=linspace(resolveNum(p.tMin,scope,0),resolveNum(p.tMax,scope,Math.PI*2),res);
+  const pts=ts.map(t=>{
+    const x=safeEval(p.exprX,{...scope,t})??0, y=safeEval(p.exprY,{...scope,t})??0, z=safeEval(p.exprZ,{...scope,t})??0;
+    return [x,y,z];
+  });
+  return { pts, grid:false, n:res };
+}
+
+// Assemble a world-space math triple [X,Y,Z] from input + output components,
+// using the transformer's axis assignments. Inputs fill their assigned axes;
+// outputs fill theirs (outputs win if both assign the same axis).
+function placeGraph(tp, inVec, outVec, inDim, outDim){
+  const world=[0,0,0];
+  const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
+  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2];
+  for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) world[ax]=inVec[k]??0; }
+  for(let k=0;k<outDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) world[ax]=outVec[k]??0; }
+  return world;
+}
+
+// Map a math triple [X,Y,Z] → three.js position (x, z, y).
+function toWorld(m){ return [m[0], m[2], m[1]]; }
+
+function buildTransformer(tNode, fnNode, paramNode, scope, color){
+  if(!fnNode) return [];
+  const tp=tNode.props||{};
+  const { inDim, outDim, outs } = fnSpec(fnNode);
+  const dom = sampleDomain(tp, scope, inDim, paramNode);
+  if(!dom.pts.length) return [];
+
+  if(tp.mode==="field"){
+    // Vector field: arrow at each input point (placed by input axes), output as
+    // the vector (placed by output axes). Reuses the instanced glyph builder.
+    //
+    // fieldColor: when on, the LAST output component drives a color gradient and
+    // the remaining outputs form the vector. So a 3-output map becomes a 2D
+    // vector field colored by out2; a 4-output map becomes a 3D vector field
+    // colored by out3; a 2-output map becomes a 1D vector field colored by out1.
+    // When off, all outputs form the vector with a single static color (valid for
+    // 2- or 3-output maps; a 4-output map always colors, since there's no 4th axis).
+    const useColor = colorOn(tp) || outDim>=4;
+    const vecDim = useColor ? Math.max(1,Math.min(3,outDim-1)) : Math.min(3,outDim);
+    const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
+    const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2];
+    const pairs=[]; const cvals=useColor?[]:null;
+    for(let s=0;s<dom.pts.length;s++){
+      const inVec=dom.pts[s];
+      const outVec=evalMap(outs,scope,inVec);
+      const posM=[0,0,0], vecM=[0,0,0];
+      for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) posM[ax]=inVec[k]??0; }
+      for(let k=0;k<vecDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
+      pairs.push({ pos:posM, vec:vecM });   // glyph builder applies its own axis swap
+      if(useColor) cvals.push(colorScalar(tp,scope,inVec,outVec, s, s, outVec[outDim-1]));
+    }
+    const opts={ arrowLen:resolveNum(tp.arrowLen,scope,0.5), normalize:tp.normalize!==false, anim:"none", speed:1 };
+    if(useColor) opts.cols=rampColors(cvals,tp,scope);
+    return buildGlyphFieldGPU(pairs, color, opts);
+  }
+
+  // graph mode
+  const gradient=colorOn(tp);
+  if(inDim===1){
+    // buildCurve3d / buildSurf apply the world (x,z,y) swap themselves, so we
+    // hand them math-order [X,Y,Z] from placeGraph (NOT toWorld) — otherwise the
+    // swap happens twice and the output lands on the wrong axis.
+    const n=dom.pts.length;
+    const pts=new Array(n); const vals=gradient?new Array(n):null;
+    for(let i=0;i<n;i++){
+      const inVec=dom.pts[i];
+      const outVec=evalMap(outs,scope,inVec);
+      pts[i]=placeGraph(tp,inVec,outVec,inDim,outDim);
+      if(gradient) vals[i]=colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i);
+    }
+    return buildCurve3d(pts, color, gradient?rampColors(vals,tp,scope):null);
+  }
+  if(inDim===2 && dom.grid){
+    const nu=dom.nu, nv=dom.nv, rows=[], colRows=gradient?[]:null, flatVals=gradient?[]:null;
+    let idx=0;
+    for(let j=0;j<nv;j++){
+      const row=[], crow=gradient?[]:null;
+      for(let i=0;i<nu;i++){
+        const inVec=dom.pts[idx++];
+        const outVec=evalMap(outs,scope,inVec);
+        row.push(placeGraph(tp,inVec,outVec,inDim,outDim));
+        if(gradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
+      }
+      rows.push(row); if(gradient) colRows.push(crow);
+    }
+    if(gradient){
+      const flat=rampColors(flatVals,tp,scope);
+      let k=0; for(let j=0;j<nv;j++) for(let i=0;i<nu;i++) colRows[j][i]=flat[k++];
+    }
+    return buildSurf(rows, color, gradient?colRows:null);
+  }
+  // 3 inputs in graph mode: render as a value-coloured point cloud at the
+  // graphed positions (no single surface to draw).
+  const positions=[]; const svals=gradient?[]:null;
+  for(let i=0;i<dom.pts.length;i++){
+    const inVec=dom.pts[i];
+    const outVec=evalMap(outs,scope,inVec);
+    positions.push(toWorld(placeGraph(tp,inVec,outVec,inDim,outDim)));
+    if(gradient) svals.push(colorScalar(tp,scope,inVec,outVec,0,i));
+  }
+  const arr=new Float32Array(positions.length*3);
+  for(let i=0;i<positions.length;i++){ arr[i*3]=positions[i][0]; arr[i*3+1]=positions[i][1]; arr[i*3+2]=positions[i][2]; }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(arr,3));
+  let mat;
+  if(gradient){
+    const cols=rampColors(svals,tp,scope);
+    const ca=new Float32Array(positions.length*3);
+    for(let i=0;i<cols.length;i++){ ca[i*3]=cols[i][0]; ca[i*3+1]=cols[i][1]; ca[i*3+2]=cols[i][2]; }
+    geo.setAttribute("color",new THREE.BufferAttribute(ca,3));
+    mat=new THREE.PointsMaterial({size:0.06,vertexColors:true,transparent:true,opacity:0.85});
+  }else{
+    mat=new THREE.PointsMaterial({size:0.06,color:hexToThree(color),transparent:true,opacity:0.85});
+  }
+  return [new THREE.Points(geo,mat)];
+}
+
+export { buildTransformer, fnSpec, sampleParamSpace };
