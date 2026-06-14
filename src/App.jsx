@@ -4,6 +4,8 @@ import { catOf, canAttach, SCALAR_TYPES, isCameraType } from "./core/taxonomy.js
 import { buildScopeForCamera, buildGlobalScope, resolveScope, collectScalarDeps } from "./core/scope.js";
 import { serializeProject, deserializeProject, serializeCameraShare, migrateModel } from "./core/serialize.js";
 import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from "./nodes/model.js";
+import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
+import { uid } from "./core/math.js";
 import { kindEnabled, ADDABLE_KINDS, ALL_KINDS } from "./nodes/kinds.js";
 import { UICtx, UI_DEFAULTS, buildUI, makeS } from "./theme/tokens.jsx";
 import { buildTheme } from "./theme/presets.js";
@@ -52,6 +54,11 @@ function Editor({initialHash}){
   // undo points — route them through the silent setter.
   const setNodesSilent=hist.setSilent;
   const[selected,setSelected]=useState(null);
+  // Multi-selection: a set of node ids. `selected` is the PRIMARY node (drives
+  // the properties editor); `selectionSet` is the full set (includes primary).
+  // A plain click selects one (set = {id}); shift+click toggles membership.
+  const[selectionSet,setSelectionSet]=useState(()=>new Set());
+  const[clipMsg,setClipMsg]=useState(null);   // transient status for copy/import
   const[vpH,setVpH]=useState(270);
   const[dockCollapsed,setDockCollapsed]=useState(true);
   const[detached,setDetached]=useState(new Set());
@@ -145,6 +152,13 @@ function Editor({initialHash}){
 
   const updateNode=useCallback((id,patch)=>setNodes(ns=>({...ns,[id]:{...ns[id],...patch}})),[setNodes]);
   const moveNode=useCallback((id,pos)=>setNodes(ns=>({...ns,[id]:{...ns[id],pos}})),[setNodes]);
+  // Batch move: apply a {id:pos} map in a single update so a group drag is one
+  // atomic change (and a single coalesced history entry).
+  const moveNodes=useCallback((posById)=>setNodes(ns=>{
+    const next={...ns};
+    for(const [id,pos] of Object.entries(posById)) if(next[id]) next[id]={...next[id],pos};
+    return next;
+  }),[setNodes]);
 
   const beginStep=hist.beginStep;
   // Unified attachment: a dependency is stored on the CONSUMER that uses it.
@@ -184,6 +198,7 @@ function Editor({initialHash}){
     setNodes(ns=>{const next={...ns};delete next[id];for(const[nid,n]of Object.entries(next)){if(n.attachments?.includes(id))next[nid]={...n,attachments:n.attachments.filter(a=>a!==id)};}return next;});
     setDetached(d=>{const nd=new Set(d);nd.delete(id);return nd;});
     setSelected(s=>s===id?null:s);
+    setSelectionSet(prev=>{ if(!prev.has(id)) return prev; const n=new Set(prev); n.delete(id); return n; });
   },[setNodes,beginStep]);
   const toggleEnabled=useCallback((id)=>{beginStep();setNodes(ns=>({...ns,[id]:{...ns[id],enabled:!ns[id].enabled}}));},[setNodes,beginStep]);
   // Detach a camera into a floating window.
@@ -199,6 +214,7 @@ function Editor({initialHash}){
     if(!window.confirm("Load the demo project? This replaces your current scene.")) return;
     setDetached(new Set());
     setSelected(null);
+    setSelectionSet(new Set());
     beginStep();
     setNodes(makeDemoScene());
   },[setNodes,beginStep]);
@@ -207,7 +223,148 @@ function Editor({initialHash}){
     beginStep();
     setNodes(ns=>{const next={...ns,[node.id]:node};if(attachToCamId&&ns[attachToCamId])next[attachToCamId]={...ns[attachToCamId],attachments:[...ns[attachToCamId].attachments,node.id]};return next;});
     setSelected(node.id);
+    setSelectionSet(new Set([node.id]));
   },[setNodes,beginStep]);
+
+  // ── Selection ──────────────────────────────────────────────────────────────
+  // Plain click: select exactly one (or clear when id is null). Shift+click:
+  // toggle the clicked node in/out of the set; the clicked node becomes primary
+  // when added, and when the primary is removed we hand primary to any remaining
+  // member. Passing null with additive=false clears everything.
+  const selectNode=useCallback((id, additive=false)=>{
+    if(id==null){ setSelected(null); setSelectionSet(new Set()); return; }
+    if(!additive){ setSelected(id); setSelectionSet(new Set([id])); return; }
+    setSelectionSet(prev=>{
+      const next=new Set(prev);
+      if(next.has(id)){
+        next.delete(id);
+        setSelected(s=> s===id ? (next.size?[...next][next.size-1]:null) : s);
+      } else {
+        next.add(id);
+        setSelected(id);
+      }
+      return next;
+    });
+  },[]);
+
+  // Select every node (so the user can then shift+click to subtract specific
+  // nodes from a near-complete selection). Excludes the project singleton, which
+  // isn't a graph node the user manipulates.
+  const selectAll=useCallback(()=>{
+    const ids=Object.values(nodes).filter(n=>n.type!=="project").map(n=>n.id);
+    setSelectionSet(new Set(ids));
+    setSelected(s=>(s&&nodes[s]&&nodes[s].type!=="project")?s:(ids[0]??null));
+  },[nodes]);
+
+  // Replace the whole selection with a given set of ids (used by the expand
+  // buttons / shortcuts). Primary becomes the previous primary if still present,
+  // else the first id.
+  const setSelectionTo=useCallback((idsIterable)=>{
+    const ids=[...idsIterable].filter(id=>nodes[id]);
+    const set=new Set(ids);
+    setSelectionSet(set);
+    setSelected(s=> (s&&set.has(s)) ? s : (ids[0]??null));
+  },[nodes]);
+
+  // Rectangular (marquee) selection. mode "add" unions the hit ids into the
+  // current selection; mode "subtract" removes them. Primary is kept if still
+  // selected, otherwise handed to any remaining member.
+  const marqueeSelect=useCallback((ids, mode)=>{
+    const hit=[...ids].filter(id=>nodes[id]&&nodes[id].type!=="project");
+    if(!hit.length) return;
+    setSelectionSet(prev=>{
+      const next=new Set(prev);
+      if(mode==="subtract") for(const id of hit) next.delete(id);
+      else for(const id of hit) next.add(id);
+      setSelected(s=>{
+        if(s&&next.has(s)) return s;
+        if(mode!=="subtract") return hit[hit.length-1];   // newest added becomes primary
+        return next.size?[...next][next.size-1]:null;
+      });
+      return next;
+    });
+  },[nodes]);
+
+  // Expand current selection to include every node the selection DEPENDS ON
+  // (transitive upstream via attachments).
+  const expandToDependencies=useCallback(()=>{
+    setSelectionSet(prev=>{
+      const seeds=prev.size?prev:(selected?new Set([selected]):new Set());
+      if(!seeds.size) return prev;
+      const grown=collectDependencies(seeds, nodes);
+      setSelected(s=>(s&&grown.has(s))?s:[...grown][0]??null);
+      return grown;
+    });
+  },[nodes,selected]);
+
+  // Expand current selection to its full connected component (undirected).
+  const expandToConnected=useCallback(()=>{
+    setSelectionSet(prev=>{
+      const seeds=prev.size?prev:(selected?new Set([selected]):new Set());
+      if(!seeds.size) return prev;
+      const grown=collectConnected(seeds, nodes);
+      setSelected(s=>(s&&grown.has(s))?s:[...grown][0]??null);
+      return grown;
+    });
+  },[nodes,selected]);
+
+  // Copy the current selection (full node JSON, internal edges only) to clipboard.
+  const copySelection=useCallback(async()=>{
+    const ids=selectionSet.size?selectionSet:(selected?new Set([selected]):new Set());
+    if(!ids.size){ setClipMsg("nothing selected"); setTimeout(()=>setClipMsg(null),1500); return; }
+    const payload=buildSelectionPayload(ids, nodes);
+    const json=JSON.stringify(payload,null,2);
+    try{
+      await navigator.clipboard.writeText(json);
+      setClipMsg(`copied ${payload.nodes.length} node${payload.nodes.length!==1?"s":""}`);
+    }catch{
+      // Clipboard API unavailable (insecure context / permissions) — fall back to
+      // a prompt so the user can still grab the JSON manually.
+      window.prompt("Copy selection JSON:", json);
+      setClipMsg("copy via dialog");
+    }
+    setTimeout(()=>setClipMsg(null),1800);
+  },[selectionSet,selected,nodes]);
+
+  // Read + parse a selection payload from the clipboard (with prompt fallback),
+  // returning a validated import result or null (and setting a status message on
+  // failure). `placement` is forwarded to importSelection (offset or center).
+  const readAndImport=useCallback(async(placement)=>{
+    let text=null;
+    try{ text=await navigator.clipboard.readText(); }
+    catch{ text=window.prompt("Paste selection JSON:"); }
+    if(!text){ setClipMsg("clipboard empty"); setTimeout(()=>setClipMsg(null),1500); return null; }
+    let payload=null;
+    try{ payload=JSON.parse(text); }
+    catch{ setClipMsg("invalid JSON"); setTimeout(()=>setClipMsg(null),1800); return null; }
+    const result=importSelection(payload, uid, placement);
+    if(!result){ setClipMsg("not a selection"); setTimeout(()=>setClipMsg(null),1800); return null; }
+    return result;
+  },[]);
+
+  const commitImport=useCallback((result)=>{
+    beginStep();
+    setNodes(ns=>({...ns, ...result.nodes}));
+    setSelectionTo(result.ids);
+    setClipMsg(`imported ${result.ids.length} node${result.ids.length!==1?"s":""}`);
+    setTimeout(()=>setClipMsg(null),1800);
+  },[beginStep,setNodes,setSelectionTo]);
+
+  // Import a selection payload from the clipboard, merging it as new nodes with
+  // fresh ids, then select the freshly imported cluster (top-bar button — uses
+  // the default fixed offset).
+  const importFromClipboard=useCallback(async()=>{
+    const result=await readAndImport({});
+    if(result) commitImport(result);
+  },[readAndImport,commitImport]);
+
+  // Paste the clipboard selection centered on a world-space point (Ctrl+V from
+  // the canvas, centered under the cursor).
+  const pasteAtWorld=useCallback(async(worldPoint)=>{
+    const result=await readAndImport(worldPoint?{center:worldPoint}:{});
+    if(result) commitImport(result);
+  },[readAndImport,commitImport]);
+
 
   const handleCameraChange=useCallback((camId,patch)=>{
     setNodes(ns=>ns[camId]?{...ns,[camId]:{...ns[camId],...patch}}:ns);
@@ -253,6 +410,43 @@ function Editor({initialHash}){
     return()=>window.removeEventListener("keydown",onKey);
   },[undo,redo]);
 
+  // Selection shortcuts. Ctrl/⌘+A selects all nodes (so you can shift+click to
+  // subtract); Ctrl/⌘+C copies the selection to the clipboard; Ctrl/⌘+Shift+D
+  // grows the selection to everything it depends on; Ctrl/⌘+Shift+C grows it to
+  // the full connected component. All suppressed while editing a text field.
+  //
+  // We match on e.code (the physical key: "KeyC", "KeyD", "KeyA") rather than
+  // e.key, because with Shift held some layouts report a shifted/!-letter
+  // e.key, which made the letter comparison miss.
+  useEffect(()=>{
+    const isEditing=()=>{
+      const el=document.activeElement;if(!el)return false;
+      const tag=el.tagName;
+      return tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||el.isContentEditable;
+    };
+    const onKey=e=>{
+      const mod=e.ctrlKey||e.metaKey;
+      if(!mod) return;
+      if(isEditing()) return;
+      const code=e.code;
+      if(code==="KeyA"&&!e.shiftKey){ e.preventDefault(); selectAll(); return; }
+      // Ctrl/⌘+C (no shift): copy selection — but only when there isn't an active
+      // page text selection, so the browser's normal text-copy still works.
+      if(code==="KeyC"&&!e.shiftKey){
+        const hasTextSel=(window.getSelection?.()?.toString()||"").length>0;
+        if(hasTextSel) return;
+        e.preventDefault(); copySelection(); return;
+      }
+      if(!e.shiftKey) return;
+      if(code!=="KeyD"&&code!=="KeyC") return;
+      e.preventDefault();
+      if(code==="KeyD") expandToDependencies();
+      else expandToConnected();
+    };
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[expandToDependencies,expandToConnected,selectAll,copySelection]);
+
   const cams=Object.values(nodes).filter(n=>isCameraType(n.type));
   const dockedCams=cams.filter(c=>!detached.has(c.id));
 
@@ -282,6 +476,10 @@ function Editor({initialHash}){
       onConnectScalar={panelOnConnectScalar}
       onDisconnectScalar={panelOnDisconnectScalar}
       onPopOut={panelOnPopOut} popped={panelPopped}
+      selectionSet={selectionSet}
+      onCopySelection={copySelection}
+      onSelectDependencies={expandToDependencies}
+      onSelectConnected={expandToConnected}
       layout={panelLayout}/>
   );
 
@@ -318,6 +516,8 @@ function Editor({initialHash}){
           <button onClick={redo} disabled={!hist.canRedo} title="Redo (Ctrl+Shift+Z)" style={{...uiCtx.S.btnSm,color:hist.canRedo?ui.uiAccent:ui.uiFaint,borderColor:(hist.canRedo?ui.uiAccent:ui.uiFaint)+"40",opacity:hist.canRedo?1:0.5,cursor:hist.canRedo?"pointer":"default"}}>↷</button>
           <button onClick={loadDemo} title="Load the feature showcase" style={{...uiCtx.S.btnSm,color:ui.uiGood,borderColor:ui.uiGood+"55"}}>✦ demo</button>
           <button onClick={()=>copyUrl("project")} style={{...uiCtx.S.btnSm,color:copied==="project"?ui.uiGood:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>{copied==="project"?"✓ copied":"⎘ copy url"}</button>
+          <button onClick={importFromClipboard} title="Import a selection (JSON) from the clipboard as new nodes" style={{...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>⇲ import sel</button>
+          {clipMsg&&<span style={{color:ui.uiGood,fontSize:12.5,fontFamily:"monospace"}}>{clipMsg}</span>}
           {ALL_KINDS.filter(t=>kindEnabled(projectNode,t)).map(t=>{const m=TYPE_META[t]||{tc:ui.uiAccent,tag:t};return(
             <button key={t} onClick={()=>addNode(t)} style={{...uiCtx.S.btnSm,color:m.tc,borderColor:m.tc+"33",padding:"2px 5px",background:ui.uiBtnBg}}>+{m.tag}</button>
           );})}
@@ -335,8 +535,9 @@ function Editor({initialHash}){
           <div style={{flex:1,display:"flex",overflow:"hidden",minHeight:0}}>
             {panelSpan==="main" && panelSide==="left" && panelDock}
             <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-              <NodeCanvas nodes={nodes} selected={selected} onSelect={setSelected} onMove={moveNode}
+              <NodeCanvas nodes={nodes} selected={selected} selectionSet={selectionSet} onSelect={selectNode} onMove={moveNode} onMoveMany={moveNodes}
                 onConnect={connect} onDisconnect={disconnect} onDelete={deleteNode}
+                onMarqueeSelect={marqueeSelect} onPasteAtWorld={pasteAtWorld}
                 onToggleEnabled={toggleEnabled} onDetach={detachCamera} animValsRef={animValsRef} theme={theme} projectNode={projectNode}/>
             </div>
             {panelSpan==="main" && panelSide==="right" && panelDock}

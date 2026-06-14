@@ -3,12 +3,27 @@ import { catOf, canAttach, canBeDependency, canConsume, SCALAR_TYPES, isFunction
 import { NW, getOutPort, getInPort, TYPE_META } from "../nodes/model.js";
 import { buildNodePalette, NODE_DARK } from "../theme/tokens.jsx";
 
-function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect, onDelete, onToggleEnabled, onDetach, animValsRef, theme, projectNode }) {
+// Card height for a node, matching CanvasNode's own calc. Cameras grow with the
+// number of plots they show; sliders/animators are a touch taller (they show a
+// live value); everything else is a compact single-line card. Used both for
+// rendering and for marquee hit-testing.
+function nodeHeight(node, nodes){
+  if(isCameraType(node.type)) return Math.max(56,40+(node.attachments?.filter(a=>catOf(nodes[a]?.type)==="plot").length||0)*18+8);
+  return (node.type==="slider"||node.type==="animator")?44:40;
+}
+
+function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMany, onConnect, onDisconnect, onDelete, onMarqueeSelect, onPasteAtWorld, onToggleEnabled, onDetach, animValsRef, theme, projectNode }) {
+  const selSet = selectionSet || (selected?new Set([selected]):new Set());
   const svgRef=useRef(null),gRef=useRef(null),edgesRef=useRef(null);
   const viewRef=useRef({panX:50,panY:50,zoom:1});
   const[viewVer,setViewVer]=useState(0);
   const dragRef=useRef(null),wireRef=useRef(null);
   const[wireKey,setWireKey]=useState(0);
+  // Rubber-band rectangular selection overlay, in SCREEN coords {x0,y0,x1,y1}.
+  // null when no marquee is in progress. mode is "add" or "subtract".
+  const[marquee,setMarquee]=useState(null);
+  // Live cursor position in SVG-client coords, kept for paste-under-cursor.
+  const mouseRef=useRef({x:0,y:0,inside:false});
   const[tick,setTick]=useState(0);
   useEffect(()=>{let raf;const loop=()=>{if(Object.values(nodes).some(n=>n.type==="animator"&&n.playing))setTick(t=>t+1);raf=requestAnimationFrame(loop);};raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf);},[nodes,theme]);
 
@@ -36,10 +51,33 @@ function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect
   useEffect(()=>{
     const svg=svgRef.current;if(!svg)return;
     const onMM=e=>{
+      // Keep the live cursor position (SVG-client coords) for paste-under-cursor.
+      // The `inside` flag is owned by the svg's mouseenter/leave handlers.
+      const rr=svg.getBoundingClientRect();
+      mouseRef.current.x=e.clientX-rr.left; mouseRef.current.y=e.clientY-rr.top;
       const d=dragRef.current;
       if(d){const{zoom}=viewRef.current;
-        if(d.type==="pan"){viewRef.current.panX=d.spx+(e.clientX-d.sx);viewRef.current.panY=d.spy+(e.clientY-d.sy);applyTransform();redrawEdges();}
-        else if(d.type==="node"){const nx=d.spx+(e.clientX-d.sx)/zoom,ny=d.spy+(e.clientY-d.sy)/zoom;const el=svg.querySelector(`[data-id="${d.id}"]`);if(el)el.setAttribute("transform",`translate(${nx},${ny})`);d.curX=nx;d.curY=ny;redrawEdges();}
+        if(d.type==="marquee"){
+          d.x1=e.clientX; d.y1=e.clientY;
+          // Render as screen-space rect relative to the svg element.
+          const r=svg.getBoundingClientRect();
+          setMarquee({x0:d.x0-r.left,y0:d.y0-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top,mode:d.mode});
+        }
+        else if(d.type==="pan"){viewRef.current.panX=d.spx+(e.clientX-d.sx);viewRef.current.panY=d.spy+(e.clientY-d.sy);applyTransform();redrawEdges();}
+        else if(d.type==="node"){
+          const dx=(e.clientX-d.sx)/zoom, dy=(e.clientY-d.sy)/zoom;
+          if(Math.abs(e.clientX-d.sx)+Math.abs(e.clientY-d.sy)>2) d.moved=true;
+          const members=d.group||[{id:d.id,spx:d.spx,spy:d.spy}];
+          for(const m of members){
+            const nx=m.spx+dx, ny=m.spy+dy;
+            const el=svg.querySelector(`[data-id="${m.id}"]`);
+            if(el)el.setAttribute("transform",`translate(${nx},${ny})`);
+            m.curX=nx; m.curY=ny;
+          }
+          // primary's live position (used as a fallback on commit)
+          d.curX=d.spx+dx; d.curY=d.spy+dy;
+          redrawEdges();
+        }
       }
       if(wireRef.current){
         const r=svg.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;
@@ -48,7 +86,48 @@ function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect
       }
     };
     const onMU=e=>{
-      const d=dragRef.current;if(d?.type==="node")onMove(d.id,{x:d.curX??d.spx,y:d.curY??d.spy});dragRef.current=null;
+      const d=dragRef.current;
+      if(d?.type==="marquee"){
+        // Convert the screen-space marquee to world coords and hit-test node
+        // bounding boxes (intersection test, so partially-covered nodes count).
+        const r=svg.getBoundingClientRect();
+        const{panX,panY,zoom}=viewRef.current;
+        const toWorld=(cx,cy)=>({x:(cx-r.left-panX)/zoom, y:(cy-r.top-panY)/zoom});
+        const a=toWorld(d.x0,d.y0), b=toWorld(d.x1??d.x0,d.y1??d.y0);
+        const minX=Math.min(a.x,b.x),maxX=Math.max(a.x,b.x);
+        const minY=Math.min(a.y,b.y),maxY=Math.max(a.y,b.y);
+        const dragged=Math.abs((d.x1??d.x0)-d.x0)+Math.abs((d.y1??d.y0)-d.y0)>3;
+        if(dragged){
+          const hit=[];
+          for(const n of Object.values(nodes)){
+            if(n.type==="project") continue;
+            const nx=n.pos.x, ny=n.pos.y, nw=NW, nh=nodeHeight(n,nodes);
+            // AABB intersection between marquee and node card.
+            if(nx<=maxX && nx+nw>=minX && ny<=maxY && ny+nh>=minY) hit.push(n.id);
+          }
+          if(hit.length && onMarqueeSelect) onMarqueeSelect(hit, d.mode);
+        }
+        dragRef.current=null; setMarquee(null);
+        return;
+      }
+      if(d?.type==="node"){
+        const members=d.group||[{id:d.id,spx:d.spx,spy:d.spy,curX:d.curX,curY:d.curY}];
+        if(d.moved){
+          // Commit every moved member. Use a batch update when more than one.
+          if(members.length>1 && onMoveMany){
+            const posById={};
+            for(const m of members) posById[m.id]={x:m.curX??m.spx,y:m.curY??m.spy};
+            onMoveMany(posById);
+          } else {
+            onMove(d.id,{x:d.curX??d.spx,y:d.curY??d.spy});
+          }
+        } else if(d.collapseTo){
+          // A click (no drag) on an already-grouped node collapses the selection
+          // to just that node.
+          onSelect(d.collapseTo,false);
+        }
+      }
+      dragRef.current=null;
       if(wireRef.current){
         const r=svg.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;
         const wx=(e.clientX-r.left-panX)/zoom,wy=(e.clientY-r.top-panY)/zoom;const w=wireRef.current;
@@ -89,13 +168,69 @@ function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect
     };
     window.addEventListener("mousemove",onMM);window.addEventListener("mouseup",onMU);svg.addEventListener("wheel",onWheel,{passive:false});
     return()=>{window.removeEventListener("mousemove",onMM);window.removeEventListener("mouseup",onMU);svg.removeEventListener("wheel",onWheel);};
-  },[nodes,onMove,onConnect,applyTransform,redrawEdges]);
+  },[nodes,onMove,onMoveMany,onSelect,onConnect,applyTransform,redrawEdges]);
 
-  useEffect(()=>{const onKey=e=>{if((e.key==="Delete")&&selected&&!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName))onDelete(selected);};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey);},[selected,onDelete]);
+  useEffect(()=>{const onKey=e=>{if((e.key==="Delete")&&!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName)){const ids=selSet.size?[...selSet]:(selected?[selected]:[]);ids.forEach(id=>onDelete(id));}};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey);},[selSet,selected,onDelete]);
+
+  // Ctrl/⌘+V pastes a Dedekind selection from the clipboard, centered under the
+  // cursor (in graph world coords). Suppressed while editing a text field so the
+  // browser's normal paste still works there. The actual clipboard read happens
+  // in the App handler (async clipboard API, with a prompt fallback).
+  useEffect(()=>{
+    const isEditing=()=>{const el=document.activeElement;if(!el)return false;const t=el.tagName;return t==="INPUT"||t==="TEXTAREA"||t==="SELECT"||el.isContentEditable;};
+    const worldUnderCursor=()=>{
+      const m=mouseRef.current;const{panX,panY,zoom}=viewRef.current;
+      // If the cursor isn't over the canvas, fall back to the visible center.
+      if(!m.inside){const r=svgRef.current?.getBoundingClientRect();const cx=(r?.width||800)/2,cy=(r?.height||600)/2;return{x:(cx-panX)/zoom,y:(cy-panY)/zoom};}
+      return{x:(m.x-panX)/zoom, y:(m.y-panY)/zoom};
+    };
+    const onKey=e=>{
+      const mod=e.ctrlKey||e.metaKey;
+      if(!mod||e.shiftKey||e.altKey) return;
+      if((e.key||"").toLowerCase()!=="v" && e.code!=="KeyV") return;
+      if(isEditing()) return;
+      onPasteAtWorld&&onPasteAtWorld(worldUnderCursor());
+    };
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[onPasteAtWorld]);
   useEffect(()=>{redrawEdges(nodes);},[nodes,redrawEdges]);
 
-  const onBgDown=useCallback(e=>{if(e.button!==0)return;dragRef.current={type:"pan",sx:e.clientX,sy:e.clientY,spx:viewRef.current.panX,spy:viewRef.current.panY};onSelect(null);},[onSelect]);
-  const onNodeDown=useCallback((e,id)=>{if(e.button!==0)return;e.stopPropagation();onSelect(id);dragRef.current={type:"node",id,sx:e.clientX,sy:e.clientY,spx:nodes[id].pos.x,spy:nodes[id].pos.y};},[nodes,onSelect]);
+  const onBgDown=useCallback(e=>{
+    if(e.button!==0)return;
+    const ctrl=e.ctrlKey||e.metaKey;
+    if(ctrl){
+      // Ctrl-drag = rectangular select (add); Ctrl+Alt-drag = rectangular
+      // deselect (subtract). Start a marquee instead of panning.
+      e.preventDefault();
+      dragRef.current={type:"marquee",x0:e.clientX,y0:e.clientY,x1:e.clientX,y1:e.clientY,mode:e.altKey?"subtract":"add"};
+      const r=svgRef.current.getBoundingClientRect();
+      setMarquee({x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top,mode:e.altKey?"subtract":"add"});
+      return;
+    }
+    dragRef.current={type:"pan",sx:e.clientX,sy:e.clientY,spx:viewRef.current.panX,spy:viewRef.current.panY};
+    if(!e.shiftKey)onSelect(null);
+  },[onSelect]);
+  const onNodeDown=useCallback((e,id)=>{
+    if(e.button!==0)return;e.stopPropagation();
+    if(e.shiftKey){
+      // Shift+click toggles membership; don't begin a drag so the toggle reads
+      // cleanly (a tiny accidental drag would otherwise move the node).
+      onSelect(id,true);
+      dragRef.current=null;
+      return;
+    }
+    // Plain mousedown. Two cases:
+    //  (a) the node is already part of a multi-selection → keep the selection so
+    //      the whole group can be dragged; if the press turns out to be a click
+    //      with no drag, we collapse to just this node on mouseup.
+    //  (b) otherwise → select just this node now.
+    const alreadyGrouped = selSet.has(id) && selSet.size>1;
+    if(!alreadyGrouped) onSelect(id,false);
+    const groupIds = alreadyGrouped ? [...selSet].filter(g=>nodes[g]) : [id];
+    const group = groupIds.map(g=>({id:g, spx:nodes[g].pos.x, spy:nodes[g].pos.y}));
+    dragRef.current={type:"node",id,sx:e.clientX,sy:e.clientY,spx:nodes[id].pos.x,spy:nodes[id].pos.y,group,moved:false,collapseTo:alreadyGrouped?id:null};
+  },[nodes,onSelect,selSet]);
   const onPortDown=useCallback((e,id,pt)=>{e.stopPropagation();const r=svgRef.current.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;wireRef.current={fromId:id,portType:pt,curX:(e.clientX-r.left-panX)/zoom,curY:(e.clientY-r.top-panY)/zoom};setWireKey(k=>k+1);},[]);
 
   const{panX,panY,zoom}=viewRef.current;
@@ -126,7 +261,9 @@ function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect
   const nodePal=useMemo(()=>buildNodePalette(projectNode||{props:theme}),[projectNode,theme]);
 
   return(
-    <svg ref={svgRef} style={{width:"100%",height:"100%",userSelect:"none",background:(theme.nodeBg||"#0a0c18")}} onMouseDown={onBgDown}>
+    <svg ref={svgRef} style={{width:"100%",height:"100%",userSelect:"none",background:(theme.nodeBg||"#0a0c18")}} onMouseDown={onBgDown}
+      onMouseEnter={()=>{mouseRef.current.inside=true;}}
+      onMouseLeave={()=>{mouseRef.current.inside=false;}}>
       <g ref={gRef} transform={`translate(${panX},${panY}) scale(${zoom})`}>
         <g ref={edgesRef}>
           {edges.map(e=>(
@@ -144,17 +281,26 @@ function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect
         </g>
         {wireNow&&(()=>{const fn=nodes[wireNow.fromId];if(!fn)return null;const fp=wireNow.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+wireNow.curX)/2;return<path id="wire-line" d={`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${wireNow.curY} ${wireNow.curX},${wireNow.curY}`} fill="none" stroke="#7af" strokeWidth={2/zoom} strokeDasharray={`${6/zoom},${4/zoom}`} opacity={0.8}/>;})()}
         {Object.values(nodes).map(n=>(
-          <CanvasNode key={n.id} node={n} selected={selected===n.id} zoom={zoom} nodes={nodes} pal={nodePal}
+          <CanvasNode key={n.id} node={n} selected={selected===n.id} inSelection={selSet.has(n.id)} zoom={zoom} nodes={nodes} pal={nodePal}
             onMouseDown={e=>onNodeDown(e,n.id)} onPortDown={onPortDown}
             onDelete={onDelete} onToggleEnabled={onToggleEnabled} onDetach={onDetach}
             liveVal={n.type==="animator"?(animValsRef.current[n.id]??n.value):undefined}/>
         ))}
       </g>
+      {marquee&&(()=>{
+        const x=Math.min(marquee.x0,marquee.x1), y=Math.min(marquee.y0,marquee.y1);
+        const w=Math.abs(marquee.x1-marquee.x0), h=Math.abs(marquee.y1-marquee.y0);
+        const sub=marquee.mode==="subtract";
+        const stroke=sub?"#f7716b":"#6aceff";
+        return <rect x={x} y={y} width={w} height={h}
+          fill={stroke} fillOpacity={0.10} stroke={stroke} strokeOpacity={0.9}
+          strokeWidth={1.5} strokeDasharray="5,3" style={{pointerEvents:"none"}}/>;
+      })()}
     </svg>
   );
 }
 
-function CanvasNode({ node, selected, zoom, nodes, pal, onMouseDown, onPortDown, onDelete, onToggleEnabled, onDetach, liveVal }) {
+function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown, onPortDown, onDelete, onToggleEnabled, onDetach, liveVal }) {
   pal = pal || NODE_DARK;
   const isCamera=isCameraType(node.type),isProject=node.type==="project",isScalar=SCALAR_TYPES.has(node.type);
   const meta=TYPE_META[node.type]||{tag:"?",tc:"#888"};
@@ -162,8 +308,7 @@ function CanvasNode({ node, selected, zoom, nodes, pal, onMouseDown, onPortDown,
   // (they show a live value); everything else is a compact single-line card —
   // no property dump (that lives in the properties panel).
   const showsVal = node.type==="slider"||node.type==="animator";
-  const h=isCamera?Math.max(56,40+(node.attachments?.filter(a=>catOf(nodes[a]?.type)==="plot").length||0)*18+8)
-        : showsVal?44:40;
+  const h=nodeHeight(node,nodes);
   const dimmed=isCamera&&node.enabled===false;
   const displayVal=liveVal!=null?liveVal:(node.value??0);
   const tint=node.color||meta.tc;
@@ -175,7 +320,11 @@ function CanvasNode({ node, selected, zoom, nodes, pal, onMouseDown, onPortDown,
   return(
     <g data-id={node.id} transform={`translate(${node.pos.x},${node.pos.y})`} opacity={dimmed?0.4:1}>
       <rect x={3/zoom} y={3/zoom} width={NW} height={h} rx={8} fill={pal.nodeShadow} opacity={0.35}/>
-      <rect width={NW} height={h} rx={8} fill={pal.nodeCardBg} stroke={selected?pal.nodeSel:pal.nodeBorder} strokeWidth={selected?2/zoom:1/zoom}/>
+      {/* selection ring: a soft halo around any node that's part of a multi-
+          selection (drawn behind the card). The primary node additionally gets
+          the strong stroke below. */}
+      {inSelection&&!selected&&<rect x={-3/zoom} y={-3/zoom} width={NW+6/zoom} height={h+6/zoom} rx={10} fill="none" stroke={pal.nodeSel} strokeWidth={2/zoom} opacity={0.55} strokeDasharray={`${5/zoom},${3/zoom}`}/>}
+      <rect width={NW} height={h} rx={8} fill={pal.nodeCardBg} stroke={selected?pal.nodeSel:(inSelection?pal.nodeSel:pal.nodeBorder)} strokeWidth={selected?2/zoom:(inSelection?1.5/zoom:1/zoom)} opacity={selected||!inSelection?1:0.9}/>
       {/* header bar tinted faintly by the node's identity color */}
       <rect width={NW} height={26} rx={8} fill={pal.nodeHdrBg}/><rect y={13} width={NW} height={13} fill={pal.nodeHdrBg}/>
       <rect width={4} height={26} rx={2} fill={tint} opacity={0.9}/>
