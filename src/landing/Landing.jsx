@@ -56,7 +56,6 @@ function Landing({ onOpen, closing }){
             <a href="#dk-model">How it works</a>
             <a href="#dk-render">Rendering</a>
             <a href="#dk-features">Features</a>
-            <a href="https://github.com/Dyslectric/Dedekind">Source</a>
           </nav>
           <button className="dk-btn" onClick={open}>Open the editor →</button>
         </div>
@@ -225,7 +224,7 @@ function Landing({ onOpen, closing }){
         {/* AI disclosure */}
         <div className="dk-disclosure">
           <div className="dk-wrap">
-            <p>Specification written by <a href="https://github.com/Dyslectric">David Green</a> and vibe-coded with the help of Claude, an LLM by Anthropic.</p>
+            <p>Specification written by David Green and vibe-coded with the help of Claude, an LLM by Anthropic.</p>
           </div>
         </div>
 

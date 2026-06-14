@@ -306,7 +306,10 @@ function buildQuiver3dGPU(p, scope, color){
 function buildGlyphFieldGPU(pairs, color, opts={}){
   if(!pairs.length) return [];
   const arrowLen = opts.arrowLen ?? 0.5;
-  const normalize = opts.normalize !== false;
+  // Length mode: "uniform" (every arrow = arrowLen), "scaled" (arrowLen * mag/maxMag),
+  // or "raw" (length = |vec| directly, ignoring arrowLen and maxMag). Falls back to
+  // the legacy boolean `normalize` (true→uniform, false→scaled) when absent.
+  const lenMode = opts.lenMode || (opts.normalize===false ? "scaled" : "uniform");
   const anim = opts.anim || "none";        // none | pulse | crest | advect
   // Arrow template pointing +Y, parametrised so the shader knows axial position
   // (t in [0,1] along the shaft) for the travelling crest.
@@ -348,10 +351,11 @@ function buildGlyphFieldGPU(pairs, color, opts={}){
   geo.instanceCount=n;
 
   const ANIM={none:0,pulse:1,crest:2,advect:3}[anim]||0;
+  const LENMODE={uniform:0,scaled:1,raw:2}[lenMode]??0;
   const uobj={
     uColor:{value:new THREE.Color(hexToThree(color))},
     uCrest:{value:new THREE.Color(hexToThree(opts.crestColor||"#ffffff"))},
-    uMaxMag:{value:maxMag}, uNorm:{value:normalize?1:0}, uLen:{value:arrowLen},
+    uMaxMag:{value:maxMag}, uLenMode:{value:LENMODE}, uLen:{value:arrowLen},
     uTime:{value:0}, uAnim:{value:ANIM}, uSpeed:{value:opts.speed??1.0},
   };
   const vert=`
@@ -359,7 +363,7 @@ function buildGlyphFieldGPU(pairs, color, opts={}){
     #ifdef USE_VCOL
     attribute vec3 iColor; varying vec3 vCol;
     #endif
-    uniform float uMaxMag; uniform float uNorm; uniform float uLen;
+    uniform float uMaxMag; uniform float uLenMode; uniform float uLen;
     uniform float uTime; uniform float uAnim; uniform float uSpeed;
     varying float vAxial; varying float vMag; varying float vCrest;
     mat3 rotToDir(vec3 dir){
@@ -379,7 +383,13 @@ function buildGlyphFieldGPU(pairs, color, opts={}){
       #endif
       float mag=length(iVec); vMag=mag;
       vec3 dir=(mag>1e-9)?normalize(vec3(iVec.x,iVec.z,iVec.y)):vec3(0.0,1.0,0.0);
-      float scl=(uNorm>0.5?1.0:clamp(mag/max(uMaxMag,1e-6),0.05,1.0));
+      // Length mode: 0=uniform (template already at arrowLen), 1=scaled
+      // (arrowLen * mag/maxMag), 2=raw (final length = mag, so divide out the
+      // template's baked-in arrowLen to leave only the magnitude).
+      float scl;
+      if(uLenMode<0.5){ scl=1.0; }
+      else if(uLenMode<1.5){ scl=clamp(mag/max(uMaxMag,1e-6),0.05,1.0); }
+      else { scl=mag/max(uLen,1e-6); }
       float ph=uTime*uSpeed + iPhase;
       // pulse: arrows breathe in length; crest: highlight travels; advect: the
       // whole arrow slides forward along its vector and loops.
@@ -390,7 +400,10 @@ function buildGlyphFieldGPU(pairs, color, opts={}){
       vec3 world = rotToDir(dir)*local + vec3(iPos.x,iPos.z,iPos.y);
       if(uAnim>2.5){ // advect along the (math-space) vector, looping
         float t=fract(ph*0.25);
-        world += vec3(dir.x,dir.y,dir.z) * (t*uLen*1.6);
+        // slide distance tracks the effective arrow length: arrowLen*scl in
+        // uniform/scaled modes, mag in raw mode (where scl already encodes it).
+        float effLen=(uLenMode<1.5)?(uLen*scl):mag;
+        world += vec3(dir.x,dir.y,dir.z) * (t*effLen*1.6);
       }
       if(mag<1e-9){ gl_Position=vec4(2.0,2.0,2.0,1.0); return; }
       gl_Position=projectionMatrix*modelViewMatrix*vec4(world,1.0);

@@ -292,7 +292,13 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               {(inDim>3||outDim>3)&&<div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>Only three spatial axes exist; assign the 4th component to “—” or reuse it elsewhere.</div>}
             </Sec>}
             {mode==="field"&&<Sec title="Field style">
-              <PR label="arrow len"><EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/></PR>
+              <PR label="arrow len">
+                  <EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/>
+                  <input type="range" min="0.05" max="3" step="0.05"
+                    value={resolveNum(node.props.arrowLen,scope,0.5)}
+                    onChange={e=>set("arrowLen",String(+e.target.value))}
+                    style={{width:"100%",accentColor:meta.tc,marginTop:4}}/>
+                </PR>
               <PR label="normalize"><Toggle v={node.props.normalize!==false} onChange={v=>set("normalize",v)}/></PR>
             </Sec>}
             <Sec title="Domain">
@@ -384,10 +390,11 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                 <select value={deg} onChange={e=>set("degree",e.target.value)} style={{...S.inp,width:"100%"}}>
                   <option value="1">1 — curve (param t)</option>
                   <option value="2">2 — surface (params u,v)</option>
+                  <option value="3">3 — volume (params u,v,w)</option>
                 </select>
               </PR>
               <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-                A curve is parameterized by one variable (t); a surface by two (u,v). For a 2-D curve, set z(t)=0.
+                A curve is parameterized by one variable (t); a surface by two (u,v); a volume by three (u,v,w), all mapped into 3-D space. For a 2-D curve, set z(t)=0.
               </div>
             </Sec>
             {deg==="1"?<>
@@ -397,12 +404,46 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               <Sec title="Domain">
                 {[["t₀","tMin"],["t₁","tMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               </Sec>
-            </>:<>
+            </>:deg==="2"?<>
               <Sec title="Parametric x,y,z (u,v)">
                 {[["x(u,v)","exprXu"],["y(u,v)","exprYu"],["z(u,v)","exprZu"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               </Sec>
               <Sec title="Domain">
                 {[["u₀","uMin"],["u₁","uMax"],["v₀","vMin"],["v₁","vMax"],["uRes","uRes"],["vRes","vRes"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+              </Sec>
+            </>:<>
+              <Sec title="Parametric x,y,z (u,v,w)">
+                {[["x(u,v,w)","exprXw"],["y(u,v,w)","exprYw"],["z(u,v,w)","exprZw"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                  Three parameters sweep a solid region, drawn as a point cloud filling the image. Keep the resolutions modest — the point count is uRes×vRes×wRes.
+                </div>
+              </Sec>
+              <Sec title="Domain">
+                {[["u₀","uMin"],["u₁","uMax"],["v₀","vMin"],["v₁","vMax"],["w₀","wMin"],["w₁","wMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                {[["uRes","uRes3"],["vRes","vRes3"],["wRes","wRes3"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+              </Sec>
+              <Sec title="Coloring">
+                <PR label="mode">
+                  <select value={node.props.volColorMode||"off"} onChange={e=>set("volColorMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+                    <option value="off">single color</option>
+                    <option value="gradient">gradient by value</option>
+                  </select>
+                </PR>
+                {(node.props.volColorMode||"off")==="gradient"&&<>
+                  <PR label="value"><EI v={node.props.volColorExpr??"u"} sc={scope} onChange={v=>set("volColorExpr",v)}/></PR>
+                  <PR label="ramp">
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <input type="color" value={node.props.volColorLo||"#3a6aff"} onChange={e=>set("volColorLo",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
+                      <div style={{flex:1,height:12,borderRadius:3,background:`linear-gradient(90deg, ${node.props.volColorLo||"#3a6aff"}, ${node.props.volColorHi||"#ff5ea8"})`}}/>
+                      <input type="color" value={node.props.volColorHi||"#ff5ea8"} onChange={e=>set("volColorHi",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
+                    </div>
+                  </PR>
+                  <PR label="min"><EI v={node.props.volColorMin??""} sc={scope} onChange={v=>set("volColorMin",v)} placeholder="auto"/></PR>
+                  <PR label="max"><EI v={node.props.volColorMax??""} sc={scope} onChange={v=>set("volColorMax",v)} placeholder="auto"/></PR>
+                  <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                    Color each point by <em>value</em> (params <em>u, v, w</em>, plus wired scalars), across the range onto the ramp.
+                  </div>
+                </>}
               </Sec>
             </>}
           </>;
@@ -475,9 +516,31 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                 </div>
               </>}
             </Sec>}
-            {hasVec&&<><Sec title="Glyph style">
-              <PR label="length"><EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/></PR>
-              <PR label="norm len"><Toggle v={node.props.normalize!==false} onChange={v=>set("normalize",v)}/></PR>
+            {hasVec&&(()=>{
+              const lenMode=node.props.lenMode||(node.props.normalize===false?"scaled":"uniform");
+              const showLen=lenMode!=="raw";
+              return <><Sec title="Glyph style">
+              <PR label="length mode">
+                <select value={lenMode} onChange={e=>set("lenMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+                  <option value="uniform">uniform (all same length)</option>
+                  <option value="scaled">scaled (relative to max)</option>
+                  <option value="raw">raw magnitude (|vec|)</option>
+                </select>
+              </PR>
+              {showLen&&<PR label="length">
+                <EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/>
+                <input type="range" min="0.05" max="3" step="0.05"
+                  value={resolveNum(node.props.arrowLen,scope,0.5)}
+                  onChange={e=>set("arrowLen",String(+e.target.value))}
+                  style={{width:"100%",accentColor:meta.tc,marginTop:4}}/>
+              </PR>}
+              <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                {lenMode==="raw"
+                  ? <>Arrow length equals the vector magnitude <em>|vec|</em> directly — length ignored.</>
+                  : lenMode==="scaled"
+                  ? <>Each arrow scales by <em>|vec| / max(|vec|)</em>, longest arrow = length.</>
+                  : <>Every arrow drawn at the fixed length above.</>}
+              </div>
             </Sec><Sec title="Flow animation">
               <PR label="mode">
                 <select value={node.props.anim||"crest"} onChange={e=>set("anim",e.target.value)} style={{...S.inp,width:"100%"}}>
@@ -491,7 +554,8 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                 <PR label="speed"><EI v={node.props.speed??"1"} sc={scope} onChange={v=>set("speed",v)}/></PR>
                 {(node.props.anim==="crest"||!node.props.anim)&&<PR label="crest"><ColorRow v={node.props.crestColor||"#ffffff"} onChange={v=>set("crestColor",v)}/></PR>}
               </>}
-            </Sec></>}
+            </Sec></>;
+            })()}
             {!hasVec&&<Sec title="Sequencing">
               <div style={{fontSize:14,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
                 Reveal points in order. Drive the fraction (0–1) with a literal or a connected scalar (e.g. an animator).
@@ -582,8 +646,33 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             {(()=>{const g=parseGlyphField(node.props.pairs,scope);return`${g.length} glyph${g.length!==1?"s":""}`;})()}
           </div>
         </Sec><Sec title="Glyph style">
-          <PR label="length"><EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>onChange({props:{...node.props,arrowLen:v}})}/></PR>
-          <PR label="norm len"><Toggle v={node.props.normalize!==false} onChange={v=>onChange({props:{...node.props,normalize:v}})}/></PR>
+          {(()=>{
+            const lenMode=node.props.lenMode||(node.props.normalize===false?"scaled":"uniform");
+            const showLen=lenMode!=="raw";
+            return <>
+            <PR label="length mode">
+              <select value={lenMode} onChange={e=>onChange({props:{...node.props,lenMode:e.target.value}})} style={{...S.inp,width:"100%"}}>
+                <option value="uniform">uniform (all same length)</option>
+                <option value="scaled">scaled (relative to max)</option>
+                <option value="raw">raw magnitude (|vec|)</option>
+              </select>
+            </PR>
+            {showLen&&<PR label="length">
+              <EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>onChange({props:{...node.props,arrowLen:v}})}/>
+              <input type="range" min="0.05" max="3" step="0.05"
+                value={resolveNum(node.props.arrowLen,scope,0.5)}
+                onChange={e=>onChange({props:{...node.props,arrowLen:String(+e.target.value)}})}
+                style={{width:"100%",accentColor:meta.tc,marginTop:4}}/>
+            </PR>}
+            <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+              {lenMode==="raw"
+                ? <>Arrow length equals the vector magnitude <em>|vec|</em> directly — length ignored.</>
+                : lenMode==="scaled"
+                ? <>Each arrow scales by <em>|vec| / max(|vec|)</em>, longest arrow = length.</>
+                : <>Every arrow drawn at the fixed length above.</>}
+            </div>
+            </>;
+          })()}
         </Sec><Sec title="Flow animation">
           <PR label="mode">
             <select value={node.props.anim||"crest"} onChange={e=>onChange({props:{...node.props,anim:e.target.value}})} style={{...S.inp,width:"100%"}}>

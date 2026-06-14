@@ -126,7 +126,7 @@ function NodeCanvas({ nodes, selected, onSelect, onMove, onConnect, onDisconnect
   const nodePal=useMemo(()=>buildNodePalette(projectNode||{props:theme}),[projectNode,theme]);
 
   return(
-    <svg ref={svgRef} style={{width:"100%",height:"100%",userSelect:"none",background:(projectNode?.props?.nodeTheme)==="light"?"#e7eaf1":(theme.nodeBg||"#0a0c18")}} onMouseDown={onBgDown}>
+    <svg ref={svgRef} style={{width:"100%",height:"100%",userSelect:"none",background:(theme.nodeBg||"#0a0c18")}} onMouseDown={onBgDown}>
       <g ref={gRef} transform={`translate(${panX},${panY}) scale(${zoom})`}>
         <g ref={edgesRef}>
           {edges.map(e=>(

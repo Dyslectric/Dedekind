@@ -1,6 +1,6 @@
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
-import { resolveScope, plotDomain } from "../core/scope.js";
+import { resolveScope, plotDomain, buildGlobalScope } from "../core/scope.js";
 import { applyDomain } from "../geometry/rebuild.js";
 import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
 import { integrateFlow } from "../geometry/flow.js";
@@ -92,13 +92,20 @@ function render2DQuiver(ctx,node,scope,toS,wxMin,wxMax,wyMin,wyMax){
 function render2DTransformer(ctx,tNode,fnNode,paramNode,scope,toS,color){
   if(!fnNode) return;
   const tp=tNode.props||{};
-  const inDim=Math.max(1,Math.min(3,Math.round(Number(fnNode.props.inDim||"1"))));
-  const outDim=Math.max(1,Math.min(3,Math.round(Number(fnNode.props.outDim||"1"))));
-  const outs=[fnNode.props.out0,fnNode.props.out1,fnNode.props.out2].slice(0,outDim).map(e=>e||"0");
+  const inDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1"))));
+  const outDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.outDim||"1"))));
+  const outs=[fnNode.props.out0,fnNode.props.out1,fnNode.props.out2,fnNode.props.out3].slice(0,outDim).map(e=>e||"0");
   const AX={x:0,y:1,z:2,none:-1};
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2].map(a=>AX[a??"none"]);
   const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2].map(a=>AX[a??"none"]);
-  const evalOut=(inVec)=>{const sc={...scope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0};return outs.map(e=>{const v=safeEval(e,sc);return v==null||!isFinite(v)?0:v;});};
+  const evalOut=(inVec)=>{const sc={...scope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0,w:inVec[3]??0};return outs.map(e=>{const v=safeEval(e,sc);return v==null||!isFinite(v)?0:v;});};
+  // Field + color: reserve the last output for the gradient, vector uses the rest.
+  const useColor=(tp.colorMode||"off")==="gradient" || outDim>=4;
+  const vecDim=useColor?Math.max(1,Math.min(3,outDim-1)):Math.min(3,outDim);
+  // hex→rgb and a small lerp for the gradient ramp
+  const hx=(h)=>{h=(h||"#888").replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
+  const loC=hx(tp.colorLo||"#3a6aff"), hiC=hx(tp.colorHi||"#ff5ea8");
+  const ramp=(t)=>{t=t<0?0:t>1?1:t;return `rgb(${Math.round(loC[0]+(hiC[0]-loC[0])*t)},${Math.round(loC[1]+(hiC[1]-loC[1])*t)},${Math.round(loC[2]+(hiC[2]-loC[2])*t)})`;};
   // build sample inputs
   let samples=[];
   if(tp.domainSrc==="param" && paramNode){
@@ -129,19 +136,36 @@ function render2DTransformer(ctx,tNode,fnNode,paramNode,scope,toS,color){
 
   ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=2;
   if(tp.mode==="field"){
-    // arrows: base at input position (X,Y), vector from output (X,Y)
-    let maxMag=0;const raw=[];
+    // arrows: base at input position (X,Y), vector from the first vecDim outputs.
+    let maxMag=0,cMin=Infinity,cMax=-Infinity;const raw=[];
     for(const inVec of samples){
       const outVec=evalOut(inVec);
       const base=[0,0,0];for(let k=0;k<inDim;k++){if(inAx[k]>=0)base[inAx[k]]=inVec[k]??0;}
-      const vec=[0,0,0];for(let k=0;k<outDim;k++){if(outAx[k]>=0)vec[outAx[k]]=outVec[k]??0;}
-      const m=Math.hypot(vec[0],vec[1]);if(m>maxMag)maxMag=m;raw.push({base,vec,m});
+      const vec=[0,0,0];for(let k=0;k<vecDim;k++){if(outAx[k]>=0)vec[outAx[k]]=outVec[k]??0;}
+      const m=Math.hypot(vec[0],vec[1]);if(m>maxMag)maxMag=m;
+      let cval=0;
+      if(useColor){
+        const cexpr=tp.colorExpr;
+        if(cexpr&&cexpr!==""){
+          const csc={...scope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0,w:inVec[3]??0,out0:outVec[0]??0,out1:outVec[1]??0,out2:outVec[2]??0,out3:outVec[3]??0};
+          const cv=safeEval(cexpr,csc); cval=(cv==null||!isFinite(cv))?0:cv;
+        } else {
+          cval=outVec[outDim-1]??0;
+        }
+        if(!isFinite(cval))cval=0;
+        if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval;
+      }
+      raw.push({base,vec,m,cval});
     }
     maxMag=maxMag||1;const alen=resolveNum(tp.arrowLen,scope,0.5);
-    for(const{base,vec,m}of raw){ if(m<1e-9)continue;
+    // explicit min/max override
+    if(useColor){ if(tp.colorMin!==""&&tp.colorMin!=null)cMin=resolveNum(tp.colorMin,scope,cMin); if(tp.colorMax!==""&&tp.colorMax!=null)cMax=resolveNum(tp.colorMax,scope,cMax); }
+    const cspan=(cMax-cMin)||1;
+    for(const{base,vec,m,cval}of raw){ if(m<1e-9)continue;
       const L=alen*(tp.normalize!==false?1:Math.min(1,m/maxMag));
       const dx=vec[0]/m*L,dy=vec[1]/m*L;
       const[sx,sy]=toS(base[0],base[1]);const[ex,ey]=toS(base[0]+dx,base[1]+dy);
+      if(useColor){ const col=ramp((cval-cMin)/cspan); ctx.strokeStyle=col; ctx.fillStyle=col; }
       ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ex,ey);ctx.stroke();
       const ang=Math.atan2(ey-sy,ex-sx),hl=8;
       ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-hl*Math.cos(ang-0.4),ey-hl*Math.sin(ang-0.4));ctx.moveTo(ex,ey);ctx.lineTo(ex-hl*Math.cos(ang+0.4),ey-hl*Math.sin(ang+0.4));ctx.stroke();
@@ -208,12 +232,13 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
   const basis = isPlane ? getPlane2DBasis(p2d, scope) : null;
   const threshold = resolveNum(p2d.planeThreshold, scope, 0.15);
 
+  const globalSc = buildGlobalScope(nodes, animVals||{});
   for (const childId of (camNode.attachments||[])) {
     const rawNode = nodes[childId]; if (!rawNode) continue;
     if (catOf(rawNode.type)!=="plot") continue;
     const node = normalizedNode(rawNode);
     const own = animVals ? resolveScope(childId, nodes, animVals) : null;
-    const pscope = own && Object.keys(own).length ? {...scope, ...own} : scope;
+    const pscope = {...globalSc, ...scope, ...(own && Object.keys(own).length ? own : {})};
     const dom = plotDomain(childId, nodes);
     const np = dom ? applyDomain(node.props, node.type, dom) : node.props;
     const color = rawNode.color||"#5b9cf6";
@@ -264,12 +289,17 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
     }
     if(node.type==="glyphField"){
       const pairs=parseGlyphField(np.pairs,pscope);
-      const norm=np.normalize!==false; const alen=resolveNum(np.arrowLen,pscope,0.5);
+      const lenMode=np.lenMode||(np.normalize===false?"scaled":"uniform");
+      const alen=resolveNum(np.arrowLen,pscope,0.5);
       let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1]);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
       ctx.lineWidth=2;
       for(const {pos,vec} of pairs){
         const m=Math.hypot(vec[0],vec[1]); if(m<1e-9) continue;
-        const L=alen*(norm?1:Math.min(1,m/maxMag));
+        // uniform: every arrow = arrowLen; scaled: arrowLen * mag/maxMag;
+        // raw: length = magnitude directly (ignores arrowLen and maxMag).
+        const L = lenMode==="raw" ? m
+                : lenMode==="scaled" ? alen*Math.min(1,m/maxMag)
+                : alen;
         const dx=vec[0]/m*L, dy=vec[1]/m*L;
         const [sx,sy]=toS(pos[0],pos[1]); const [ex,ey]=toS(pos[0]+dx,pos[1]+dy);
         ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ex,ey);ctx.stroke();

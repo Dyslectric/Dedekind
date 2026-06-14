@@ -63,7 +63,7 @@ const THEME_KEYS=["canvasBg","nodeBg","bg2d","grid2d","axes2d","label2d","bg3d",
 const ALL_THEME_KEYS=[...THEME_KEYS,...UI_KEYS];
 
 // ── Theme ────────────────────────────────────────────────────────────────────
-const DEFAULT_THEME={canvasBg:"#11141f",nodeBg:"#11141f",bg2d:"#0d0f18",grid2d:"#1e2440",axes2d:"#324679"};
+const DEFAULT_THEME={canvasBg:"#24273a",nodeBg:"#1e2030",bg2d:"#181926",grid2d:"#363a4f",axes2d:"#8087a2"};
 function buildTheme(pn){
   if(!pn)return DEFAULT_THEME;
   const t={

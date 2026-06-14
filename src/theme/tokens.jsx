@@ -48,13 +48,20 @@ function buildUI(pn){
 const NODE_DARK = { nodeCardBg:"#0e1018", nodeHdrBg:"#161a28", nodeBorder:"#262a40", nodeSel:"#6aceff", nodeLabel:"#c8d4f0", nodeSub:"#5a6480", nodeShadow:"#000000" };
 const NODE_LIGHT= { nodeCardBg:"#ffffff", nodeHdrBg:"#eef1f7", nodeBorder:"#cbd2e0", nodeSel:"#2f6fd0", nodeLabel:"#1e2740", nodeSub:"#6b7794", nodeShadow:"#94a0c0" };
 const NODE_KEYS = Object.keys(NODE_DARK);
+// Node-card colors are derived from the active theme/UI palette so that every
+// theme preset reskins the node canvas too — there is no separate node theme.
+// Authors can still override individual card colors via explicit props.
 function buildNodePalette(pn){
   const p=pn?.props||{};
-  const mode=p.nodeTheme||"dark";
-  if(mode==="custom"){
-    const out={}; for(const k of NODE_KEYS) out[k]=p[k]||NODE_DARK[k]; return out;
-  }
-  return mode==="light"?{...NODE_LIGHT}:{...NODE_DARK};
+  // Pull from the resolved UI/view colors the preset already set on the project.
+  const card = p.nodeCardBg || p.nodeBg || p.uiInputBg || NODE_DARK.nodeCardBg;
+  const hdr  = p.nodeHdrBg  || p.uiPanelBar || p.uiBtnBg || NODE_DARK.nodeHdrBg;
+  const bord = p.nodeBorder || p.overlayBorder || p.uiInputBorder || NODE_DARK.nodeBorder;
+  const label= p.nodeLabel  || p.uiHeading || NODE_DARK.nodeLabel;
+  const sub  = p.nodeSub    || p.uiMuted || NODE_DARK.nodeSub;
+  const sel  = p.nodeSel    || p.uiAccent || NODE_DARK.nodeSel;
+  const shadow = p.nodeShadow || "#000000";
+  return { nodeCardBg:card, nodeHdrBg:hdr, nodeBorder:bord, nodeSel:sel, nodeLabel:label, nodeSub:sub, nodeShadow:shadow };
 }
 
 // Theme-aware versions of the shared S styles, derived from a UI palette.

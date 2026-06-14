@@ -46,6 +46,14 @@ function normalizeNode(node){
     }
     case "paramSpace": {
       const degree=normDims(p.degree,1);
+      if(degree>=3){
+        return { type:"paramvol", props:{
+          exprX:p.exprXw, exprY:p.exprYw, exprZ:p.exprZw,
+          uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax, wMin:p.wMin, wMax:p.wMax,
+          uRes:p.uRes3, vRes:p.vRes3, wRes:p.wRes3,
+          colorMode:p.volColorMode, colorExpr:p.volColorExpr, colorLo:p.volColorLo, colorHi:p.volColorHi, colorMin:p.volColorMin, colorMax:p.volColorMax,
+        }};
+      }
       if(degree>=2){
         return { type:"paramsurf", props:{
           exprX:p.exprXu, exprY:p.exprYu, exprZ:p.exprZu,
@@ -63,7 +71,7 @@ function normalizeNode(node){
         // glyph field — project pairs to the plane when in xy space
         return { type:"glyphField", props:{
           pairs: xy ? projectGlyphTextToPlane(p.data) : p.data,
-          arrowLen:p.arrowLen, normalize:p.normalize, anim:p.anim, speed:p.speed, crestColor:p.crestColor,
+          arrowLen:p.arrowLen, lenMode:p.lenMode, normalize:p.normalize, anim:p.anim, speed:p.speed, crestColor:p.crestColor,
         }};
       }
       return { type:"pointSeq", props:{

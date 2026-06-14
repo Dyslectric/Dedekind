@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
-import { resolveScope, plotDomain, geomSignature } from "../core/scope.js";
+import { resolveScope, plotDomain, geomSignature, buildGlobalScope } from "../core/scope.js";
 import { disposeObjs, updateGpuUniforms } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
@@ -45,6 +45,11 @@ function pointGradientColors(pts, p, scope){
 
 function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
   const seen=new Set();if(!camNode)return;
+  // Build a global scope that includes ALL named scalars (sliders, constants,
+  // animators) regardless of wiring, so plots can reference slider variables in
+  // expression fields like arrowLen without needing an explicit attachment edge.
+  // Per-plot/camera wired scope still takes priority (spread last).
+  const globalSc = buildGlobalScope(nodes, animVals||{});
   for(const childId of(camNode.attachments||[])){
     const rawNode=nodes[childId];if(!rawNode)continue;
     if(catOf(rawNode.type)!=="plot") continue;   // only plots render in a camera
@@ -52,15 +57,14 @@ function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
     // Normalize unified authoring kinds (scalarFn/paramSpace/points) down to the
     // legacy vocabulary the builders understand. childId stays the original id.
     const node=normalizedNode(rawNode);
-    // Per-plot scope: scalars/functions attached to THIS plot. Fall back to the
-    // camera-union scope so legacy projects (scalars wired camera-wide) still
-    // resolve. Domain attached to the plot overrides its sampling props.
+    // Per-plot scope: scalars/functions attached to THIS plot. Merged over the
+    // global scope so any slider variable is available even when not explicitly
+    // wired. Camera-union scope and per-plot wired scope both take priority.
     const own = animVals ? resolveScope(childId, nodes, animVals) : null;
-    const pscope = own && Object.keys(own).length ? {...scope, ...own} : scope;
+    const pscope = {...globalSc, ...scope, ...(own && Object.keys(own).length ? own : {})};
     const dom = plotDomain(childId, nodes);
     const p = dom ? applyDomain(node.props, node.type, dom) : node.props;
-    const scope2 = pscope;
-    rebuildOnePlot(scene,objMap,childId,node,p,scope2,nodes,camNode,animVals);
+    rebuildOnePlot(scene,objMap,childId,node,p,pscope,nodes,camNode,animVals);
   }
   for(const[id,objs]of objMap){if(!seen.has(id)){disposeObjs(scene,objs);objMap.delete(id);}}
 }
@@ -118,7 +122,8 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       else if(node.type==="glyphField"){
         const pairs=parseGlyphField(p.pairs,scope);
         gpu=buildGlyphFieldGPU(pairs,node.color||"#5be0c0",{
-          arrowLen:resolveNum(p.arrowLen,scope,0.5), normalize:p.normalize!==false,
+          arrowLen:resolveNum(p.arrowLen,scope,0.5),
+          lenMode:p.lenMode||(p.normalize===false?"scaled":"uniform"),
           anim:p.anim||"crest", speed:resolveNum(p.speed,scope,1), crestColor:p.crestColor||"#ffffff",
         });
       }
@@ -140,6 +145,33 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     if(node.type==="fn1d"){const xs=linspace(resolveNum(p.xMin,scope,-5),resolveNum(p.xMax,scope,5),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(xs.map(x=>{const y=safeEval(p.expr,{...scope,x});return y!=null?[x,y,0]:[NaN,NaN,NaN];}),node.color||"#f7cc4f");}
     if(node.type==="surf3d"){const res=Math.max(2,Math.min(80,resolveNum(p.res,scope,40)));const xs=linspace(resolveNum(p.xMin,scope,-4),resolveNum(p.xMax,scope,4),res),ys=linspace(resolveNum(p.yMin,scope,-4),resolveNum(p.yMax,scope,4),res);objs=buildSurf(ys.map(y=>xs.map(x=>{const z=safeEval(p.expr,{...scope,x,y});return z!=null?[x,y,z]:null;})),node.color||"#5b9cf6");}
     if(node.type==="paramsurf"){const ur=Math.max(2,Math.min(80,resolveNum(p.uRes,scope,40))),vr=Math.max(2,Math.min(80,resolveNum(p.vRes,scope,30)));const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);objs=buildSurf(vs.map(v=>us.map(u=>{const x=safeEval(p.exprX,{...scope,u,v}),y=safeEval(p.exprY,{...scope,u,v}),z=safeEval(p.exprZ,{...scope,u,v});return x!=null&&y!=null&&z!=null?[x,y,z]:null;})),node.color||"#c761f7");}
+    if(node.type==="paramvol"){
+      // A degree-3 parametric manifold: sample a (u,v,w) grid and map each node
+      // into 3-D space, drawn as a point cloud (optionally gradient-colored).
+      const ur=Math.max(2,Math.min(40,resolveNum(p.uRes,scope,14))),
+            vr=Math.max(2,Math.min(40,resolveNum(p.vRes,scope,14))),
+            wr=Math.max(2,Math.min(40,resolveNum(p.wRes,scope,14)));
+      const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,1),ur),
+            vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr),
+            ws=linspace(resolveNum(p.wMin,scope,0),resolveNum(p.wMax,scope,Math.PI*2),wr);
+      const pts=[], cvals=(p.colorMode==="gradient")?[]:null;
+      for(const u of us)for(const v of vs)for(const w of ws){
+        const sc={...scope,u,v,w};
+        const x=safeEval(p.exprX,sc),y=safeEval(p.exprY,sc),z=safeEval(p.exprZ,sc);
+        if(x==null||y==null||z==null||!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
+        pts.push([x,y,z]);
+        if(cvals){const cv=safeEval(p.colorExpr||"u",sc);cvals.push((cv==null||!isFinite(cv))?0:cv);}
+      }
+      let cols=null;
+      if(cvals&&cvals.length){
+        const lo=new THREE.Color(p.colorLo||"#3a6aff"),hi=new THREE.Color(p.colorHi||"#ff5ea8"),c=new THREE.Color();
+        let mn=(p.colorMin!==""&&p.colorMin!=null)?resolveNum(p.colorMin,scope,0):Math.min(...cvals);
+        let mx=(p.colorMax!==""&&p.colorMax!=null)?resolveNum(p.colorMax,scope,1):Math.max(...cvals);
+        if(!isFinite(mn))mn=0; if(!isFinite(mx))mx=1; const span=(mx-mn)||1;
+        cols=cvals.map(val=>{let t=(val-mn)/span;t=t<0?0:t>1?1:t;c.copy(lo).lerp(hi,t);return [c.r,c.g,c.b];});
+      }
+      objs=buildPointSeqGPU(pts,node.color||"#b48cff",resolveNum(p.radius,scope,0.05),false,cols);
+    }
     if(node.type==="plane"){const c=[resolveNum(p.centerX,scope,0),resolveNum(p.centerY,scope,0),resolveNum(p.centerZ,scope,0)],n=[resolveNum(p.normalX,scope,0),resolveNum(p.normalY,scope,1),resolveNum(p.normalZ,scope,0)];objs=buildPlane3d(c,n,resolveNum(p.size,scope,8),node.color||"#52d47e");}
     if(node.type==="point")objs=buildPoint3d(resolveNum(p.x,scope,0),resolveNum(p.y,scope,0),resolveNum(p.z,scope,0),node.color||"#ff70bb",resolveNum(p.radius,scope,0.08));
     if(node.type==="__scalarVol"){

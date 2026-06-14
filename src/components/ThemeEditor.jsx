@@ -76,20 +76,6 @@ function ThemeEditor({node,onChange}){
           <Swatch key={k} label={label} v={p[k]} def={def} onChange={v=>setProp(k,v)}/>)}
       </Sec>
     ))}
-    <Sec title="Node graph">
-      <div style={{fontSize:13,color:ui.uiFaint,marginBottom:6,lineHeight:1.6}}>Card colors for the node editor.</div>
-      <div style={{display:"flex",gap:4,marginBottom:6}}>
-        {["dark","light","custom"].map(mode=>{
-          const active=(p.nodeTheme||"dark")===mode;
-          return<button key={mode} onClick={()=>setProp("nodeTheme",mode)}
-            style={{...S.btnSm,flex:1,textTransform:"capitalize",borderColor:active?ui.uiAccent:ui.uiBtnBorder,color:active?ui.uiAccent:ui.uiMuted,background:active?ui.uiAccent+"18":ui.uiBtnBg}}>{mode}</button>;
-        })}
-      </div>
-      {(p.nodeTheme||"dark")==="custom"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-        {[["nodeCardBg","card bg"],["nodeHdrBg","header"],["nodeBorder","border"],["nodeLabel","label"],["nodeSub","subtext"],["nodeSel","selected"]].map(([k,l])=>
-          <Swatch key={k} label={l} v={p[k]} def={NODE_DARK[k]} onChange={v=>setProp(k,v)}/>)}
-      </div>}
-    </Sec>
     <Sec title="Node kinds">
       <div style={{fontSize:13,color:ui.uiFaint,marginBottom:6,lineHeight:1.6}}>
         Disable kinds to share a simplified app — disabled kinds vanish from every "add" menu. Existing nodes still render.

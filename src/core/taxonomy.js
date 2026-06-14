@@ -18,7 +18,7 @@ const CATEGORY = {
   constant:"scalar", slider:"scalar", animator:"scalar",
   fnDef:"function",
   domain:"domain",
-  curve3d:"plot", fn1d:"plot", surf3d:"plot", paramsurf:"plot", plane:"plot",
+  curve3d:"plot", fn1d:"plot", surf3d:"plot", paramsurf:"plot", paramvol:"plot", plane:"plot",
   point:"plot", pointSeq:"plot", quiver2d:"plot", quiver3d:"plot", flow:"plot", glyphField:"plot",
   // Unified plot kinds (replace the granular legacy kinds above in the UI):
   //   scalarFn   — scalar-valued function of 1/2/3 spatial inputs

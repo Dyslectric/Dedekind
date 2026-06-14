@@ -1,8 +1,6 @@
 # Dedekind
 
-[Go to the app](https://dedekind.app)
-
-**Everything's in Dedekind** - a node-graph editor for visualizing math in 2D and 3D.
+**Everything's in Dedekind** — a node-graph editor for visualizing math in 2D and 3D.
 
 Wire scalars into functions, run those through transformers and flows, and point a
 camera at the result. Edit anything and the view updates immediately. It runs entirely
@@ -15,14 +13,14 @@ GPU-accelerated.
 
 ## Highlights
 
-- **Functions separated from geometry.** An `fnMap` is a pure map (up to four
-  inputs `x, y, z, w` and four outputs). It has no shape of its own. You wire it into a
+- **Functions separated from geometry.** An `fnMap` is a pure map ℝᵐ→ℝⁿ (up to four
+  inputs `x, y, z, w` and four outputs). It has no shape of its own — you wire it into a
   *transformer* that decides how to draw it.
 - **Transformers: graphs and fields.**
   - *Graph mode* assigns inputs and outputs to spatial axes: a curve `y=f(x)`, a surface
     `z=f(x,y)`, or a 3-input solid point cloud. **Z is up.**
   - *Field mode* draws the output vector as an arrow at each sample (the generalized
-    quiver). The render options adapt to the output count - e.g. a 3-output map can be a
+    quiver). The render options adapt to the output count — e.g. a 3-output map can be a
     3D vector field, or a 2D field colored by its third output; a 4-output map becomes a
     3D field with the fourth output driving the color.
 - **Gradient coloring everywhere.** Curves, surfaces, solids, point clouds, and vector
@@ -46,7 +44,7 @@ Requires Node.js 18+.
 ```bash
 npm install
 npm run dev      # start the dev server (Vite); open the URL it prints
-npm run build    # production build -> dist/
+npm run build    # production build → dist/
 npm run preview  # preview the production build
 ```
 
@@ -75,14 +73,14 @@ src/
 
   core/                  Pure logic (no React, no DOM)
     math.js              Expression compile/eval cache, resolveNum/safeEval, makeFn, linspace, ids
-    taxonomy.js          Node categories + attachment rules (canAttach, catOf, ...)
+    taxonomy.js          Node categories + attachment rules (canAttach, catOf, …)
     scope.js             Dependency-based scope resolution + geometry signatures
     serialize.js         Project (de)serialization, share encoding, legacy migration
     worker.js            Web Worker source + ComputeWorker (RK4 flow offload)
 
   geometry/              three.js geometry generation (no React)
     three-helpers.js     dispose/colour helpers, shader material, uniform updates
-    glsl.js              mathjs -> GLSL transpiler for GPU evaluation
+    glsl.js              mathjs → GLSL transpiler for GPU evaluation
     builders.js          CPU + GPU builders (surfaces, curves, quivers, glyph fields, instanced point clouds)
     transformer.js       Renders an fnMap over a domain (graph axis-mapping or vector field) + gradient coloring
     flow.js              Flow integration, stream surfaces & volumes
@@ -98,7 +96,7 @@ src/
 
   nodes/
     model.js             TYPE_META, ports, node factory, blank default scene + feature-showcase demo scene
-    normalize.js         Maps unified kinds (scalarFn/paramSpace/points) -> legacy type+props
+    normalize.js         Maps unified kinds (scalarFn/paramSpace/points) → legacy type+props
     kinds.js             Addable-kind groups + enable/disable for simplified shares
     colors.js            Geometry default colours
 
@@ -118,7 +116,7 @@ src/
     Viewport.jsx         3D/2D viewports, detached windows, viewport strip
     ScalarOverlay.jsx    Live scalar/slider HUD over a viewport
     FnDefRow.jsx         Function-definition editor row
-    primitives.jsx       Small shared UI pieces (Sec, PR, Toggle, Swatch, ...)
+    primitives.jsx       Small shared UI pieces (Sec, PR, Toggle, Swatch, …)
 ```
 
 ## Architecture notes
@@ -131,7 +129,7 @@ src/
 - **Unified plot kinds.** Authoring uses consolidated kinds. `paramSpace` is a
   parameterized curve (degree 1) or surface (degree 2); `points` covers
   points/glyphs/sequences. Functions are separated from how they are drawn: an `fnMap` is
-  a pure map that feeds a `transformer`, which renders it as a *graph* (inputs and
+  a pure map ℝᵐ→ℝⁿ that feeds a `transformer`, which renders it as a *graph* (inputs and
   outputs assigned to spatial axes) or a *field* (an arrow per sample, optionally colored
   by a reserved output). A transformer's domain is an inline box + resolution, or a wired
   `paramSpace`. `nodes/normalize.js` maps the granular kinds to legacy geometry at render
@@ -141,8 +139,8 @@ src/
 - **Cameras.** Two explicit kinds, `camera3d` and `camera2d`; the kind fixes the view
   mode. Legacy single `camera` nodes migrate by their stored mode.
 - **Flows.** A `flow` consumes a vector-field `fnMap` and a seed source: a `paramSpace`
-  (continuous: degree 1 stream surface, degree 2 swept volume) or a `points` node
-  (discrete seeds - one stream curve per point). On a 2D camera viewing the XY plane, a
+  (continuous — degree 1 → stream surface, degree 2 → swept volume) or a `points` node
+  (discrete seeds — one stream curve per point). On a 2D camera viewing the XY plane, a
   degree-1 stream surface fills as a solid colored area.
 - **GPU point clouds.** Point sequences render as a single `InstancedMesh`
   (`buildPointSeqGPU`), with per-point gradient colors via `instanceColor`; sequenced
@@ -153,7 +151,7 @@ src/
 
 ## Tech
 
-React, three.js, mathjs, Vite. No backend. Everything runs client-side.
+React · three.js · mathjs · Vite. No backend — everything runs client-side.
 
 ## Disclosure
 

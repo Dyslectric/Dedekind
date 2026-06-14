@@ -87,6 +87,7 @@ function migrateOneToUnified(n){
         data:p.pairs??"0,0,0 | 1,0,0",
         radius:"4",drawLines:true,
         arrowLen:p.arrowLen??"0.5",normalize:p.normalize!==false,
+        lenMode:p.lenMode||(p.normalize===false?"scaled":"uniform"),
         anim:p.anim??"crest",speed:p.speed??"1",crestColor:p.crestColor??"#ffffff",
         sequenced:false,seqFrac:"1",seqVar:"",
       }};

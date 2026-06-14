@@ -84,7 +84,8 @@ function makeNode(type,pos){
       res:"40",
       colorByValue:false,colorLo:"#3a6df0",colorHi:"#f0533a",
     },attachments:[]},
-    // paramSpace: a parameterized manifold of `degree` 1 (curve) or 2 (surface).
+    // paramSpace: a parameterized manifold of `degree` 1 (curve), 2 (surface),
+    // or 3 (volume), mapped into 3-D Euclidean space.
     paramSpace:{label:"Curve",color:nextColor(),props:{
       degree:"1",
       exprX:"cos(t)",exprY:"sin(t)",exprZ:"t/4",
@@ -92,6 +93,11 @@ function makeNode(type,pos){
       // surface (degree 2) params reuse u,v:
       exprXu:"cos(u)*sin(v)",exprYu:"sin(u)*sin(v)",exprZu:"cos(v)",
       uMin:"0",uMax:"2*pi",vMin:"0",vMax:"pi",uRes:"40",vRes:"30",
+      // volume (degree 3) params use u,v,w → a point cloud filling the image.
+      exprXw:"u*sin(v)*cos(w)",exprYw:"u*sin(v)*sin(w)",exprZw:"u*cos(v)",
+      wMin:"0",wMax:"2*pi",uRes3:"14",vRes3:"14",wRes3:"14",
+      // volume coloring (optional gradient over the cloud):
+      volColorMode:"off",volColorExpr:"u",volColorLo:"#3a6aff",volColorHi:"#ff5ea8",volColorMin:"",volColorMax:"",
     },attachments:[]},
     // points: points / glyphs / sequences. `space` xy|xyz; `hasVectors` adds
     // per-point arrows (glyph mode). One unified `data` text supports plain,
@@ -151,7 +157,14 @@ function makeNode(type,pos){
 
 // Project node with default theme/palette — shared by blank and demo scenes.
 function makeProjectNode(name){
-  return {id:PROJECT_ID,type:"project",pos:{x:20,y:20},label:"Project",props:{name:name||"Untitled",author:"",canvasBg:"#11141f",nodeBg:"#11141f",bg2d:"#0d0f18",grid2d:"#1e2440",axes2d:"#324679",label2d:"#324679",bg3d:"#0d0f18",grid3d:"#1c2334",grid3d2:"#141a28",overlayBg:"#0c0f1c88",overlayBorder:"#222747",overlayText:"#54739a",...UI_DEFAULTS},attachments:[]};
+  // Default theme: Catppuccin Macchiato (view colors + UI chrome).
+  return {id:PROJECT_ID,type:"project",pos:{x:20,y:20},label:"Project",props:{name:name||"Untitled",author:"",
+    canvasBg:"#24273a",nodeBg:"#1e2030",bg2d:"#181926",grid2d:"#363a4f",axes2d:"#8087a2",label2d:"#a5adcb",
+    bg3d:"#181926",grid3d:"#363a4f",grid3d2:"#1e2030",overlayBg:"#1e2030cc",overlayBorder:"#363a4f",overlayText:"#a5adcb",
+    uiHeading:"#cad3f5",uiText:"#a5adcb",uiMuted:"#8087a2",uiFaint:"#363a4f",uiAccent:"#8aadf4",
+    uiInputText:"#cad3f5",uiInputBg:"#1e2030",uiInputBorder:"#363a4f",uiBtnText:"#a5adcb",
+    uiBtnBg:"#181926",uiBtnBorder:"#363a4f",uiPanelBar:"#1e2030",uiDanger:"#ed8796",uiGood:"#a6da95",
+    },attachments:[]};
 }
 
 // Blank starting project: a project node and a single 2-D camera, nothing else.
@@ -173,144 +186,89 @@ function makeInitialScene(){ return makeBlankScene(); }
 // space (filled stream surface in the 2-D plane) and discrete points (stream
 // curves), recursive function definitions, and an animator driving it all.
 function makeDemoScene(){
-  const project=makeProjectNode("Showcase");
+  // A "four lenses" showcase: ONE set of animated maps, watched by four cameras
+  // from four different projections (perspective 3-D, orthographic 3-D, a top-down
+  // 2-D plane, and a side 2-D plane). Animators drive time; sliders shape the
+  // transformations (amplitude, frequency, decay, twist) — drag a slider and every
+  // camera updates together.
+  const project=makeProjectNode("Four Lenses");
   const N={[project.id]:project};
   const add=(n)=>{N[n.id]=n;return n;};
 
-  // ── Cameras (right side) ───────────────────────────────────────────────────
-  const cam3d=add(makeNode("camera3d",{x:1180,y:120}));cam3d.label="Cam3D";
-  cam3d.props.orbRadius="13";cam3d.props.orbTheta="0.7";cam3d.props.orbPhi="1.1";
-  const cam2d=add(makeNode("camera2d",{x:1180,y:440}));cam2d.label="Cam2D";
+  // ── Drivers ────────────────────────────────────────────────────────────────
+  // One looping clock; sliders the viewer can tweak live.
+  const t=add(makeNode("animator",{x:40,y:60}));t.name="t";t.label="t (clock)";t.value=0;
+  t.props.period="9";t.props.min="0";t.props.max="6.283";t.props.loop="loop";t.playing=true;
+  const spin=add(makeNode("animator",{x:40,y:185}));spin.name="s";spin.label="s (spin)";spin.value=0;
+  spin.props.period="20";spin.props.min="0";spin.props.max="6.283";spin.props.loop="loop";spin.playing=true;
 
-  // ── Drivers: animators, scalars, a recursive function ──────────────────────
-  const t=add(makeNode("animator",{x:40,y:80}));t.name="t";t.label="t (loop)";t.value=0;
-  t.props.period="8";t.props.min="0";t.props.max="6.283";t.props.loop="loop";t.playing=true;
-  const s=add(makeNode("animator",{x:40,y:210}));s.name="s";s.label="s (bounce)";s.value=0;
-  s.props.period="6";s.props.min="0";s.props.max="1";s.props.loop="bounce";s.playing=true;
-  const amp=add(makeNode("slider",{x:40,y:340}));amp.name="a";amp.label="a (amplitude)";amp.value=0.8;
+  const amp=add(makeNode("slider",{x:40,y:310}));amp.name="a";amp.label="a · amplitude";amp.value=0.9;
   amp.props.min="0";amp.props.max="2";amp.props.step="0.01";
-  const kk=add(makeNode("constant",{x:40,y:450}));kk.name="k";kk.label="k";kk.value=3;
-  const fib=add(makeNode("fnDef",{x:40,y:560}));fib.name="fib";fib.label="fib(n)";fib.props.params="n";fib.props.expr="n <= 1 ? n : fib(n-1) + fib(n-2)";
+  const freq=add(makeNode("slider",{x:40,y:420}));freq.name="f";freq.label="f · frequency";freq.value=1.6;
+  freq.props.min="0.2";freq.props.max="4";freq.props.step="0.01";
+  const decay=add(makeNode("slider",{x:40,y:530}));decay.name="d";decay.label="d · decay";decay.value=0.18;
+  decay.props.min="0";decay.props.max="0.6";decay.props.step="0.005";
+  const twist=add(makeNode("slider",{x:40,y:640}));twist.name="tw";twist.label="tw · twist";twist.value=0.6;
+  twist.props.min="-1.5";twist.props.max="1.5";twist.props.step="0.01";
 
-  // ── Function maps (left column) — most left for the user to wire up ────────
-  const ripple=add(makeNode("fnMap",{x:330,y:60}));ripple.label="ripple ƒ";ripple.color="#7ec8ff";
-  ripple.props.inDim="2";ripple.props.outDim="1";ripple.props.out0="a*sin(sqrt(x*x+y*y)*2 - t)*0.8";
-  ripple.attachments=[amp.id,t.id];
+  // ── Shared maps (the things every camera looks at) ─────────────────────────
+  // 1) Morphing ripple surface  z = a·sin(f·r − t)·e^(−d·r),  r = √(x²+y²).
+  const surfFn=add(makeNode("fnMap",{x:360,y:120}));surfFn.label="ripple ƒ";surfFn.color="#8aadf4";
+  surfFn.props.inDim="2";surfFn.props.outDim="1";
+  surfFn.props.out0="a*sin(f*sqrt(x*x+y*y) - t)*exp(-d*sqrt(x*x+y*y))";
+  surfFn.attachments=[amp.id,freq.id,decay.id,t.id];
 
-  const saddle=add(makeNode("fnMap",{x:330,y:180}));saddle.label="saddle ƒ";saddle.color="#7ec8ff";
-  saddle.props.inDim="2";saddle.props.outDim="1";saddle.props.out0="(x*x - y*y)*0.18";
+  const surf=add(makeNode("transformer",{x:680,y:120}));surf.label="Ripple Surface";surf.color="#8aadf4";
+  surf.props.mode="graph";surf.props.inAxis0="x";surf.props.inAxis1="y";surf.props.outAxis0="z";
+  surf.props.aMin="-5";surf.props.aMax="5";surf.props.bMin="-5";surf.props.bMax="5";surf.props.res="56";
+  surf.props.colorMode="gradient";surf.props.colorExpr="out0";surf.props.colorLo="#1b3a8f";surf.props.colorHi="#ed8796";
+  surf.attachments=[surfFn.id];
 
-  const wave=add(makeNode("fnMap",{x:330,y:300}));wave.label="wave ƒ";wave.color="#7ec8ff";
-  wave.props.inDim="1";wave.props.outDim="1";wave.props.out0="sin(x*2 - t)*exp(-abs(x)*0.2)";
-  wave.attachments=[t.id];
+  // 2) Swirl 3-D vector field, twisting with t and the twist slider.
+  const swirlFn=add(makeNode("fnMap",{x:360,y:300}));swirlFn.label="swirl ƒ";swirlFn.color="#a6da95";
+  swirlFn.props.inDim="3";swirlFn.props.outDim="4";
+  swirlFn.props.out0="-y + tw*sin(t)";swirlFn.props.out1="x + tw*cos(t)";swirlFn.props.out2="0.3*z";
+  swirlFn.props.out3="sqrt(x*x+y*y+z*z)";
+  swirlFn.attachments=[twist.id,t.id];
 
-  const swirl=add(makeNode("fnMap",{x:330,y:420}));swirl.label="swirl ƒ (3→3)";swirl.color="#7ec8ff";
-  swirl.props.inDim="3";swirl.props.outDim="3";swirl.props.out0="-y + 0.3*sin(t)";swirl.props.out1="x";swirl.props.out2="0.25*z";
-  swirl.attachments=[t.id];
+  const field=add(makeNode("transformer",{x:680,y:300}));field.label="Swirl Field";field.color="#a6da95";
+  field.props.mode="field";field.props.colorMode="gradient";field.props.colorLo="#a6da95";field.props.colorHi="#ed8796";
+  field.props.inAxis0="x";field.props.inAxis1="y";field.props.inAxis2="z";
+  field.props.outAxis0="x";field.props.outAxis1="y";field.props.outAxis2="z";
+  field.props.aMin="-4";field.props.aMax="4";field.props.bMin="-4";field.props.bMax="4";field.props.cMin="-1.5";field.props.cMax="1.5";
+  field.props.res="5";field.props.arrowLen="0.7";
+  field.attachments=[swirlFn.id];
 
-  const rot=add(makeNode("fnMap",{x:330,y:540}));rot.label="rot ƒ (2→2)";rot.color="#7ec8ff";
-  rot.props.inDim="2";rot.props.outDim="2";rot.props.out0="-y";rot.props.out1="x";
+  // 3) A torus knot curve, slowly rotating via s (a phase added to the angle).
+  const knot=add(makeNode("paramSpace",{x:360,y:500}));knot.label="Torus Knot";knot.color="#c6a0f6";
+  knot.props.degree="1";
+  knot.props.exprX="(2.4+cos(3*t+s))*cos(2*t)";knot.props.exprY="(2.4+cos(3*t+s))*sin(2*t)";knot.props.exprZ="sin(3*t+s)";
+  knot.props.tMin="0";knot.props.tMax="2*pi";knot.props.res="420";
+  knot.attachments=[t.id,spin.id];
 
-  const cloud4=add(makeNode("fnMap",{x:330,y:660}));cloud4.label="hyper ƒ (4→4)";cloud4.color="#7ec8ff";
-  cloud4.props.inDim="4";cloud4.props.outDim="4";
-  cloud4.props.out0="x*cos(w)-y*sin(w)";cloud4.props.out1="x*sin(w)+y*cos(w)";cloud4.props.out2="z";cloud4.props.out3="w";
+  // ── Four cameras, four projections of the SAME three plots ─────────────────
+  const persp=add(makeNode("camera3d",{x:1040,y:60}));persp.label="Perspective";
+  persp.props.projection="perspective";persp.props.orbTheta="0.7";persp.props.orbPhi="1.05";persp.props.orbRadius="13";
 
-  // ── Param spaces (curves / manifolds) ──────────────────────────────────────
-  const knot=add(makeNode("paramSpace",{x:330,y:790}));knot.label="Torus Knot";knot.color="#5b9cf6";
-  knot.props.degree="1";knot.props.exprX="(2+cos(3*t))*cos(2*t)";knot.props.exprY="(2+cos(3*t))*sin(2*t)";knot.props.exprZ="sin(3*t)";knot.props.tMin="0";knot.props.tMax="2*pi";knot.props.res="400";
+  const ortho=add(makeNode("camera3d",{x:1040,y:230}));ortho.label="Orthographic";
+  ortho.props.projection="orthographic";ortho.props.orthoSize="7";ortho.props.orbTheta="2.3";ortho.props.orbPhi="0.95";ortho.props.orbRadius="13";
 
-  const sphere=add(makeNode("paramSpace",{x:330,y:910}));sphere.label="Sphere (deg 2)";sphere.color="#b48cff";
-  sphere.props.degree="2";sphere.props.exprXu="cos(u)*sin(v)";sphere.props.exprYu="sin(u)*sin(v)";sphere.props.exprZu="cos(v)";
-  sphere.props.uMin="0";sphere.props.uMax="2*pi";sphere.props.vMin="0";sphere.props.vMax="pi";sphere.props.uRes="40";sphere.props.vRes="24";
+  const top=add(makeNode("camera2d",{x:1040,y:400}));top.label="Top (xy)";
+  top.props.planeMode="xy";
 
-  const seedLine=add(makeNode("paramSpace",{x:330,y:1030}));seedLine.label="seed line";seedLine.color="#9ad";
-  seedLine.props.degree="1";seedLine.props.exprX="2.5";seedLine.props.exprY="t";seedLine.props.exprZ="0";seedLine.props.tMin="-1.5";seedLine.props.tMax="1.5";seedLine.props.res="9";
+  const side=add(makeNode("camera2d",{x:1040,y:560}));side.label="Side (xz)";
+  side.props.planeMode="plane";
+  // view the x–z plane: u = world X axis, v = world Z axis
+  side.props.planeUx="1";side.props.planeUy="0";side.props.planeUz="0";
+  side.props.planeVx="0";side.props.planeVy="0";side.props.planeVz="1";
+  side.props.planeThreshold="0.4";
 
-  // ── Transformers (graph + field). Most NOT wired to a camera. ──────────────
-  const rippleSurf=add(makeNode("transformer",{x:680,y:40}));rippleSurf.label="Ripple Surface";rippleSurf.color="#4a90d0";
-  rippleSurf.props.mode="graph";rippleSurf.props.inAxis0="x";rippleSurf.props.inAxis1="y";rippleSurf.props.outAxis0="z";
-  rippleSurf.props.aMin="-5";rippleSurf.props.aMax="5";rippleSurf.props.bMin="-5";rippleSurf.props.bMax="5";rippleSurf.props.res="48";
-  rippleSurf.props.colorMode="gradient";rippleSurf.props.colorExpr="out0";rippleSurf.props.colorLo="#1b3a8f";rippleSurf.props.colorHi="#ff5ea8";
-  rippleSurf.attachments=[ripple.id];
-
-  const saddleSurf=add(makeNode("transformer",{x:680,y:180}));saddleSurf.label="Saddle Surface";saddleSurf.color="#52d47e";
-  saddleSurf.props.mode="graph";saddleSurf.props.inAxis0="x";saddleSurf.props.inAxis1="y";saddleSurf.props.outAxis0="z";
-  saddleSurf.props.aMin="-4";saddleSurf.props.aMax="4";saddleSurf.props.bMin="-4";saddleSurf.props.bMax="4";saddleSurf.props.res="40";
-  saddleSurf.props.colorMode="gradient";saddleSurf.props.colorExpr="out0";saddleSurf.props.colorLo="#5be0c0";saddleSurf.props.colorHi="#ffb454";
-  saddleSurf.attachments=[saddle.id];
-
-  const waveCurve=add(makeNode("transformer",{x:680,y:300}));waveCurve.label="Wave Curve";waveCurve.color="#f7cc4f";
-  waveCurve.props.mode="graph";waveCurve.props.inAxis0="x";waveCurve.props.outAxis0="z";
-  waveCurve.props.aMin="-8";waveCurve.props.aMax="8";waveCurve.props.res="300";
-  waveCurve.props.colorMode="gradient";waveCurve.props.colorExpr="x";waveCurve.props.colorLo="#7ec8ff";waveCurve.props.colorHi="#f99ab4";
-  waveCurve.attachments=[wave.id];
-
-  const field3d=add(makeNode("transformer",{x:680,y:420}));field3d.label="Field 3D";field3d.color="#c761f7";
-  field3d.props.mode="field";field3d.props.inAxis0="x";field3d.props.inAxis1="y";field3d.props.inAxis2="z";
-  field3d.props.outAxis0="x";field3d.props.outAxis1="y";field3d.props.outAxis2="z";
-  field3d.props.aMin="-3";field3d.props.aMax="3";field3d.props.bMin="-3";field3d.props.bMax="3";field3d.props.cMin="-3";field3d.props.cMax="3";field3d.props.res="4";field3d.props.arrowLen="0.6";
-  field3d.attachments=[swirl.id];
-
-  const field2d=add(makeNode("transformer",{x:680,y:540}));field2d.label="Field 2D";field2d.color="#ffb454";
-  field2d.props.mode="field";field2d.props.inAxis0="x";field2d.props.inAxis1="y";field2d.props.outAxis0="x";field2d.props.outAxis1="y";
-  field2d.props.aMin="-4";field2d.props.aMax="4";field2d.props.bMin="-4";field2d.props.bMax="4";field2d.props.res="12";field2d.props.arrowLen="0.4";
-  field2d.attachments=[rot.id];
-
-  const solid=add(makeNode("transformer",{x:680,y:660}));solid.label="Solid (3-in)";solid.color="#f99ab4";
-  solid.props.mode="graph";solid.props.inAxis0="x";solid.props.inAxis1="y";solid.props.inAxis2="z";solid.props.outAxis0="none";
-  solid.props.aMin="-2";solid.props.aMax="2";solid.props.bMin="-2";solid.props.bMax="2";solid.props.cMin="-2";solid.props.cMax="2";solid.props.res="14";
-  solid.props.colorMode="gradient";solid.props.colorExpr="sqrt(x*x+y*y+z*z)";solid.props.colorLo="#1b3a8f";solid.props.colorHi="#5be0c0";
-  solid.attachments=[swirl.id];
-
-  // ── Flows ───────────────────────────────────────────────────────────────────
-  const streamSurf=add(makeNode("flow",{x:680,y:1030}));streamSurf.label="Stream Surface";streamSurf.color="#52d47e";
-  streamSurf.props.steps="500";streamSurf.props.stepSize="0.02";streamSurf.props.output="surface";
-  streamSurf.props.gradient=true;streamSurf.props.gradA="#5be0c0";streamSurf.props.gradB="#5b9cf6";
-  streamSurf.attachments=[rot.id,seedLine.id];
-
-  // ── Points / glyphs / sequences ────────────────────────────────────────────
-  // Toroidal glyph swirl (CONNECTED to cam3d — one of the few shown initially).
-  const torusSwirl=add(makeNode("points",{x:680,y:780}));torusSwirl.label="Torus Swirl";torusSwirl.color="#5be0c0";
-  torusSwirl.props.space="xyz";torusSwirl.props.hasVectors=true;
-  torusSwirl.props.data=
-    "3,0,0 | 0,1,0\n"+
-    "(3+1.1*cos(0.16*n))*cos(0.045*n)+0*x[n-1], (3+1.1*cos(0.16*n))*sin(0.045*n), 1.1*sin(0.16*n) | "+
-      "-sin(0.045*n+t), cos(0.045*n+t), 0.5*cos(0.16*n+t)\n"+
-    "500";
-  torusSwirl.props.arrowLen="0.45";torusSwirl.props.normalize=true;torusSwirl.props.anim="crest";torusSwirl.props.speed="1.4";torusSwirl.props.crestColor="#ffffff";
-  torusSwirl.attachments=[t.id];
-
-  // Gradient-colored matrix lattice (CONNECTED to cam3d).
-  const lattice=add(makeNode("points",{x:920,y:120}));lattice.label="Lattice (gradient)";lattice.color="#f9a";
-  lattice.props.space="xyz";lattice.props.hasVectors=false;
-  lattice.props.data="i*0.6 - 3, j*0.6 - 3, sin(i*0.5 + j*0.5 + t)\n11, 11";
-  lattice.props.drawLines=false;lattice.props.radius="0.08";
-  lattice.props.colorMode="gradient";lattice.props.colorExpr="z";lattice.props.colorLo="#1b3a8f";lattice.props.colorHi="#ff5ea8";
-  lattice.attachments=[t.id];
-
-  // Recursive spiral sequence (XY) — disconnected.
-  const spiral=add(makeNode("points",{x:680,y:900}));spiral.label="Spiral (recursive)";spiral.color="#ffd86b";
-  spiral.props.space="xy";spiral.props.hasVectors=false;
-  spiral.props.data="1, 0\nx[n-1]*0.97 - y[n-1]*0.12, x[n-1]*0.12 + y[n-1]*0.97\n160";
-  spiral.props.drawLines=true;spiral.props.radius="3";
-
-  // Index-mode gradient ring — disconnected.
-  const ring=add(makeNode("points",{x:920,y:260}));ring.label="Ring (by index)";ring.color="#f9a";
-  ring.props.space="xy";ring.props.hasVectors=false;
-  ring.props.data="3*cos(i*0.13), 3*sin(i*0.13)\n48";
-  ring.props.drawLines=false;ring.props.radius="6";
-  ring.props.colorMode="gradient";ring.props.colorExpr="i";ring.props.colorLo="#b48cff";ring.props.colorHi="#ffb454";
-
-  // Discrete flow seeds — disconnected.
-  const seedPts=add(makeNode("points",{x:920,y:380}));seedPts.label="seed points";seedPts.color="#fc6";
-  seedPts.props.space="xy";seedPts.props.hasVectors=false;seedPts.props.data="1, 0\n2.2, 0\n3.4, 0";seedPts.props.radius="5";
-
-  // ── Camera attachments: only a few things are shown at first. ──────────────
-  // Cam3D shows the torus glyph swirl + the gradient lattice. Everything else —
-  // the surfaces, the curve, the fields, the solid, the flow, the extra point
-  // clouds — is built and ready but left disconnected for you to wire in.
-  cam3d.attachments=[torusSwirl.id,lattice.id];
-  cam2d.attachments=[];   // nothing in 2D yet — try wiring Field 2D or a flow here
+  // Every camera sees the surface, the field, and the knot.
+  const plots=[surf.id,field.id,knot.id];
+  persp.attachments=[...plots];
+  ortho.attachments=[...plots];
+  top.attachments=[...plots];
+  side.attachments=[...plots];
 
   return N;
 }
