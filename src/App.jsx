@@ -5,7 +5,7 @@ import { buildScopeForCamera, buildGlobalScope, resolveScope, collectScalarDeps 
 import { serializeProject, deserializeProject, serializeCameraShare, migrateModel } from "./core/serialize.js";
 import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from "./nodes/model.js";
 import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
-import { uid } from "./core/math.js";
+import { uid, makeFn, resolveNum } from "./core/math.js";
 import { kindEnabled, ADDABLE_KINDS, ALL_KINDS } from "./nodes/kinds.js";
 import { UICtx, UI_DEFAULTS, buildUI, makeS } from "./theme/tokens.jsx";
 import { buildTheme } from "./theme/presets.js";
@@ -132,14 +132,25 @@ function Editor({initialHash}){
   // produces no new scope object and no re-render of this node's editors.
   const panelTick=selectedAnimated?animTick:0;
   const panelScope=useMemo(()=>{
-    if(!selectedNode) return selectedAnimated?globalScope:staticGlobalScope;
-    const base=selectedAnimated?globalScope:staticGlobalScope;
-    // A node's editing scope = the scalars/functions resolved from its own deps,
-    // layered over the global scope so unconnected vars still preview.
-    const own=resolveScope(selectedNode.id,nodes,selectedAnimated?animValsRef.current:{});
-    return {...base,...own};
+    if(!selectedNode) return {};
+    // A node's editing scope = ONLY the scalars/functions resolved from its own
+    // transitive deps. We do NOT merge the global scope — that would cause every
+    // unrelated named variable to appear as "evaluated" (highlighted) in the
+    // expression inputs even when the node has no dependency on them.
+    const animVals=selectedAnimated?animValsRef.current:{};
+    const sc=resolveScope(selectedNode.id,nodes,animVals);
+    // For a fnDef or expr node being viewed, include the node's own result in
+    // scope so expression-input previews can see it as an evaluated value.
+    if(selectedNode.type==="fnDef" && selectedNode.name && selectedNode.props?.expr){
+      const params=(selectedNode.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
+      sc[selectedNode.name]=makeFn(selectedNode.name,params,selectedNode.props.expr,sc);
+    }
+    if(selectedNode.type==="expr" && selectedNode.name && selectedNode.props?.expr!==undefined){
+      sc[selectedNode.name]=resolveNum(selectedNode.props.expr,sc,0);
+    }
+    return sc;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[selectedNode,nodes,panelTick,selectedAnimated,staticGlobalScope]);
+  },[selectedNode,nodes,panelTick,selectedAnimated]);
 
   const urlTimer=useRef(null);
   useEffect(()=>{clearTimeout(urlTimer.current);urlTimer.current=setTimeout(()=>{const s=serializeProject(nodes);if(s)window.history.replaceState(null,"","#"+s);},800);return()=>clearTimeout(urlTimer.current);},[nodes]);

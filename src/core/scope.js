@@ -32,19 +32,28 @@ function resolveScope(consumerId, nodes, animVals){
   const deps=new Set();
   collectScalarDeps(consumerId, nodes, deps, new Set());
   const list=[...deps].map(id=>nodes[id]).filter(Boolean);
-  // scalars first
+  // sliders and animators first (no expression deps)
   for(const n of list){
     if(!n.name) continue;
-    if(n.type==="constant") sc[n.name]=resolveNum(n.props.value,{},0);
-    else if(n.type==="slider") sc[n.name]=typeof n.value==="number"?n.value:0;
+    if(n.type==="slider") sc[n.name]=typeof n.value==="number"?n.value:0;
     else if(n.type==="animator") sc[n.name]=animVals?.[n.id]??(typeof n.value==="number"?n.value:0);
   }
-  // then functions (which close over the scalar scope)
+  // constants after — their expressions may reference sliders/animators/other constants
+  for(const n of list){
+    if(!n.name) continue;
+    if(n.type==="constant") sc[n.name]=resolveNum(n.props.value,sc,0);
+  }
+  // functions built before expr so expr nodes can call named functions
   for(const n of list){
     if(n.type==="fnDef" && n.name && n.props?.expr){
       const params=(n.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
       sc[n.name]=makeFn(n.name,params,n.props.expr,sc);
     }
+  }
+  // expr nodes last — full scope (sliders, animators, constants, functions) available
+  for(const n of list){
+    if(!n.name) continue;
+    if(n.type==="expr") sc[n.name]=resolveNum(n.props.expr,sc,0);
   }
   return sc;
 }
@@ -81,17 +90,28 @@ function plotDomain(plotId, nodes){
 
 function buildGlobalScope(nodes, animVals) {
   const sc = {};
+  // sliders and animators first (no expression deps)
   for (const n of Object.values(nodes)) {
     if (!n.name) continue;
-    if (n.type === "constant")  sc[n.name] = resolveNum(n.props.value, {}, 0);
-    else if (n.type === "slider") sc[n.name] = typeof n.value === "number" ? n.value : 0;
+    if (n.type === "slider") sc[n.name] = typeof n.value === "number" ? n.value : 0;
     else if (n.type === "animator") sc[n.name] = animVals?.[n.id] ?? (typeof n.value === "number" ? n.value : 0);
   }
+  // constants after — can reference sliders/animators
+  for (const n of Object.values(nodes)) {
+    if (!n.name) continue;
+    if (n.type === "constant") sc[n.name] = resolveNum(n.props.value, sc, 0);
+  }
+  // functions before expr so expr nodes can call named functions
   for (const n of Object.values(nodes)) {
     if (n.type === "fnDef" && n.name && n.props?.expr) {
       const params = (n.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
       sc[n.name] = makeFn(n.name, params, n.props.expr, sc);
     }
+  }
+  // expr nodes last — full scope available including functions
+  for (const n of Object.values(nodes)) {
+    if (!n.name) continue;
+    if (n.type === "expr") sc[n.name] = resolveNum(n.props.expr, sc, 0);
   }
   return sc;
 }

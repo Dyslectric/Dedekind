@@ -63,6 +63,16 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
             </div>
           );
         }
+        if (n.type === "expr") {
+          const val = resolveNum(n.props.expr, scope, NaN);
+          return (
+            <div key={n.id} style={{display:"flex",gap:6,alignItems:"center"}}>
+              <span style={{color:"#0c2030",fontSize:12}}>≈</span>
+              <span style={{color:"#5a6070",flex:1}}>{n.name}</span>
+              <span style={{color:"#b5e8ff"}}>{isFinite(val)?fmt4(val):"…"}</span>
+            </div>
+          );
+        }
         if (n.type === "fnDef") {
           return <FnDefRow key={n.id} node={n} scope={scope} onUpdateNode={onUpdateNode}/>;
         }

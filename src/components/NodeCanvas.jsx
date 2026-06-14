@@ -9,7 +9,7 @@ import { buildNodePalette, NODE_DARK } from "../theme/tokens.jsx";
 // rendering and for marquee hit-testing.
 function nodeHeight(node, nodes){
   if(isCameraType(node.type)) return Math.max(56,40+(node.attachments?.filter(a=>catOf(nodes[a]?.type)==="plot").length||0)*18+8);
-  return (node.type==="slider"||node.type==="animator")?44:40;
+  return (node.type==="slider"||node.type==="animator"||node.type==="expr")?44:40;
 }
 
 function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMany, onConnect, onDisconnect, onDelete, onMarqueeSelect, onPasteAtWorld, onToggleEnabled, onDetach, animValsRef, theme, projectNode }) {
@@ -352,6 +352,7 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
       {isCamera&&(node.attachments||[]).filter(a=>catOf(nodes[a]?.type)==="plot").map((cid,i)=>{const child=nodes[cid];if(!child)return null;const m=TYPE_META[child.type]||{};return<g key={cid} style={{pointerEvents:"none"}}><rect x={11} y={35+i*18} width={6} height={6} rx={1.5} fill={child.color||m.tc||"#556"} opacity={0.9}/><text x={23} y={43+i*18} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace">{child.label}</text></g>;})}
       {/* Scalars/animators show only their live value — no expression dump. */}
       {node.type==="slider"&&<text x={12} y={39} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(node.value||0).toFixed(3)}</text>}
+      {node.type==="expr"&&<text x={12} y={39} fontSize={12.5} fill={"#b5e8ff"} fontFamily="monospace" style={{pointerEvents:"none"}} opacity={0.75}>{(node.props?.expr||"").slice(0,18)}{(node.props?.expr||"").length>18?"…":""}</text>}
       {node.type==="animator"&&<text x={12} y={39} fontSize={13.5} fill={node.playing?"#f84":pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(displayVal).toFixed(3)} {node.playing?"▶":"■"}</text>}
       {isScalar&&connectedCamCount>0&&<text x={NW-16} y={39} fontSize={13} fill={pal.nodeSub} fontFamily="monospace" textAnchor="end" style={{pointerEvents:"none"}}>→{connectedCamCount}</text>}
       {/* Ports */}

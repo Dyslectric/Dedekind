@@ -15,7 +15,7 @@
 // it. Scalars no longer attach straight to cameras — only to whatever relies on
 // them (a function, plot, domain, or a camera prop that references the scalar).
 const CATEGORY = {
-  constant:"scalar", slider:"scalar", animator:"scalar",
+  constant:"scalar", slider:"scalar", animator:"scalar", expr:"scalar",
   fnDef:"function",
   domain:"domain",
   curve3d:"plot", fn1d:"plot", surf3d:"plot", paramsurf:"plot", paramvol:"plot", plane:"plot",
@@ -38,7 +38,7 @@ const CATEGORY = {
 };
 const catOf = (t) => CATEGORY[t] || "plot";
 // Legacy helpers kept as category checks so existing call-sites keep working.
-const SCALAR_TYPES = new Set(["constant","slider","animator"]);   // pure values
+const SCALAR_TYPES = new Set(["constant","slider","animator","expr"]);   // pure values
 const isScalarType = (t) => catOf(t)==="scalar";
 const isFunctionType = (t) => catOf(t)==="function";
 const isDomainType = (t) => catOf(t)==="domain";
@@ -47,7 +47,7 @@ const isCameraType = (t) => catOf(t)==="camera";
 // Which source categories may attach to which destination category.
 const ATTACH_RULES = {
   scalar:   new Set(["function","plot","domain","camera","scalar","map"]),
-  function: new Set(["function","plot","map"]),
+  function: new Set(["function","plot","map","scalar"]),
   domain:   new Set(["plot"]),
   // A map (fnMap) feeds a transformer (plot) or composes into another map.
   map:      new Set(["plot","map"]),

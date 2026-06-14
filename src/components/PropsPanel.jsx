@@ -91,7 +91,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         </div>
         <div style={{marginTop:6,display:"flex",gap:5}}>
           <input value={node.label} onChange={e=>onChange({label:e.target.value})} style={{...S.inp,flex:1}} placeholder="label"/>
-          {isScalar&&<input value={node.name||""} onChange={e=>onChange({name:e.target.value})} style={{...S.inp,width:42}} placeholder="var"/>}
+          {(isScalar||node.type==="fnDef")&&<input value={node.name||""} onChange={e=>{const v=e.target.value.replace(/[^a-zA-Z0-9_]/g,"");if(!v||/^[a-zA-Z]/.test(v))onChange({name:v});}} style={{...S.inp,width:60}} placeholder={node.type==="fnDef"?"name":"var"}/>}
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"10px 12px"}}>
@@ -144,7 +144,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         </Sec>}
 
         {/* ── Inputs (upstream dependencies) for functions / plots / domains ── */}
-        {!isCamera && !isProject && !isScalar && canConsume(node.type) &&<Sec title="Inputs">
+        {!isCamera && !isProject && (!isScalar || node.type==="expr" || node.type==="fnDef") && canConsume(node.type) &&<Sec title="Inputs">
           <div style={{fontSize:14,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
             {catOf(node.type)==="plot"?"Attach functions, a domain, or scalars this plot uses.":catOf(node.type)==="function"?"Attach scalars this function depends on.":"Attach scalars that drive this domain."}
           </div>
@@ -163,6 +163,21 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
 
         {/* ── Scalar node params ── */}
         {node.type==="constant"&&<Sec title="Value"><PR label="val"><EI v={node.props.value} sc={scope} onChange={v=>onChange({props:{...node.props,value:v}})}/></PR></Sec>}
+        {node.type==="expr"&&<Sec title="Expression">
+          <PR label={`${node.name||"e"} =`}><EI v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
+          <div style={{marginTop:6,padding:"6px 9px",background:"#050e18",borderRadius:4,border:"1px solid #0c1e2e",fontSize:14,color:"#7ac0d8",fontFamily:"monospace",lineHeight:1.9}}>
+            {(()=>{
+              const val=resolveNum(node.props.expr,scope,NaN);
+              if(!node.name)return<span style={{color:"#1a3040"}}>set a variable name above</span>;
+              if(!isFinite(val))return<span style={{color:"#1a3040"}}>…</span>;
+              const fmtd=Math.abs(val)>=1000||(Math.abs(val)<0.001&&val!==0)?val.toExponential(4):Number(val.toPrecision(6)).toString();
+              return<span><span style={{color:"#3a7090"}}>{node.name} =</span> <span style={{color:"#8fd8f8"}}>{fmtd}</span></span>;
+            })()}
+          </div>
+          <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
+            A named scalar computed from an expression — can reference attached sliders, animators, constants, other expressions, and functions. Wire scalar/function nodes in via the Inputs section.
+          </div>
+        </Sec>}
         {node.type==="slider"&&<Sec title="Slider">
           <PR label="min"><EI v={node.props.min} sc={scope} onChange={v=>onChange({props:{...node.props,min:v}})}/></PR>
           <PR label="max"><EI v={node.props.max} sc={scope} onChange={v=>onChange({props:{...node.props,max:v}})}/></PR>
