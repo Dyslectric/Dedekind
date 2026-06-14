@@ -1,4 +1,4 @@
-# Dedekind
+# [Dedekind](https://dedekind.app)
 
 **Everything's in Dedekind** -- a node-graph editor for visualizing math in 2D and 3D.
 
