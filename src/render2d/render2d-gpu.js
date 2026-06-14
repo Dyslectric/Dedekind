@@ -1,0 +1,462 @@
+import * as THREE from "three";
+import { resolveNum, safeEval, linspace } from "../core/math.js";
+import { catOf } from "../core/taxonomy.js";
+import { resolveScope, plotDomain, buildGlobalScope } from "../core/scope.js";
+import { applyDomain } from "../geometry/rebuild.js";
+import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
+import { integrateFlow } from "../geometry/flow.js";
+import { normalizedNode } from "../nodes/normalize.js";
+import { sampleParamSpace } from "../geometry/transformer.js";
+import { hexToThree } from "../geometry/three-helpers.js";
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function nicestep(r){ if(!r||!isFinite(r))return 1; const m=Math.pow(10,Math.floor(Math.log10(Math.abs(r)))); const f=r/m; return m*(f<2?1:f<5?2:5); }
+function fmt(v){ if(Math.abs(v)<1e-9)return"0"; if(Math.abs(v)>=1000||Math.abs(v)<0.01)return v.toExponential(1); return parseFloat(v.toPrecision(3)).toString(); }
+
+function hexRGB(hex){
+  hex=(hex||"#888").replace("#","");
+  if(hex.length===3)hex=hex.split("").map(c=>c+c).join("");
+  return[parseInt(hex.slice(0,2),16)/255,parseInt(hex.slice(2,4),16)/255,parseInt(hex.slice(4,6),16)/255];
+}
+function hexColor(hex){ const[r,g,b]=hexRGB(hex); return new THREE.Color(r,g,b); }
+
+// Flat line material for 2D — simple LineBasicMaterial. depthTest off so
+// everything draws regardless of z-order.
+function lineMat(hex, opacity=1, dashed=false){
+  const m = dashed
+    ? new THREE.LineDashedMaterial({color:hexToThree(hex), dashSize:0.12, gapSize:0.08, transparent:opacity<1, opacity})
+    : new THREE.LineBasicMaterial({color:hexToThree(hex), transparent:opacity<1, opacity});
+  m.depthTest=false;
+  return m;
+}
+
+// Build a flat polyline from [x,y] pairs. Breaks on null/NaN.
+function buildLine2D(pts2d, color, opacity=1){
+  const segs=[]; let cur=[];
+  for(const p of pts2d){
+    if(p&&isFinite(p[0])&&isFinite(p[1])) cur.push(new THREE.Vector3(p[0],p[1],0));
+    else{ if(cur.length>1)segs.push(cur); cur=[]; }
+  }
+  if(cur.length>1) segs.push(cur);
+  return segs.map(s=>{
+    const g=new THREE.BufferGeometry().setFromPoints(s);
+    return new THREE.Line(g, lineMat(color,opacity));
+  });
+}
+
+// Build a thick arrow as a filled triangle mesh: a rectangular shaft plus a
+// triangular head. shaft `thickness` and `headLen` are in WORLD units; callers
+// derive them from screen pixels (px(...)) so the arrow keeps a constant on-
+// screen weight at any zoom. A filled mesh is used (not GL lines) because
+// WebGL ignores LineBasicMaterial.linewidth, so lines can't be thickened.
+function buildArrow2D(bx,by,dx,dy, color, headLen=0.15, thickness=null){
+  const len=Math.hypot(dx,dy);
+  if(len<1e-9) return null;
+  const ux=dx/len, uy=dy/len;     // unit along
+  const nx=-uy, ny=ux;            // unit normal
+  const th=(thickness!=null?thickness:headLen*0.34);
+  const half=th*0.5;
+  const headW=th*2.2;             // head half-width relative to shaft
+  const hw=headW*0.5;
+  // shaft runs from base to where the head begins
+  const sLen=Math.max(0,len-headLen);
+  const ex=bx+dx, ey=by+dy;           // tip
+  const sx2=bx+ux*sLen, sy2=by+uy*sLen; // shaft end / head base
+  const pos=[];
+  const push=(x,y)=>pos.push(x,y,0);
+  // shaft quad: (base±n) → (shaftEnd±n), two triangles
+  const b1x=bx+nx*half, b1y=by+ny*half;
+  const b2x=bx-nx*half, b2y=by-ny*half;
+  const e1x=sx2+nx*half, e1y=sy2+ny*half;
+  const e2x=sx2-nx*half, e2y=sy2-ny*half;
+  push(b1x,b1y); push(e1x,e1y); push(e2x,e2y);
+  push(b1x,b1y); push(e2x,e2y); push(b2x,b2y);
+  // head triangle: tip + two base corners at the head base
+  const h1x=sx2+nx*hw, h1y=sy2+ny*hw;
+  const h2x=sx2-nx*hw, h2y=sy2-ny*hw;
+  push(h1x,h1y); push(ex,ey); push(h2x,h2y);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide});
+  return new THREE.Mesh(g,mat);
+}
+
+// Small circle sprite as a triangle-fan disk (good for points).
+function buildDisk2D(cx,cy, r, color, opacity=1){
+  const N=12; const pts=[];
+  for(let i=0;i<=N;i++){
+    const a=i/N*Math.PI*2;
+    pts.push(new THREE.Vector2(cx+r*Math.cos(a),cy+r*Math.sin(a)));
+  }
+  const shape=new THREE.Shape(pts);
+  const g=new THREE.ShapeGeometry(shape);
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),transparent:opacity<1,opacity,depthTest:false});
+  return new THREE.Mesh(g,mat);
+}
+
+// ── plot geometry builders ────────────────────────────────────────────────────
+
+function build2DFn1d(np, pscope, color, wxMin, wxMax){
+  const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
+  const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,600)));
+  const pts=linspace(xMin,xMax,res).map(x=>{
+    const y=safeEval(np.expr,{...pscope,x});
+    return (y!=null&&isFinite(y)) ? [x,y] : null;
+  });
+  return buildLine2D(pts, color);
+}
+
+function build2DCurve3d(np, pscope, color){
+  const tMin=resolveNum(np.tMin,pscope,0), tMax=resolveNum(np.tMax,pscope,Math.PI*2);
+  const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,400)));
+  const pts=linspace(tMin,tMax,res).map(t=>{
+    const x=safeEval(np.exprX,{...pscope,t}), y=safeEval(np.exprY,{...pscope,t});
+    return (x!=null&&y!=null&&isFinite(x)&&isFinite(y)) ? [x,y] : null;
+  });
+  return buildLine2D(pts, color);
+}
+
+function build2DPointSeq(np, pscope, color, px){
+  const pts=parsePointSeq(np.points||np.data, pscope);
+  const rPx=resolveNum(np.radius,pscope,4);
+  const r=px(rPx); // constant on-screen radius
+  const objs=[];
+  if(np.drawLines!==false && pts.length>1){
+    objs.push(...buildLine2D(pts.map(([x,y])=>[x,y]), color));
+  }
+  for(const [x,y] of pts){
+    objs.push(buildDisk2D(x,y,r,color));
+  }
+  return objs;
+}
+
+function build2DPoint(np, pscope, color, px){
+  const x=resolveNum(np.x,pscope,0), y=resolveNum(np.y,pscope,0);
+  return [buildDisk2D(x,y,px(5),color)];
+}
+
+function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
+  const gridN=Math.max(3,Math.min(30,resolveNum(np.gridN,pscope,12)));
+  const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
+  const yMin=resolveNum(np.yMin,pscope,wyMin), yMax=resolveNum(np.yMax,pscope,wyMax);
+  const xs=linspace(xMin,xMax,gridN), ys=linspace(yMin,yMax,gridN);
+  let maxMag=0; const raw=[];
+  for(const x of xs) for(const y of ys){
+    const sc={...pscope,x,y};
+    const vx=safeEval(np.exprX,sc)??0, vy=safeEval(np.exprY,sc)??0;
+    const mag=Math.sqrt(vx*vx+vy*vy); raw.push({x,y,vx,vy,mag}); if(mag>maxMag)maxMag=mag;
+  }
+  if(!maxMag) return [];
+  const spacing=Math.min((xMax-xMin)/(gridN-1||1),(yMax-yMin)/(gridN-1||1));
+  const L=spacing*0.42;
+  const head=px(11); // constant on-screen arrowhead length
+  const thick=px(2.6); // constant on-screen shaft thickness
+  const objs=[];
+  for(const {x,y,vx,vy,mag} of raw){
+    if(mag<1e-10) continue;
+    const scale=np.normalize!==false ? L : L*(mag/maxMag);
+    const nx=vx/mag, ny=vy/mag;
+    const a=buildArrow2D(x,y, nx*scale, ny*scale, color, Math.min(head, scale*0.5), thick);
+    if(a) objs.push(a);
+  }
+  return objs;
+}
+
+function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
+  if(!fnNode) return [];
+  const tp=tNode.props||{};
+  const inDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1"))));
+  const outDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.outDim||"1"))));
+  const outs=[fnNode.props.out0,fnNode.props.out1,fnNode.props.out2,fnNode.props.out3].slice(0,outDim).map(e=>e||"0");
+  const AX={x:0,y:1,z:2,none:-1};
+  const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2].map(a=>AX[a??"none"]);
+  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2].map(a=>AX[a??"none"]);
+  const evalOut=(inVec)=>{const sc={...pscope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0,w:inVec[3]??0};return outs.map(e=>{const v=safeEval(e,sc);return v==null||!isFinite(v)?0:v;});};
+  const useColor=(tp.colorMode||"off")==="gradient"||outDim>=4;
+  const vecDim=useColor?Math.max(1,Math.min(3,outDim-1)):Math.min(3,outDim);
+  const loC=hexRGB(tp.colorLo||"#3a6aff"), hiC=hexRGB(tp.colorHi||"#ff5ea8");
+  const ramp=(t)=>{t=t<0?0:t>1?1:t;return`#${[loC,hiC].reduce((acc,_,i)=>{const c=Math.round(loC[i]*255+(hiC[i]-loC[i])*255*t);return acc+(c<16?"0":"")+c.toString(16);},"")}`;}
+
+  // build samples
+  let samples=[];
+  if(tp.domainSrc==="param"&&paramNode){
+    const pp=paramNode.props||{};
+    const deg=Math.max(1,Math.min(2,Math.round(Number(pp.degree||"1"))));
+    if(deg>=2){
+      const ur=Math.max(2,Math.min(60,resolveNum(pp.uRes,pscope,30))),vr=Math.max(2,Math.min(60,resolveNum(pp.vRes,pscope,20)));
+      for(const v of linspace(resolveNum(pp.vMin,pscope,0),resolveNum(pp.vMax,pscope,Math.PI),vr))
+        for(const u of linspace(resolveNum(pp.uMin,pscope,0),resolveNum(pp.uMax,pscope,Math.PI*2),ur))
+          samples.push([safeEval(pp.exprXu,{...pscope,u,v})??0,safeEval(pp.exprYu,{...pscope,u,v})??0,0]);
+    } else {
+      const res=Math.max(2,Math.min(600,resolveNum(pp.res,pscope,200)));
+      for(const t of linspace(resolveNum(pp.tMin,pscope,0),resolveNum(pp.tMax,pscope,Math.PI*2),res))
+        samples.push([safeEval(pp.exprX,{...pscope,t})??0,safeEval(pp.exprY,{...pscope,t})??0,0]);
+    }
+  } else {
+    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?30:8), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
+    const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
+    if(inDim===1){ for(const x of linspace(aMin,aMax,res)) samples.push([x,0,0]); }
+    else {
+      const bMin=resolveNum(tp.bMin,pscope,-5),bMax=resolveNum(tp.bMax,pscope,5);
+      const xs=linspace(aMin,aMax,res), ys=linspace(bMin,bMax,res);
+      if(inDim===2){ for(const y of ys) for(const x of xs) samples.push([x,y,0]); }
+      else { const cMin=resolveNum(tp.cMin,pscope,-3),cMax=resolveNum(tp.cMax,pscope,3); for(const z of linspace(cMin,cMax,Math.min(res,8))) for(const x of xs) for(const y of ys) samples.push([x,y,z]); }
+    }
+  }
+
+  const place=(inVec,outVec)=>{const w=[0,0]; for(let k=0;k<inDim;k++){if(inAx[k]===0)w[0]=inVec[k]??0; else if(inAx[k]===1)w[1]=inVec[k]??0;} for(let k=0;k<outDim;k++){if(outAx[k]===0)w[0]=outVec[k]??0; else if(outAx[k]===1)w[1]=outVec[k]??0;} return w;};
+
+  const objs=[];
+  if(tp.mode==="field"){
+    let maxMag=0, cMin=Infinity, cMax=-Infinity; const raw=[];
+    for(const inVec of samples){
+      const outVec=evalOut(inVec);
+      const base=[0,0]; for(let k=0;k<inDim;k++){if(inAx[k]===0)base[0]=inVec[k]??0; else if(inAx[k]===1)base[1]=inVec[k]??0;}
+      const vec=[0,0]; for(let k=0;k<vecDim;k++){if(outAx[k]===0)vec[0]=outVec[k]??0; else if(outAx[k]===1)vec[1]=outVec[k]??0;}
+      const m=Math.hypot(vec[0],vec[1]); if(m>maxMag)maxMag=m;
+      let cval=0;
+      if(useColor){ const cexpr=tp.colorExpr; if(cexpr&&cexpr!==""){ const csc={...pscope,x:inVec[0]??0,y:inVec[1]??0,out0:outVec[0]??0,out1:outVec[1]??0,out2:outVec[2]??0,out3:outVec[3]??0}; const cv=safeEval(cexpr,csc); cval=cv==null||!isFinite(cv)?0:cv; } else cval=outVec[outDim-1]??0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
+      raw.push({base,vec,m,cval});
+    }
+    maxMag=maxMag||1;
+    const alen=resolveNum(tp.arrowLen,pscope,0.5);
+    if(useColor){ if(tp.colorMin!==""&&tp.colorMin!=null)cMin=resolveNum(tp.colorMin,pscope,cMin); if(tp.colorMax!==""&&tp.colorMax!=null)cMax=resolveNum(tp.colorMax,pscope,cMax); }
+    const cspan=(cMax-cMin)||1;
+    const head=px(11);
+    const thick=px(2.6);
+    for(const {base,vec,m,cval} of raw){
+      if(m<1e-9) continue;
+      const L=alen*(tp.normalize!==false?1:Math.min(1,m/maxMag));
+      const dx=vec[0]/m*L, dy=vec[1]/m*L;
+      const col=useColor?ramp((cval-cMin)/cspan):color;
+      const a=buildArrow2D(base[0],base[1],dx,dy,col,Math.min(head,L*0.5),thick);
+      if(a) objs.push(a);
+    }
+    return objs;
+  }
+  // graph mode
+  if(inDim===1){
+    const pts2d=samples.map(inVec=>{ const w=place(inVec,evalOut(inVec)); return isFinite(w[0])&&isFinite(w[1])?w:null; });
+    return buildLine2D(pts2d, color);
+  }
+  // 2+ inputs: scatter dots
+  for(const inVec of samples){
+    const w=place(inVec,evalOut(inVec));
+    if(isFinite(w[0])&&isFinite(w[1])) objs.push(buildDisk2D(w[0],w[1],0.025,color));
+  }
+  return objs;
+}
+
+function build2DGlyphField(np, pscope, color, px){
+  const pairs=parseGlyphField(np.pairs||np.data, pscope);
+  const lenMode=np.lenMode||(np.normalize===false?"scaled":"uniform");
+  const alen=resolveNum(np.arrowLen,pscope,0.5);
+  let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1]);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
+  const head=px(11);
+  const thick=px(2.6);
+  const objs=[];
+  for(const {pos,vec} of pairs){
+    const m=Math.hypot(vec[0],vec[1]); if(m<1e-9) continue;
+    const L=lenMode==="raw"?m:lenMode==="scaled"?alen*Math.min(1,m/maxMag):alen;
+    const dx=vec[0]/m*L, dy=vec[1]/m*L;
+    const a=buildArrow2D(pos[0],pos[1],dx,dy,color,Math.min(head,L*0.5),thick);
+    if(a) objs.push(a);
+  }
+  return objs;
+}
+
+function build2DFlow(np, rawNode, nodes, pscope, color){
+  let fnNode=null, seedNode=null;
+  for(const depId of (rawNode.attachments||[])){
+    const d=nodes[depId]; if(!d)continue;
+    if(d.type==="fnMap"&&!fnNode)fnNode=d;
+    else if((d.type==="paramSpace"||d.type==="points")&&!seedNode)seedNode=d;
+  }
+  if(!fnNode||!seedNode) return [];
+  const steps=Math.max(2,Math.min(2000,resolveNum(np.steps,pscope,500)));
+  const stepSize=resolveNum(np.stepSize,pscope,0.02);
+  const field={exprX:fnNode.props.out0||"0",exprY:fnNode.props.out1||"0",exprZ:fnNode.props.out2||"0"};
+  const seedInfo=seedNode.type==="points"
+    ?{pts:parsePointSeq(seedNode.props.data,pscope),grid:false}
+    :sampleParamSpace(seedNode,pscope);
+  const trajs=(seedInfo.pts||[]).map(s=>integrateFlow(s,field.exprX,field.exprY,field.exprZ,steps,stepSize,pscope));
+  const seedDeg=seedNode.type==="paramSpace"?Math.max(1,Math.min(2,Math.round(Number(seedNode.props.degree||"1")))):0;
+  const fillArea=seedDeg===1&&np.output!=="lines"&&trajs.length>=2;
+  const objs=[];
+  if(fillArea){
+    // filled region between adjacent trajectories
+    for(let i=0;i<trajs.length-1;i++){
+      const a=trajs[i], b=trajs[i+1]; const m=Math.min(a.length,b.length); if(m<2) continue;
+      const pts2=[];
+      for(let s=0;s<m;s++){ const q=a[s]; if(q&&isFinite(q[0])&&isFinite(q[1]))pts2.push(new THREE.Vector2(q[0],q[1])); }
+      for(let s=m-1;s>=0;s--){ const q=b[s]; if(q&&isFinite(q[0])&&isFinite(q[1]))pts2.push(new THREE.Vector2(q[0],q[1])); }
+      if(pts2.length<3) continue;
+      const shape=new THREE.Shape(pts2);
+      const g=new THREE.ShapeGeometry(shape);
+      const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),transparent:true,opacity:0.5,depthTest:false,side:THREE.DoubleSide});
+      objs.push(new THREE.Mesh(g,mat));
+    }
+  } else {
+    for(const pts of trajs){
+      objs.push(...buildLine2D(pts.map(q=>q&&isFinite(q[0])&&isFinite(q[1])?[q[0],q[1]]:null), color));
+    }
+  }
+  return objs;
+}
+
+// ── main scene builder ────────────────────────────────────────────────────────
+// Builds ONLY the plot geometry (curves, fills, arrows, points) as GPU objects.
+// Grid, axes, and tick labels are drawn separately on the 2D overlay so they
+// stay crisp and constant-size. `pxPerWorld` is the current pixels-per-world-unit
+// scale; arrow heads and point disks use it so they keep a constant on-screen
+// size as you zoom. Returns { plotObjs }.
+function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMax, theme, pxPerWorld){
+  const ppw = pxPerWorld || 40;
+  // A world-space length that renders as ~targetPx pixels.
+  const px = (targetPx)=> targetPx/ppw;
+
+  const globalSc=buildGlobalScope(nodes,animVals||{});
+  const plotObjs=[];
+
+  for(const childId of (camNode.attachments||[])){
+    const rawNode=nodes[childId]; if(!rawNode) continue;
+    if(catOf(rawNode.type)!=="plot") continue;
+    const node=normalizedNode(rawNode);
+    const own=animVals?resolveScope(childId,nodes,animVals):null;
+    const pscope={...globalSc,...scope,...(own&&Object.keys(own).length?own:{})};
+    const dom=plotDomain(childId,nodes);
+    const np=dom?applyDomain(node.props,node.type,dom):node.props;
+    const color=rawNode.color||"#5b9cf6";
+
+    let built=[];
+    if(node.type==="fn1d") built=build2DFn1d(np,pscope,color,wxMin,wxMax);
+    else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color);
+    else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px);
+    else if(node.type==="point") built=build2DPoint(np,pscope,color,px);
+    else if(node.type==="quiver2d") built=build2DQuiver(np,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
+    else if(rawNode.type==="transformer"){
+      let fnNode=null,paramNode=null;
+      for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(!d)continue; if(d.type==="fnMap"&&!fnNode)fnNode=d; else if(d.type==="paramSpace"&&!paramNode)paramNode=d; }
+      built=build2DTransformer(rawNode,fnNode,paramNode,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
+    }
+    else if(node.type==="glyphField") built=build2DGlyphField(np,pscope,color,px);
+    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color);
+    else if(node.type==="plane"){
+      const nx=resolveNum(np.normalX,pscope,0),ny=resolveNum(np.normalY,pscope,1);
+      const cx2=resolveNum(np.centerX,pscope,0),cy2=resolveNum(np.centerY,pscope,0);
+      const y0=cy2-(nx!==0?(wxMin-cx2)*ny/nx:0), y1=cy2-(nx!==0?(wxMax-cx2)*ny/nx:0);
+      built=buildLine2D([[wxMin,y0],[wxMax,y1]], color, 0.8);
+    }
+
+    for(const o of built) o._plotId=childId;
+    plotObjs.push(...built);
+  }
+
+  return {plotObjs};
+}
+
+// ── 2D chrome rendering (split into two layers) ──────────────────────────────
+// The grid + axes + background are drawn on a canvas BEHIND the WebGL layer, so
+// plot curves and arrows always sit on top of the grid (the grid never occludes
+// them). Number labels are drawn on a separate canvas ON TOP so they stay
+// readable over everything. Both redraw from the live view each frame, keeping
+// lines a crisp 1px and labels a fixed pixel size regardless of zoom.
+//   view = {cx, cy, hh}  (world centre + half-height in world units)
+//   W,H  = canvas pixel (CSS) size
+
+function _viewMap(view, W, H){
+  const hh=view.hh, hw=hh*(W/H||1);
+  const wxMin=view.cx-hw, wxMax=view.cx+hw;
+  const wyMin=view.cy-hh, wyMax=view.cy+hh;
+  const sx=W/(wxMax-wxMin), sy=H/(wyMax-wyMin);
+  return {
+    wxMin,wxMax,wyMin,wyMax,
+    toSx:(wx)=>(wx-wxMin)*sx,
+    toSy:(wy)=>H-(wy-wyMin)*sy,
+    // major grid spacing — span/6 gives a calmer, less dense grid than span/10
+    gStep:nicestep(Math.max(wxMax-wxMin,wyMax-wyMin)/6),
+  };
+}
+
+// BACKGROUND layer: clears to the viewport bg, then draws grid + axes.
+function drawGrid2D(ctx, view, W, H, theme){
+  if(!W||!H) return;
+  const dpr=ctx._dpr||1;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const bg=theme.bg2d||"#07091a";
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+  const {wxMin,wxMax,wyMin,wyMax,toSx,toSy,gStep}=_viewMap(view,W,H);
+  const subStep=gStep/4; // coarser subgrid (was /5)
+
+  const gridColor=theme.grid2d||"#181d32";
+  const axisColor=theme.axes2d||"#283a6a";
+
+  if(theme.__showGrid!==false){
+    // minor grid (fainter)
+    ctx.lineWidth=1; ctx.strokeStyle=gridColor; ctx.globalAlpha=0.3;
+    ctx.beginPath();
+    for(let gx=Math.ceil(wxMin/subStep)*subStep; gx<=wxMax; gx+=subStep){
+      const px=Math.round(toSx(gx))+0.5; ctx.moveTo(px,0); ctx.lineTo(px,H);
+    }
+    for(let gy=Math.ceil(wyMin/subStep)*subStep; gy<=wyMax; gy+=subStep){
+      const py=Math.round(toSy(gy))+0.5; ctx.moveTo(0,py); ctx.lineTo(W,py);
+    }
+    ctx.stroke();
+    // major grid (brighter)
+    ctx.globalAlpha=0.8; ctx.beginPath();
+    for(let gx=Math.ceil(wxMin/gStep)*gStep; gx<=wxMax; gx+=gStep){
+      const px=Math.round(toSx(gx))+0.5; ctx.moveTo(px,0); ctx.lineTo(px,H);
+    }
+    for(let gy=Math.ceil(wyMin/gStep)*gStep; gy<=wyMax; gy+=gStep){
+      const py=Math.round(toSy(gy))+0.5; ctx.moveTo(0,py); ctx.lineTo(W,py);
+    }
+    ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  if(theme.__showAxes!==false){
+    ctx.strokeStyle=axisColor; ctx.lineWidth=1.5;
+    const ax=Math.round(toSx(0))+0.5, ay=Math.round(toSy(0))+0.5;
+    ctx.beginPath();
+    if(ax>=0&&ax<=W){ ctx.moveTo(ax,0); ctx.lineTo(ax,H); }
+    if(ay>=0&&ay<=H){ ctx.moveTo(0,ay); ctx.lineTo(W,ay); }
+    ctx.stroke();
+  }
+}
+
+// TOP layer: transparent, draws only the number labels.
+function drawLabels2D(ctx, view, W, H, theme){
+  if(!W||!H) return;
+  const dpr=ctx._dpr||1;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+
+  const {wxMin,wxMax,wyMin,wyMax,toSx,toSy,gStep}=_viewMap(view,W,H);
+  const labelColor=theme.label2d||theme.axes2d||"#46527a";
+
+  ctx.fillStyle=labelColor;
+  ctx.font="11px ui-monospace, monospace";
+  ctx.textBaseline="top";
+  const axOnScreen=toSx(0), ayOnScreen=toSy(0);
+  const labelY=Math.min(H-14, Math.max(2, ayOnScreen+3));
+  const labelX=Math.min(W-32, Math.max(4, axOnScreen+3));
+  ctx.textAlign="left";
+  for(let gx=Math.ceil(wxMin/gStep)*gStep; gx<=wxMax; gx+=gStep){
+    if(Math.abs(gx)<gStep*0.001) continue;
+    const px=toSx(gx);
+    if(px<14||px>W-4) continue;
+    ctx.fillText(fmt(gx), px+2, labelY);
+  }
+  for(let gy=Math.ceil(wyMin/gStep)*gStep; gy<=wyMax; gy+=gStep){
+    if(Math.abs(gy)<gStep*0.001) continue;
+    const py=toSy(gy);
+    if(py<6||py>H-12) continue;
+    ctx.fillText(fmt(gy), labelX, py+2);
+  }
+  if(axOnScreen>14 && axOnScreen<W && ayOnScreen>0 && ayOnScreen<H-12){
+    ctx.fillText("0", axOnScreen+3, Math.min(H-14, ayOnScreen+3));
+  }
+}
+
+export { build2DScene, drawGrid2D, drawLabels2D, hexColor, nicestep, fmt };

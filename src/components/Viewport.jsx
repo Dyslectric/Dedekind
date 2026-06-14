@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { catOf, isCameraType } from "../core/taxonomy.js";
 import { collectScalarDeps } from "../core/scope.js";
 import { rebuildScene } from "../geometry/rebuild.js";
-import { render2D } from "../render2d/render2d.js";
+import { build2DScene, drawGrid2D, drawLabels2D } from "../render2d/render2d-gpu.js";
 import { disposeObjs, hexToThree } from "../geometry/three-helpers.js";
 import { useUI } from "../theme/tokens.jsx";
 import { buildTheme, DEFAULT_THEME } from "../theme/presets.js";
@@ -266,58 +266,174 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
   );
 }
 
-// ── 2D Viewport ──────────────────────────────────────────────────────────────
+// ── 2D Viewport (GPU — Three.js orthographic + 2D overlay chrome) ────────────
+// Plot curves/fills/arrows live on the GPU; grid, axes and number labels are
+// drawn on a 2D <canvas> overlay so they stay a crisp constant size at any zoom.
+// Two dirty flags: `plotDirty` rebuilds the (expensive) GPU plot geometry only
+// when nodes/scope change or an animator advances; `viewDirty` just re-renders
+// and redraws the cheap overlay on pan/zoom/resize.
 function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode }) {
-  const mountRef=useRef(null),canvasRef=useRef(null);
-  const stRef=useRef({camNode,nodes,scope,theme,dirty:true});
-  const rafRef=useRef(null),interRef=useRef({down:false,lx:0,ly:0});
+  const mountRef=useRef(null);
+  const stRef=useRef({camNode,nodes,scope,theme,animValsRef,plotDirty:true,viewDirty:true});
+  const rafRef=useRef(null);
+  const viewRef=useRef({cx:0,cy:0,hh:5}); // world centre + half-height (world units)
+  const interRef=useRef({down:false,lx:0,ly:0});
+
   useEffect(()=>{
-    const container=mountRef.current;if(!container)return;
-    const canvas=document.createElement("canvas");canvas.style.cssText="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair";
-    canvas._view={panX:0,panY:0,zoom:1};canvasRef.current=canvas;container.appendChild(canvas);
-    const resize=()=>{canvas.width=container.clientWidth;canvas.height=container.clientHeight;stRef.current.dirty=true;};
-    const ro=new ResizeObserver(resize);ro.observe(container);resize();
-    const loop=()=>{rafRef.current=requestAnimationFrame(loop);
-      const ns=stRef.current.nodes, cn=stRef.current.camNode;
+    const container=mountRef.current; if(!container)return;
+
+    // Three stacked layers (bottom → top):
+    //   1. grid canvas   — background + grid + axes (so plots draw OVER the grid)
+    //   2. WebGL canvas  — plot curves / fills / arrows (transparent clear)
+    //   3. label canvas  — number labels + pointer input (always on top, readable)
+    const gridCv=document.createElement("canvas");
+    gridCv.style.cssText="position:absolute;top:0;left:0;width:100%;height:100%;display:block";
+    container.appendChild(gridCv);
+    const gctx=gridCv.getContext("2d");
+
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,premultipliedAlpha:false});
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setClearColor(0x000000,0); // transparent so the grid shows through
+    renderer.domElement.style.cssText="position:absolute;top:0;left:0;width:100%;height:100%;display:block;pointer-events:none";
+    container.appendChild(renderer.domElement);
+
+    const labelCv=document.createElement("canvas");
+    labelCv.style.cssText="position:absolute;top:0;left:0;width:100%;height:100%;display:block;cursor:crosshair";
+    container.appendChild(labelCv);
+    const lctx=labelCv.getContext("2d");
+    const overlay=labelCv; // pointer input target
+
+    const scene=new THREE.Scene();
+    const cam=new THREE.OrthographicCamera(-1,1,1,-1,0.001,100);
+    cam.position.set(0,0,10); cam.lookAt(0,0,0);
+
+    let plotObjs=[];
+    const removeGroup=(arr)=>{ for(const o of arr){ scene.remove(o); o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } arr.length=0; };
+
+    let W=container.clientWidth||400, H=container.clientHeight||300;
+    const dpr=window.devicePixelRatio||1;
+    const resize=()=>{
+      W=container.clientWidth||400; H=container.clientHeight||300;
+      renderer.setSize(W,H,false);
+      for(const [cv,cx] of [[gridCv,gctx],[labelCv,lctx]]){
+        cv.width=W*dpr; cv.height=H*dpr;
+        cv.style.width=W+"px"; cv.style.height=H+"px";
+        cx._dpr=dpr;
+      }
+      stRef.current.viewDirty=true; stRef.current.plotDirty=true;
+    };
+    const ro=new ResizeObserver(resize); ro.observe(container); resize();
+
+    const extents=()=>{
+      const v=viewRef.current;
+      const hw=v.hh*(W/H||1);
+      return{wxMin:v.cx-hw,wxMax:v.cx+hw,wyMin:v.cy-v.hh,wyMax:v.cy+v.hh};
+    };
+    const pxPerWorld=()=> (H/(2*viewRef.current.hh)); // pixels per world unit (y)
+    const syncCam=()=>{
+      const{wxMin,wxMax,wyMin,wyMax}=extents();
+      cam.left=wxMin; cam.right=wxMax; cam.bottom=wyMin; cam.top=wyMax;
+      cam.updateProjectionMatrix();
+    };
+
+    const rebuildPlots=()=>{
+      const st=stRef.current;
+      const th=st.theme||DEFAULT_THEME;
+      const{wxMin,wxMax,wyMin,wyMax}=extents();
+      const{plotObjs:po}=build2DScene(
+        st.camNode,st.nodes,st.scope||{},st.animValsRef?.current,
+        wxMin,wxMax,wyMin,wyMax,th,pxPerWorld()
+      );
+      removeGroup(plotObjs); for(const o of po){scene.add(o);plotObjs.push(o);}
+      scene.background=null; // transparent — grid canvas behind provides the bg
+    };
+
+    const redrawChrome=()=>{
+      const st=stRef.current;
+      const th={...(st.theme||DEFAULT_THEME),
+        __showGrid: st.camNode?.props?.showGrid!==false,
+        __showAxes: st.camNode?.props?.showAxes!==false};
+      // custom background override is honoured by the grid layer
+      if(st.camNode?.props?.bgOverride) th.bg2d=st.camNode.props.bgColor;
+      drawGrid2D(gctx, viewRef.current, W, H, th);
+      drawLabels2D(lctx, viewRef.current, W, H, th);
+    };
+
+    const loop=()=>{
+      rafRef.current=requestAnimationFrame(loop);
+      const st=stRef.current;
+      // animator-driven plot updates
+      const ns=st.nodes, cn=st.camNode;
       if(ns&&cn){
         const playing=new Set(); for(const n of Object.values(ns)) if(n.type==="animator"&&n.playing) playing.add(n.id);
         if(playing.size){
-          let live=false; const chk=(id)=>{const d=new Set();collectScalarDeps(id,ns,d,new Set());for(const x of d) if(playing.has(x)) live=true;};
+          let live=false;
+          const chk=(id)=>{const d=new Set();collectScalarDeps(id,ns,d,new Set());for(const x of d) if(playing.has(x)) live=true;};
           chk(cn.id); for(const pid of (cn.attachments||[])) if(catOf(ns[pid]?.type)==="plot") chk(pid);
-          if(live) stRef.current.dirty=true;
+          if(live) st.plotDirty=true;
         }
       }
-      if(!stRef.current.dirty)return;stRef.current.dirty=false;render2D(canvasRef.current,stRef.current.camNode,stRef.current.nodes,stRef.current.scope||{},stRef.current.theme||DEFAULT_THEME,stRef.current.animValsRef?.current);};
+      if(!st.plotDirty && !st.viewDirty) return;
+      syncCam();
+      if(st.plotDirty){ st.plotDirty=false; rebuildPlots(); }
+      st.viewDirty=false;
+      redrawChrome();
+      renderer.render(scene,cam);
+    };
     rafRef.current=requestAnimationFrame(loop);
+
+    // ── interaction (overlay sits on top, receives events) ──
     const ir=interRef.current;
     const onMD=e=>{e.preventDefault();ir.down=true;ir.lx=e.clientX;ir.ly=e.clientY;};
     const onMU=()=>{ir.down=false;};
-    const onMM=e=>{if(!ir.down)return;const v=canvas._view;v.panX+=e.clientX-ir.lx;v.panY+=e.clientY-ir.ly;ir.lx=e.clientX;ir.ly=e.clientY;stRef.current.dirty=true;};
-
-    // Zoom toward the cursor: keep the world point under the mouse fixed on
-    // screen. With cx=W/2+panX, scale'=scale*f, solving cx' so the cursor's
-    // world point stays put gives cx' = mx - (mx-cx)*f  ⇒  panX' = cx' - W/2.
+    const onMM=e=>{
+      if(!ir.down)return;
+      const v=viewRef.current; const hw=v.hh*(W/H||1);
+      v.cx-=(e.clientX-ir.lx)/W*hw*2;
+      v.cy+=(e.clientY-ir.ly)/H*v.hh*2;
+      ir.lx=e.clientX; ir.ly=e.clientY;
+      // pan keeps geometry, only the view changed → also rebuild plots whose
+      // domain auto-fills the view (fn1d/quiver use view extents), so mark both.
+      stRef.current.viewDirty=true; stRef.current.plotDirty=true;
+    };
     const onWheel=e=>{
       e.preventDefault();
-      const v=canvas._view;
-      const f=e.deltaY<0?1.12:0.89;
-      const rect=canvas.getBoundingClientRect();
-      const sx=canvas.width/(rect.width||1), sy=canvas.height/(rect.height||1);
-      const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
-      const cx=canvas.width/2+v.panX, cy=canvas.height/2+v.panY;
-      const cxp=mx-(mx-cx)*f, cyp=my-(my-cy)*f;
-      v.panX=cxp-canvas.width/2;
-      v.panY=cyp-canvas.height/2;
-      v.zoom*=f;
-      stRef.current.dirty=true;
+      const v=viewRef.current; const f=e.deltaY<0?0.88:1.13;
+      const rect=overlay.getBoundingClientRect();
+      const hw=v.hh*(W/H||1);
+      const wx=v.cx+((e.clientX-rect.left)/rect.width-0.5)*hw*2;
+      const wy=v.cy-((e.clientY-rect.top)/rect.height-0.5)*v.hh*2;
+      v.hh=Math.max(1e-4,Math.min(1e6,v.hh*f));
+      const nhw=v.hh*(W/H||1);
+      v.cx=wx-((e.clientX-rect.left)/rect.width-0.5)*nhw*2;
+      v.cy=wy+((e.clientY-rect.top)/rect.height-0.5)*v.hh*2;
+      // zoom changes pxPerWorld → arrows/points must re-size → rebuild plots
+      stRef.current.viewDirty=true; stRef.current.plotDirty=true;
     };
-    canvas.addEventListener("mousedown",onMD);window.addEventListener("mouseup",onMU);window.addEventListener("mousemove",onMM);canvas.addEventListener("wheel",onWheel,{passive:false});
-    return()=>{cancelAnimationFrame(rafRef.current);ro.disconnect();canvas.removeEventListener("mousedown",onMD);window.removeEventListener("mouseup",onMU);window.removeEventListener("mousemove",onMM);canvas.removeEventListener("wheel",onWheel);if(container.contains(canvas))container.removeChild(canvas);};
+    overlay.addEventListener("mousedown",onMD);
+    window.addEventListener("mouseup",onMU);
+    window.addEventListener("mousemove",onMM);
+    overlay.addEventListener("wheel",onWheel,{passive:false});
+
+    return()=>{
+      cancelAnimationFrame(rafRef.current); ro.disconnect();
+      overlay.removeEventListener("mousedown",onMD);
+      window.removeEventListener("mouseup",onMU);
+      window.removeEventListener("mousemove",onMM);
+      overlay.removeEventListener("wheel",onWheel);
+      removeGroup(plotObjs);
+      renderer.dispose();
+      if(container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+      if(container.contains(gridCv)) container.removeChild(gridCv);
+      if(container.contains(labelCv)) container.removeChild(labelCv);
+    };
   },[]);
-  useEffect(()=>{stRef.current={camNode,nodes,scope,theme,dirty:true,animValsRef};},[camNode,nodes,scope,theme]);
+
+  useEffect(()=>{ stRef.current={...stRef.current,camNode,nodes,scope,theme,animValsRef,plotDirty:true,viewDirty:true}; },[camNode,nodes,scope,theme,animValsRef]);
+
   return(
     <div ref={mountRef} style={{width:"100%",height:"100%",position:"relative",overflow:"hidden"}}>
-      {animValsRef && <ScalarOverlay camNode={camNode} nodes={nodes} scope={scope} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>}
+      {animValsRef&&<ScalarOverlay camNode={camNode} nodes={nodes} scope={scope} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>}
     </div>
   );
 }
