@@ -9,7 +9,7 @@
 // longer offered as new nodes. plane / quiver2d / quiver3d / flow remain as-is.
 const ADDABLE_KINDS = [
   ["constant","expr","slider","animator","fnDef"],             // inputs
-  ["fnMap","transformer"],                                     // functions + how to plot them
+  ["fnMap","equation","transformer"],                          // functions + how to plot them
   ["paramSpace","points"],                                     // manifolds / point sets
   ["flow"],                                                    // flows
   ["camera3d","camera2d"],                                     // viewports

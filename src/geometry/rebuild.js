@@ -89,14 +89,15 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     // into the signature so geometry rebuilds when those upstream nodes change.
     let pSig=p;
     if(node.type==="transformer"||node.type==="flow"){
-      let fnSig="",paramSig="";
+      let fnSig="",paramSig="",eqSig="";
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
         if(dep.type==="fnMap") fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}`;
+        else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; }
         else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; }
         else if(dep.type==="points"){ paramSig=`pts|${dep.props.space}|${dep.props.data}`; }
       }
-      pSig={...p,__fnSig:fnSig,__paramSig:paramSig};
+      pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig};
     }
     const sig=geomSignature({...node,props:pSig},scope);
     const prev=objMap.get(childId);
@@ -178,13 +179,14 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       objs=buildScalarVolume(p,scope,node.color||"#6df");
     }
     if(node.type==="transformer"){
-      let fnNode=null, paramNode=null;
+      let fnNode=null, paramNode=null, eqNode=null;
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
         if(dep.type==="fnMap" && !fnNode) fnNode=dep;
+        else if(dep.type==="equation" && !eqNode) eqNode=dep;
         else if(dep.type==="paramSpace" && !paramNode) paramNode=dep;
       }
-      objs=buildTransformer(node,fnNode,paramNode,scope,node.color||"#ffb454");
+      objs=buildTransformer(node,fnNode,paramNode,scope,node.color||"#ffb454",eqNode);
     }
     if(node.type==="pointSeq"){
       const pts=parsePointSeq(p.points,scope);

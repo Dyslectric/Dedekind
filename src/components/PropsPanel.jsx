@@ -263,15 +263,72 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
           </>;
         })()}
 
+        {/* ── Equation: implicit relation lhs = rhs ── */}
+        {node.type==="equation"&&(()=>{
+          const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
+          const is3d=(node.props.dims||"2d")==="3d";
+          const varA=(node.props.varA||"x").trim()||"x";
+          const varB=(node.props.varB||"y").trim()||"y";
+          const varC=(node.props.varC||"z").trim()||"z";
+          return <>
+            <Sec title="Type">
+              <PR label="dims">
+                <select value={node.props.dims||"2d"} onChange={e=>set("dims",e.target.value)} style={{...S.inp,width:"100%"}}>
+                  <option value="2d">2D — curve in {varA},{varB} (marching squares)</option>
+                  <option value="3d">3D — surface in {varA},{varB},{varC} (marching cubes)</option>
+                </select>
+              </PR>
+              <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                {is3d
+                  ? <>The surface where <em>lhs = rhs</em> in three variables, extracted as a triangle mesh. Wire into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong>; its three domain ranges set the sampling box.</>
+                  : <>The curve where <em>lhs = rhs</em> in two variables. Wire into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong>; its first two domain ranges set the sampling box.</>}
+              </div>
+            </Sec>
+            <Sec title="Relation">
+              <PR label="lhs"><EI v={node.props.lhs||""} sc={scope} onChange={v=>set("lhs",v)}/></PR>
+              <div style={{textAlign:"center",color:TYPE_META.equation.tc,fontWeight:"bold",fontSize:16,margin:"2px 0"}}>=</div>
+              <PR label="rhs"><EI v={node.props.rhs||""} sc={scope} onChange={v=>set("rhs",v)}/></PR>
+            </Sec>
+            <Sec title="Variables">
+              <PR label="a (→X)"><input value={node.props.varA||"x"} onChange={e=>set("varA",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>
+              <PR label="b (→Y)"><input value={node.props.varB||"y"} onChange={e=>set("varB",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>
+              {is3d&&<PR label="c (→Z)"><input value={node.props.varC||"z"} onChange={e=>set("varC",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>}
+              <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                Plotting <em>{node.props.lhs||"lhs"} = {node.props.rhs||"rhs"}</em> over the {is3d?<><em>{varA}</em>,<em>{varB}</em>,<em>{varC}</em> space</>:<><em>{varA}</em>–<em>{varB}</em> plane</>}.
+              </div>
+            </Sec>
+          </>;
+        })()}
+
         {/* ── Transformer: renders a function map over a domain ── */}
         {node.type==="transformer"&&(()=>{
           const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
           const set2=(patch)=>onChange({props:{...node.props,...patch}});
           const mode=node.props.mode||"graph";
-          const domainSrc=node.props.domainSrc||"inline";
           const deps=(node.attachments||[]).map(id=>nodes[id]).filter(Boolean);
           const fnNode=deps.find(d=>d.type==="fnMap");
-          const paramNode=deps.find(d=>d.type==="paramSpace");
+          const eqNode=deps.find(d=>d.type==="equation");
+          // ── Implicit transformer (equation wired) ──
+          if(eqNode){
+            const eq3d=(eqNode.props.dims||"2d")==="3d";
+            const va=(eqNode.props.varA||"x").trim()||"x";
+            const vb=(eqNode.props.varB||"y").trim()||"y";
+            const vc=(eqNode.props.varC||"z").trim()||"z";
+            return <>
+              <div style={{fontSize:14,color:TYPE_META.equation.tc,marginBottom:8,lineHeight:1.5,padding:"6px 8px",background:TYPE_META.equation.tc+"15",borderRadius:5,border:`1px solid ${TYPE_META.equation.tc}33`}}>
+                Implicit {eq3d?"surface":"curve"} from <strong>{eqNode.label}</strong>: drawing <em>{eqNode.props.lhs} = {eqNode.props.rhs}</em> over the sampling box below ({va}→a, {vb}→b{eq3d?`, ${vc}→c`:""}).
+              </div>
+              <Sec title="Sampling box">
+                {[[`${va}₀`,"aMin"],[`${va}₁`,"aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                {[[`${vb}₀`,"bMin"],[`${vb}₁`,"bMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                {eq3d&&[[`${vc}₀`,"cMin"],[`${vc}₁`,"cMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
+                <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                  Resolution is the grid divisions per axis; higher is smoother but slower{eq3d?" (cost grows cubically for surfaces — keep it modest)":""}. Updates live as you drag wired sliders.
+                </div>
+              </Sec>
+            </>;
+          }
           const inDim=fnNode?Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1")))):1;
           const outDim=fnNode?Math.max(1,Math.min(4,Math.round(Number(fnNode.props.outDim||"1")))):1;
           const axisOpts=[["x","X"],["y","Y"],["z","Z"],["none","—"]];
@@ -350,21 +407,10 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               <PR label="normalize"><Toggle v={node.props.normalize!==false} onChange={v=>set("normalize",v)}/></PR>
             </Sec>}
             <Sec title="Domain">
-              <PR label="source">
-                <select value={domainSrc} onChange={e=>set("domainSrc",e.target.value)} style={{...S.inp,width:"100%"}}>
-                  <option value="inline">inline box + resolution</option>
-                  <option value="param">parametric space {paramNode?"(wired)":"(wire a Param Space)"}</option>
-                </select>
-              </PR>
-              {domainSrc==="param" && !paramNode && <div style={{fontSize:13,color:ui.uiDanger,margin:"3px 0",lineHeight:1.5}}>
-                Wire a <strong>Param Space</strong> node into this transformer to supply sample points.
-              </div>}
-              {domainSrc==="inline"&&<>
-                {[["x0","aMin"],["x1","aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-                {inDim>=2&&[["y0","bMin"],["y1","bMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-                {inDim>=3&&[["z0","cMin"],["z1","cMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-                {inDim>=4&&[["w0","dMin"],["w1","dMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-              </>}
+              {[["x0","aMin"],["x1","aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+              {inDim>=2&&[["y0","bMin"],["y1","bMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+              {inDim>=3&&[["z0","cMin"],["z1","cMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+              {inDim>=4&&[["w0","dMin"],["w1","dMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
             </Sec>
             {(node.props.colorMode||"off")==="gradient"&&<Sec title="Coloring">

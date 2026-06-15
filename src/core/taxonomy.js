@@ -31,7 +31,7 @@ const CATEGORY = {
   //                a camera.
   //   transformer— a plot that takes an fnMap + a domain and renders it as a
   //                graph (axis mapping) or a vector field (quiver/glyph).
-  fnMap:"map", transformer:"plot",
+  fnMap:"map", equation:"map", transformer:"plot",
   // Cameras split into explicit 3D and 2D kinds (both category "camera").
   // Legacy single "camera" kind kept for migration of old projects.
   camera:"camera", camera3d:"camera", camera2d:"camera", project:"project",

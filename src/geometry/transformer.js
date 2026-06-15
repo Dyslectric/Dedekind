@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
 import { buildCurve3d, buildSurf, buildGlyphFieldGPU } from "./builders.js";
+import { marchingSquares, marchingCubes } from "./implicit.js";
 
 // ── Transformer: render a pure map (fnMap) over a domain ─────────────────────
 // A transformer takes a function ℝ^inDim → ℝ^outDim and turns it into geometry
@@ -63,11 +64,7 @@ function rampColors(vals, tp, scope){
 //   inline 1D → [[a],[a..],...]  (res points)
 //   inline 2D → res×res grid (row-major, returns {pts, nu, nv})
 //   inline 3D → res×res×res
-//   param     → manifold points from the paramSpace node
 function sampleDomain(tp, scope, inDim, paramNode){
-  if(tp.domainSrc==="param" && paramNode){
-    return sampleParamSpace(paramNode, scope);
-  }
   const res=Math.max(2,Math.min(inDim>=3?40:(inDim===2?120:2000),Math.round(resolveNum(tp.res,scope,inDim===1?300:40))));
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
   if(inDim===1){
@@ -138,9 +135,58 @@ function placeGraph(tp, inVec, outVec, inDim, outDim){
 // Map a math triple [X,Y,Z] → three.js position (x, z, y).
 function toWorld(m){ return [m[0], m[2], m[1]]; }
 
-function buildTransformer(tNode, fnNode, paramNode, scope, color){
-  if(!fnNode) return [];
+function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
   const tp=tNode.props||{};
+
+  // ── Implicit equation node ──
+  // 2D: draw the curve lhs=rhs over the inline domain box (marching squares).
+  // 3D: draw the surface lhs=rhs over the inline 3D box (marching cubes).
+  if(eqNode){
+    const is3d = (eqNode.props.dims||"2d")==="3d";
+    const aMin=resolveNum(tp.aMin,scope,-5), aMax=resolveNum(tp.aMax,scope,5);
+    const bMin=resolveNum(tp.bMin,scope,-5), bMax=resolveNum(tp.bMax,scope,5);
+
+    if(is3d){
+      const cMin=resolveNum(tp.cMin,scope,-3), cMax=resolveNum(tp.cMax,scope,3);
+      const res=Math.max(2,Math.min(120,Math.round(resolveNum(tp.res,scope,48))));
+      const { positions, normals } = marchingCubes(eqNode, scope,
+        aMin,aMax, bMin,bMax, cMin,cMax, res);
+      if(!positions.length) return [];
+      // marching cubes returns math (x,y,z); swap to three world order (x,z,y).
+      const wpos=new Float32Array(positions.length);
+      const wnrm=new Float32Array(normals.length);
+      for(let i=0;i<positions.length;i+=3){
+        wpos[i]=positions[i]; wpos[i+1]=positions[i+2]; wpos[i+2]=positions[i+1];
+        wnrm[i]=normals[i];   wnrm[i+1]=normals[i+2];   wnrm[i+2]=normals[i+1];
+      }
+      const g=new THREE.BufferGeometry();
+      g.setAttribute("position",new THREE.BufferAttribute(wpos,3));
+      g.setAttribute("normal",new THREE.BufferAttribute(wnrm,3));
+      const c3=hexToThree(color);
+      const mat=new THREE.MeshPhongMaterial({color:c3,side:THREE.DoubleSide,transparent:true,opacity:0.85,shininess:40,flatShading:false});
+      const mesh=new THREE.Mesh(g,mat);
+      const wire=new THREE.LineSegments(new THREE.WireframeGeometry(g),new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.12}));
+      return [mesh, wire];
+    }
+
+    // 2D implicit curve — marching squares over the (a,b) box, drawn in the
+    // world ground plane via (a, 0, b).
+    const res=Math.max(2,Math.min(600,Math.round(resolveNum(tp.res,scope,120))));
+    const segs=marchingSquares(eqNode, scope, aMin, aMax, bMin, bMax, res);
+    if(!segs.length) return [];
+    const pos=new Float32Array(segs.length*2*3);
+    let k=0;
+    for(const [p0,p1] of segs){
+      pos[k++]=p0[0]; pos[k++]=0; pos[k++]=p0[1];
+      pos[k++]=p1[0]; pos[k++]=0; pos[k++]=p1[1];
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.BufferAttribute(pos,3));
+    const mat=new THREE.LineBasicMaterial({color:hexToThree(color),linewidth:2});
+    return [new THREE.LineSegments(g,mat)];
+  }
+
+  if(!fnNode) return [];
   const { inDim, outDim, outs } = fnSpec(fnNode);
   const dom = sampleDomain(tp, scope, inDim, paramNode);
   if(!dom.pts.length) return [];

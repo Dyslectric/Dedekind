@@ -35,6 +35,7 @@ const TYPE_META={
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
   points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   fnMap:     {tag:"ƒ→",   tc:"#7ec8ff",bg:"#0a1622",hdr:"#0e1f30"},
+  equation:  {tag:"EQ=",  tc:"#ffd479",bg:"#1c1606",hdr:"#241d08"},
   transformer:{tag:"TRN", tc:"#ffb454",bg:"#1a1206",hdr:"#241a08"},
 };
 
@@ -126,6 +127,14 @@ function makeNode(type,pos){
     fnMap:{label:"map",color:nextColor(),props:{
       inDim:"1", outDim:"1",
       out0:"sin(x)", out1:"x", out2:"0", out3:"0",
+    },attachments:[]},
+    // equation: an implicit relation lhs = rhs.
+    //   dims "2d" — relation in two vars (varA, varB) → curve via marching squares
+    //   dims "3d" — relation in x,y,z → surface via marching cubes
+    // Optional wired scalars/functions are in scope. Wire it into a transformer
+    // to render; the transformer's domain box sets the sampling region.
+    equation:{label:"equation",color:nextColor(),props:{
+      dims:"2d", lhs:"x^2 + y^2", rhs:"4", varA:"x", varB:"y", varC:"z",
     },attachments:[]},
     // transformer: renders a wired fnMap over a domain.
     //   mode "graph" — assign each input to a spatial axis and each output to a

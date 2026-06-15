@@ -7,6 +7,7 @@ import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
 import { integrateFlow } from "../geometry/flow.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
+import { marchingSquares } from "../geometry/implicit.js";
 import { hexToThree } from "../geometry/three-helpers.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -20,28 +21,81 @@ function hexRGB(hex){
 }
 function hexColor(hex){ const[r,g,b]=hexRGB(hex); return new THREE.Color(r,g,b); }
 
-// Flat line material for 2D — simple LineBasicMaterial. depthTest off so
-// everything draws regardless of z-order.
-function lineMat(hex, opacity=1, dashed=false){
-  const m = dashed
-    ? new THREE.LineDashedMaterial({color:hexToThree(hex), dashSize:0.12, gapSize:0.08, transparent:opacity<1, opacity})
-    : new THREE.LineBasicMaterial({color:hexToThree(hex), transparent:opacity<1, opacity});
-  m.depthTest=false;
-  return m;
+// Build a THICK polyline as a triangle-strip ribbon. `half` is the half-width
+// in WORLD units (callers pass px(2.6)/2 so it renders ~2.6px on screen at any
+// zoom). WebGL caps LineBasicMaterial.linewidth at 1px, so genuine thickness
+// requires filled geometry. Joints use a simple averaged-normal miter, which is
+// fine for smooth curves; very sharp corners fall back gracefully (clamped).
+// Returns one Mesh per contiguous run (NaN/null breaks the run).
+function buildThickLine2D(pts2d, color, half, opacity=1){
+  const runs=[]; let cur=[];
+  for(const p of pts2d){
+    if(p&&isFinite(p[0])&&isFinite(p[1])) cur.push(p);
+    else{ if(cur.length>1)runs.push(cur); cur=[]; }
+  }
+  if(cur.length>1) runs.push(cur);
+  const meshes=[];
+  for(const run of runs){
+    const m=ribbonMesh(run, half, color, opacity);
+    if(m) meshes.push(m);
+  }
+  return meshes;
 }
 
-// Build a flat polyline from [x,y] pairs. Breaks on null/NaN.
-function buildLine2D(pts2d, color, opacity=1){
-  const segs=[]; let cur=[];
-  for(const p of pts2d){
-    if(p&&isFinite(p[0])&&isFinite(p[1])) cur.push(new THREE.Vector3(p[0],p[1],0));
-    else{ if(cur.length>1)segs.push(cur); cur=[]; }
+// Build thick DISCONNECTED segments (for implicit/marching-squares output where
+// each [a,b] pair is independent). `segs` is [[ [x,y],[x,y] ], ...].
+function buildThickSegments2D(segs, color, half){
+  const pos=[];
+  for(const [a,b] of segs){
+    if(!a||!b) continue;
+    const dx=b[0]-a[0], dy=b[1]-a[1];
+    const len=Math.hypot(dx,dy); if(len<1e-12) continue;
+    const nx=-dy/len*half, ny=dx/len*half;
+    const a1=[a[0]+nx,a[1]+ny], a2=[a[0]-nx,a[1]-ny];
+    const b1=[b[0]+nx,b[1]+ny], b2=[b[0]-nx,b[1]-ny];
+    pos.push(a1[0],a1[1],0, b1[0],b1[1],0, b2[0],b2[1],0);
+    pos.push(a1[0],a1[1],0, b2[0],b2[1],0, a2[0],a2[1],0);
   }
-  if(cur.length>1) segs.push(cur);
-  return segs.map(s=>{
-    const g=new THREE.BufferGeometry().setFromPoints(s);
-    return new THREE.Line(g, lineMat(color,opacity));
-  });
+  if(!pos.length) return [];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide});
+  return [new THREE.Mesh(g,mat)];
+}
+
+// Internal: build one ribbon mesh from a contiguous point run.
+function ribbonMesh(run, half, color, opacity=1){
+  const n=run.length; if(n<2) return null;
+  // per-vertex outward normals (averaged from adjacent segment normals)
+  const nrm=new Array(n);
+  const segN=(i)=>{ const a=run[i],b=run[i+1]; const dx=b[0]-a[0],dy=b[1]-a[1]; const l=Math.hypot(dx,dy)||1; return [-dy/l, dx/l]; };
+  for(let i=0;i<n;i++){
+    let nx,ny;
+    if(i===0){ [nx,ny]=segN(0); }
+    else if(i===n-1){ [nx,ny]=segN(n-2); }
+    else{
+      const [ax,ay]=segN(i-1), [bx,by]=segN(i);
+      nx=ax+bx; ny=ay+by; const l=Math.hypot(nx,ny);
+      if(l<1e-6){ [nx,ny]=segN(i); } else { nx/=l; ny/=l;
+        // miter length compensation, clamped to avoid spikes at sharp turns
+        const dot=ax*nx+ay*ny; const scale=Math.min(3, 1/Math.max(0.34,dot)); nx*=scale; ny*=scale; }
+    }
+    nrm[i]=[nx,ny];
+  }
+  const pos=[];
+  for(let i=0;i<n-1;i++){
+    const p=run[i], q=run[i+1], np_=nrm[i], nq=nrm[i+1];
+    const p1=[p[0]+np_[0]*half, p[1]+np_[1]*half];
+    const p2=[p[0]-np_[0]*half, p[1]-np_[1]*half];
+    const q1=[q[0]+nq[0]*half, q[1]+nq[1]*half];
+    const q2=[q[0]-nq[0]*half, q[1]-nq[1]*half];
+    pos.push(p1[0],p1[1],0, q1[0],q1[1],0, q2[0],q2[1],0);
+    pos.push(p1[0],p1[1],0, q2[0],q2[1],0, p2[0],p2[1],0);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide,transparent:opacity<1,opacity});
+  return new THREE.Mesh(g,mat);
 }
 
 // Build a thick arrow as a filled triangle mesh: a rectangular shaft plus a
@@ -96,24 +150,27 @@ function buildDisk2D(cx,cy, r, color, opacity=1){
 
 // ── plot geometry builders ────────────────────────────────────────────────────
 
-function build2DFn1d(np, pscope, color, wxMin, wxMax){
+// On-screen line weight for 1-space (curve) plots, in CSS pixels.
+const LINE_PX = 2.6;
+
+function build2DFn1d(np, pscope, color, wxMin, wxMax, px){
   const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
   const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,600)));
   const pts=linspace(xMin,xMax,res).map(x=>{
     const y=safeEval(np.expr,{...pscope,x});
     return (y!=null&&isFinite(y)) ? [x,y] : null;
   });
-  return buildLine2D(pts, color);
+  return buildThickLine2D(pts, color, px(LINE_PX)/2);
 }
 
-function build2DCurve3d(np, pscope, color){
+function build2DCurve3d(np, pscope, color, px){
   const tMin=resolveNum(np.tMin,pscope,0), tMax=resolveNum(np.tMax,pscope,Math.PI*2);
   const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,400)));
   const pts=linspace(tMin,tMax,res).map(t=>{
     const x=safeEval(np.exprX,{...pscope,t}), y=safeEval(np.exprY,{...pscope,t});
     return (x!=null&&y!=null&&isFinite(x)&&isFinite(y)) ? [x,y] : null;
   });
-  return buildLine2D(pts, color);
+  return buildThickLine2D(pts, color, px(LINE_PX)/2);
 }
 
 function build2DPointSeq(np, pscope, color, px){
@@ -122,7 +179,7 @@ function build2DPointSeq(np, pscope, color, px){
   const r=px(rPx); // constant on-screen radius
   const objs=[];
   if(np.drawLines!==false && pts.length>1){
-    objs.push(...buildLine2D(pts.map(([x,y])=>[x,y]), color));
+    objs.push(...buildThickLine2D(pts.map(([x,y])=>[x,y]), color, px(LINE_PX)/2));
   }
   for(const [x,y] of pts){
     objs.push(buildDisk2D(x,y,r,color));
@@ -160,6 +217,20 @@ function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
     if(a) objs.push(a);
   }
   return objs;
+}
+
+// Implicit curve: marching squares over the transformer's inline domain box.
+// Emits flat thick line segments (in the XY plane) where lhs=rhs holds.
+function build2DImplicit(tNode, eqNode, pscope, color, px){
+  // 3D implicit surfaces require a 3D camera; nothing meaningful to draw in 2D.
+  if((eqNode.props.dims||"2d")==="3d") return [];
+  const tp=tNode.props||{};
+  const aMin=resolveNum(tp.aMin,pscope,-5), aMax=resolveNum(tp.aMax,pscope,5);
+  const bMin=resolveNum(tp.bMin,pscope,-5), bMax=resolveNum(tp.bMax,pscope,5);
+  const res=Math.max(2,Math.min(600,Math.round(resolveNum(tp.res,pscope,160))));
+  const segs=marchingSquares(eqNode, pscope, aMin, aMax, bMin, bMax, res);
+  if(!segs.length) return [];
+  return buildThickSegments2D(segs, color, px(LINE_PX)/2);
 }
 
 function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
@@ -237,7 +308,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   // graph mode
   if(inDim===1){
     const pts2d=samples.map(inVec=>{ const w=place(inVec,evalOut(inVec)); return isFinite(w[0])&&isFinite(w[1])?w:null; });
-    return buildLine2D(pts2d, color);
+    return buildThickLine2D(pts2d, color, px(LINE_PX)/2);
   }
   // 2+ inputs: scatter dots
   for(const inVec of samples){
@@ -265,7 +336,7 @@ function build2DGlyphField(np, pscope, color, px){
   return objs;
 }
 
-function build2DFlow(np, rawNode, nodes, pscope, color){
+function build2DFlow(np, rawNode, nodes, pscope, color, px){
   let fnNode=null, seedNode=null;
   for(const depId of (rawNode.attachments||[])){
     const d=nodes[depId]; if(!d)continue;
@@ -297,8 +368,9 @@ function build2DFlow(np, rawNode, nodes, pscope, color){
       objs.push(new THREE.Mesh(g,mat));
     }
   } else {
+    const half=px(LINE_PX)/2;
     for(const pts of trajs){
-      objs.push(...buildLine2D(pts.map(q=>q&&isFinite(q[0])&&isFinite(q[1])?[q[0],q[1]]:null), color));
+      objs.push(...buildThickLine2D(pts.map(q=>q&&isFinite(q[0])&&isFinite(q[1])?[q[0],q[1]]:null), color, half));
     }
   }
   return objs;
@@ -329,23 +401,24 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     const color=rawNode.color||"#5b9cf6";
 
     let built=[];
-    if(node.type==="fn1d") built=build2DFn1d(np,pscope,color,wxMin,wxMax);
-    else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color);
+    if(node.type==="fn1d") built=build2DFn1d(np,pscope,color,wxMin,wxMax,px);
+    else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color,px);
     else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px);
     else if(node.type==="point") built=build2DPoint(np,pscope,color,px);
     else if(node.type==="quiver2d") built=build2DQuiver(np,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
     else if(rawNode.type==="transformer"){
-      let fnNode=null,paramNode=null;
-      for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(!d)continue; if(d.type==="fnMap"&&!fnNode)fnNode=d; else if(d.type==="paramSpace"&&!paramNode)paramNode=d; }
-      built=build2DTransformer(rawNode,fnNode,paramNode,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
+      let fnNode=null,paramNode=null,eqNode=null;
+      for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(!d)continue; if(d.type==="fnMap"&&!fnNode)fnNode=d; else if(d.type==="equation"&&!eqNode)eqNode=d; else if(d.type==="paramSpace"&&!paramNode)paramNode=d; }
+      if(eqNode) built=build2DImplicit(rawNode,eqNode,pscope,color,px);
+      else built=build2DTransformer(rawNode,fnNode,paramNode,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
     }
     else if(node.type==="glyphField") built=build2DGlyphField(np,pscope,color,px);
-    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color);
+    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color,px);
     else if(node.type==="plane"){
       const nx=resolveNum(np.normalX,pscope,0),ny=resolveNum(np.normalY,pscope,1);
       const cx2=resolveNum(np.centerX,pscope,0),cy2=resolveNum(np.centerY,pscope,0);
       const y0=cy2-(nx!==0?(wxMin-cx2)*ny/nx:0), y1=cy2-(nx!==0?(wxMax-cx2)*ny/nx:0);
-      built=buildLine2D([[wxMin,y0],[wxMax,y1]], color, 0.8);
+      built=buildThickLine2D([[wxMin,y0],[wxMax,y1]], color, px(LINE_PX)/2, 0.8);
     }
 
     for(const o of built) o._plotId=childId;
