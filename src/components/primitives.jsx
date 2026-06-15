@@ -39,8 +39,8 @@ function NodeAddGrid({onAddNode, projectNode}){
     ))}
   </div>;
 }
-function Sec({title,children}){const{ui}=useUI();const[open,setOpen]=useState(true);return<div style={{marginBottom:9}}><div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",color:ui.uiMuted,opacity:0.75,fontSize:14,fontWeight:"bold",letterSpacing:1,textTransform:"uppercase",marginBottom:open?4:0}}><span style={{fontSize:14,color:ui.uiFaint}}>{open?"▾":"▸"}</span>{title}</div>{open&&<div style={{paddingLeft:2}}>{children}</div>}</div>;}
-function PR({label,children}){const{ui}=useUI();return<div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><span style={{width:54,flexShrink:0,color:ui.uiMuted,opacity:0.7,fontSize:14,textAlign:"right"}}>{label}</span><div style={{flex:1}}>{children}</div></div>;}
+function Sec({title,children}){const{ui}=useUI();const[open,setOpen]=useState(true);return<div style={{marginBottom:9}}><div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",color:ui.uiHeading,fontSize:14,fontWeight:"bold",letterSpacing:1,textTransform:"uppercase",marginBottom:open?4:0}}><span style={{fontSize:14,color:ui.uiMuted}}>{open?"▾":"▸"}</span>{title}</div>{open&&<div style={{paddingLeft:2}}>{children}</div>}</div>;}
+function PR({label,children}){const{ui}=useUI();return<div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><span style={{width:54,flexShrink:0,color:ui.uiText,fontSize:14,textAlign:"right"}}>{label}</span><div style={{flex:1}}>{children}</div></div>;}
 
 function Btn2({color,onClick,children}){const{S}=useUI();return<button onClick={onClick} style={{...S.btnSm,color,borderColor:color+"44",padding:"2px 8px"}}>{children}</button>;}
 

@@ -172,9 +172,9 @@ function makeProjectNode(name){
   return {id:PROJECT_ID,type:"project",pos:{x:20,y:20},label:"Project",props:{name:name||"Untitled",author:"",
     canvasBg:"#24273a",nodeBg:"#1e2030",bg2d:"#181926",grid2d:"#363a4f",axes2d:"#8087a2",label2d:"#a5adcb",
     bg3d:"#181926",grid3d:"#363a4f",grid3d2:"#1e2030",overlayBg:"#1e2030cc",overlayBorder:"#363a4f",overlayText:"#a5adcb",
-    uiHeading:"#cad3f5",uiText:"#a5adcb",uiMuted:"#8087a2",uiFaint:"#363a4f",uiAccent:"#8aadf4",
-    uiInputText:"#cad3f5",uiInputBg:"#1e2030",uiInputBorder:"#363a4f",uiBtnText:"#a5adcb",
-    uiBtnBg:"#181926",uiBtnBorder:"#363a4f",uiPanelBar:"#1e2030",uiDanger:"#ed8796",uiGood:"#a6da95",
+    uiHeading:"#dce0f7",uiText:"#cad3f5",uiMuted:"#b5bdd8",uiFaint:"#9aa1c0",uiAccent:"#8aadf4",
+    uiInputText:"#dce0f7",uiInputBg:"#1e2030",uiInputBorder:"#494d64",uiBtnText:"#c6cdec",
+    uiBtnBg:"#181926",uiBtnBorder:"#494d64",uiPanelBar:"#1e2030",uiDanger:"#ed8796",uiGood:"#a6da95",
     },attachments:[]};
 }
 

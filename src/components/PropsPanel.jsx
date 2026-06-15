@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo } from "react";
-import { useUI } from "../theme/tokens.jsx";
+import { useUI, darken, relLum } from "../theme/tokens.jsx";
 import { catOf, SCALAR_TYPES, isFunctionType, isDomainType, isCameraType, canAttach, canBeDependency, canConsume } from "../core/taxonomy.js";
 import { collectScalarDeps, resolveScope } from "../core/scope.js";
 import { resolveNum, safeEval } from "../core/math.js";
@@ -62,6 +62,10 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
   );
   const isCamera=isCameraType(node.type),isProject=node.type==="project",isScalar=SCALAR_TYPES.has(node.type);
   const meta=TYPE_META[node.type]||{tc:"#888"};
+  // The panel may be light (e.g. Paper / Catppuccin Latte); the identity colors
+  // are light pastels, so darken them for value readouts on a light panel.
+  const panelLight = relLum(ui.uiPanelBar||"#0b0c1c") > 0.45;
+  const metaTc = panelLight ? darken(meta.tc, 0.5) : meta.tc;
   const liveAnimVal=node.type==="animator"?(animValsRef.current[node.id]??node.value):null;
 
   // Generic dependency model:
@@ -166,17 +170,17 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {node.type==="constant"&&<Sec title="Value"><PR label="val"><EI v={node.props.value} sc={scope} onChange={v=>onChange({props:{...node.props,value:v}})}/></PR></Sec>}
         {node.type==="expr"&&<Sec title="Expression">
           <PR label={`${node.name||"e"} =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
-          <div style={{marginTop:6,padding:"6px 9px",background:"#050e18",borderRadius:4,border:"1px solid #0c1e2e",fontSize:14,color:"#7ac0d8",fontFamily:"monospace",lineHeight:1.9}}>
+          <div style={{marginTop:6,padding:"6px 9px",background:ui.uiInputBg,borderRadius:4,border:`1px solid ${ui.uiInputBorder}`,fontSize:14,color:ui.uiAccent,fontFamily:"monospace",lineHeight:1.9}}>
             {(()=>{
-              if(!node.name)return<span style={{color:"#1a3040"}}>set a variable name above</span>;
+              if(!node.name)return<span style={{color:ui.uiMuted}}>set a variable name above</span>;
               // Prefer the value already resolved into scope (computed from the
               // node's full transitive deps, same path the plot output uses); fall
               // back to re-evaluating the raw expression if it's not present.
               let val=typeof scope[node.name]==="number"?scope[node.name]:NaN;
               if(!isFinite(val)) val=resolveNum(node.props.expr,scope,NaN);
-              if(!isFinite(val))return<span style={{color:"#1a3040"}}>…</span>;
+              if(!isFinite(val))return<span style={{color:ui.uiMuted}}>…</span>;
               const fmtd=Math.abs(val)>=1000||(Math.abs(val)<0.001&&val!==0)?val.toExponential(4):Number(val.toPrecision(6)).toString();
-              return<span><span style={{color:"#3a7090"}}>{node.name} =</span> <span style={{color:"#8fd8f8"}}>{fmtd}</span></span>;
+              return<span><span style={{color:ui.uiMuted}}>{node.name} =</span> <span style={{color:ui.uiAccent,fontWeight:"bold"}}>{fmtd}</span></span>;
             })()}
           </div>
           <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
@@ -188,7 +192,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
           <PR label="max"><EI v={node.props.max} sc={scope} onChange={v=>onChange({props:{...node.props,max:v}})}/></PR>
           <PR label="step"><EI v={node.props.step} sc={scope} onChange={v=>onChange({props:{...node.props,step:v}})}/></PR>
           <input type="range" min={resolveNum(node.props.min,scope,-5)} max={resolveNum(node.props.max,scope,5)} step={resolveNum(node.props.step,scope,0.01)} value={node.value||0} onChange={e=>onChange({value:+e.target.value})} style={{width:"100%",accentColor:meta.tc,marginTop:6}}/>
-          <div style={{textAlign:"center",color:meta.tc,fontWeight:"bold",fontSize:17,marginTop:2}}>{node.name} = {Number(node.value||0).toFixed(4)}</div>
+          <div style={{textAlign:"center",color:metaTc,fontWeight:"bold",fontSize:17,marginTop:2}}>{node.name} = {Number(node.value||0).toFixed(4)}</div>
         </Sec>}
         {node.type==="animator"&&<Sec title="Animator">
           <PR label="min"><EI v={node.props.min} sc={scope} onChange={v=>onChange({props:{...node.props,min:v}})}/></PR>
@@ -201,14 +205,14 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             </select>
           </PR>
           <div style={{display:"flex",gap:6,marginTop:8}}>
-            <button onClick={()=>onChange({playing:!node.playing})} style={{...S.btn,color:node.playing?"#f94":"#4f7",flex:1}}>{node.playing?"■ Pause":"▶ Play"}</button>
+            <button onClick={()=>onChange({playing:!node.playing})} style={{...S.btn,color:node.playing?ui.uiDanger:ui.uiGood,flex:1}}>{node.playing?"■ Pause":"▶ Play"}</button>
             <button onClick={()=>onChange({value:resolveNum(node.props.min,scope,0),playing:false})} style={S.btn}>↩</button>
           </div>
-          <div style={{height:4,background:"#0e0f1e",borderRadius:2,overflow:"hidden",marginTop:6}}>
+          <div style={{height:4,background:ui.uiInputBg,border:`1px solid ${ui.uiInputBorder}`,borderRadius:2,overflow:"hidden",marginTop:6}}>
             <div style={{height:"100%",background:meta.tc,opacity:0.7,width:`${100*((liveAnimVal??node.value)-resolveNum(node.props.min,scope,0))/((resolveNum(node.props.max,scope,1)-resolveNum(node.props.min,scope,0))||1)}%`}}/>
           </div>
-          <div style={{textAlign:"center",color:meta.tc,fontWeight:"bold",fontSize:16,marginTop:3}}>{node.name} = {Number((liveAnimVal??node.value)||0).toFixed(4)}</div>
-          <div style={{fontSize:13,color:"#1e2840",marginTop:4}}>
+          <div style={{textAlign:"center",color:metaTc,fontWeight:"bold",fontSize:16,marginTop:3}}>{node.name} = {Number((liveAnimVal??node.value)||0).toFixed(4)}</div>
+          <div style={{fontSize:13,color:ui.uiMuted,marginTop:4}}>
             step: sets discrete tick amount — leave blank for smooth (continuous)
           </div>
         </Sec>}
@@ -217,16 +221,16 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {node.type==="fnDef"&&<Sec title="Definition">
           <PR label="params"><EI v={node.props.params||"x"} sc={scope} onChange={v=>onChange({props:{...node.props,params:v}})}/></PR>
           <PR label={`${node.name||"f"}(…) =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
-          <div style={{marginTop:8,padding:"7px 9px",background:"#08100a",borderRadius:4,border:"1px solid #162010",fontSize:14,color:"#7a9a70",fontFamily:"monospace",lineHeight:1.9}}>
+          <div style={{marginTop:8,padding:"7px 9px",background:ui.uiInputBg,borderRadius:4,border:`1px solid ${ui.uiInputBorder}`,fontSize:14,color:ui.uiGood,fontFamily:"monospace",lineHeight:1.9}}>
             {(()=>{
               const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
               const fn=scope[node.name];
-              if(!fn||typeof fn!=="function")return<span style={{color:"#2a3a28"}}>set a variable name above</span>;
+              if(!fn||typeof fn!=="function")return<span style={{color:ui.uiMuted}}>set a variable name above</span>;
               const samples=params.length<=1?[[0],[1],[2],[5],[10]]:[[0,0],[1,1],[2,3],[3,4]];
               return samples.map(args=>{
                 let result;try{result=fn(...args);}catch{result=NaN;}
                 const fmtd=isFinite(result)?Number(result.toPrecision(6)).toString():String(result);
-                return<div key={args.join(",")}><span style={{color:"#4a6a40"}}>{node.name}({args.join(",")}) =</span> <span style={{color:"#8adb80"}}>{fmtd}</span></div>;
+                return<div key={args.join(",")}><span style={{color:ui.uiMuted}}>{node.name}({args.join(",")}) =</span> <span style={{color:ui.uiText,fontWeight:"bold"}}>{fmtd}</span></div>;
               });
             })()}
           </div>
@@ -714,21 +718,21 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {node.type==="point"&&<Sec title="Position">{[["x","x"],["y","y"],["z","z"],["r","radius"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec>}
 
         {node.type==="pointSeq"&&<Sec title="Points">
-          <div style={{fontSize:14,color:"#2a3040",marginBottom:5,lineHeight:1.7}}>
-            <strong style={{color:"#3a4a60"}}>Plain:</strong> one point per line — <span style={{color:"#4a5870"}}>x, y</span> or <span style={{color:"#4a5870"}}>x, y, z</span><br/>
-            <strong style={{color:"#3a5040"}}>Recursive:</strong> 3-line format:<br/>
-            <span style={{color:"#2a4030",fontFamily:"monospace",fontSize:13}}>
+          <div style={{fontSize:14,color:ui.uiMuted,marginBottom:5,lineHeight:1.7}}>
+            <strong style={{color:"#7fa0d8"}}>Plain:</strong> one point per line — <span style={{color:ui.uiText}}>x, y</span> or <span style={{color:ui.uiText}}>x, y, z</span><br/>
+            <strong style={{color:"#7fcf9a"}}>Recursive:</strong> 3-line format:<br/>
+            <span style={{color:ui.uiText,fontFamily:"monospace",fontSize:13}}>
               &nbsp;Line 1: initial point &nbsp;<em>x₀, y₀</em><br/>
               &nbsp;Line 2: recurrence &nbsp;<em>x[n-1]+1, y[n-1]*0.9</em><br/>
               &nbsp;Line 3: count &nbsp;<em>50</em>
             </span><br/>
-            <strong style={{color:"#3a4a60"}}>By index:</strong> closed-form in <em>i</em> (0-based):<br/>
-            <span style={{color:"#2a4030",fontFamily:"monospace",fontSize:13}}>
+            <strong style={{color:"#7fa0d8"}}>By index:</strong> closed-form in <em>i</em> (0-based):<br/>
+            <span style={{color:ui.uiText,fontFamily:"monospace",fontSize:13}}>
               &nbsp;Line 1: <em>cos(i*0.3), sin(i*0.3)</em><br/>
               &nbsp;Line 2: count &nbsp;<em>64</em>
             </span><br/>
-            <strong style={{color:"#3a4a60"}}>Matrix:</strong> 2-D index <em>i, j</em> → a grid:<br/>
-            <span style={{color:"#2a4030",fontFamily:"monospace",fontSize:13}}>
+            <strong style={{color:"#7fa0d8"}}>Matrix:</strong> 2-D index <em>i, j</em> → a grid:<br/>
+            <span style={{color:ui.uiText,fontFamily:"monospace",fontSize:13}}>
               &nbsp;Line 1: <em>i, j, sin(i*j)</em><br/>
               &nbsp;Line 2: rows, cols &nbsp;<em>8, 8</em>
             </span>
@@ -744,12 +748,12 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             <PR label="radius"><EI v={node.props.radius||"4"} sc={scope} onChange={v=>onChange({props:{...node.props,radius:v}})}/></PR>
             <PR label="lines"><Toggle v={node.props.drawLines!==false} onChange={v=>onChange({props:{...node.props,drawLines:v}})}/></PR>
           </div>
-          <div style={{marginTop:5,color:"#1e2a40",fontSize:14}}>
+          <div style={{marginTop:5,color:ui.uiMuted,fontSize:14}}>
             {(()=>{const pts=parsePointSeq(node.props.points,scope);return`${pts.length} valid point${pts.length!==1?"s":""}`;})()}
           </div>
         </Sec>}
         {node.type==="pointSeq"&&<Sec title="Sequencing">
-          <div style={{fontSize:14,color:"#2a3040",marginBottom:5,lineHeight:1.6}}>
+          <div style={{fontSize:14,color:ui.uiMuted,marginBottom:5,lineHeight:1.6}}>
             Reveal points in order. Drive the fraction (0–1) with a literal or a connected scalar (e.g. an animator) to animate the build-up without rebuilding geometry.
           </div>
           <PR label="reveal"><Toggle v={!!node.props.sequenced} onChange={v=>onChange({props:{...node.props,sequenced:v}})}/></PR>
@@ -924,20 +928,20 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               </select>
             </PR>
             {node.props.planeMode==="plane"&&<>
-              <div style={{color:"#252a40",fontSize:14,margin:"4px 0 2px"}}>Origin</div>
+              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>Origin</div>
               {[["ox","planeOx"],["oy","planeOy"],["oz","planeOz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
-              <div style={{color:"#252a40",fontSize:14,margin:"4px 0 2px"}}>U axis</div>
+              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>U axis</div>
               {[["ux","planeUx"],["uy","planeUy"],["uz","planeUz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
-              <div style={{color:"#252a40",fontSize:14,margin:"4px 0 2px"}}>V axis</div>
+              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>V axis</div>
               {[["vx","planeVx"],["vy","planeVy"],["vz","planeVz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
               <PR label="thr."><EI v={node.props.planeThreshold||"0.15"} sc={scope} onChange={v=>onChange({props:{...node.props,planeThreshold:v}})}/></PR>
             </>}
             {node.props.planeMode==="paramsurf"&&<>
-              <div style={{color:"#3a5040",fontSize:14,margin:"4px 0 2px"}}>Surface (axes = u,v param domain)</div>
+              <div style={{color:"#7fcf9a",fontSize:14,margin:"4px 0 2px"}}>Surface (axes = u,v param domain)</div>
               <PR label="x(u,v)"><XF v={node.props.psExprX||"cos(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprX:v}})}/></PR>
               <PR label="y(u,v)"><XF v={node.props.psExprY||"sin(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprY:v}})}/></PR>
               <PR label="z(u,v)"><XF v={node.props.psExprZ||"cos(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprZ:v}})}/></PR>
-              <div style={{color:"#252a40",fontSize:14,margin:"4px 0 2px"}}>Domain</div>
+              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>Domain</div>
               {[["u₀","psUMin"],["u₁","psUMax"],["v₀","psVMin"],["v₁","psVMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
               <PR label="res"><EI v={node.props.psRes||"16"} sc={scope} onChange={v=>onChange({props:{...node.props,psRes:v}})}/></PR>
               <PR label="dist thr."><EI v={node.props.psDistThreshold||"0.35"} sc={scope} onChange={v=>onChange({props:{...node.props,psDistThreshold:v}})}/></PR>
@@ -969,7 +973,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             {node.props.bgOverride&&<PR label="bg"><ColorRow v={node.props.bgColor||"#070810"} onChange={v=>onChange({props:{...node.props,bgColor:v}})}/></PR>}
           </Sec>
           <Sec title="Share controls">
-            <div style={{fontSize:13,color:"#1e2840",marginBottom:5,lineHeight:1.6}}>
+            <div style={{fontSize:13,color:ui.uiMuted,marginBottom:5,lineHeight:1.6}}>
               Choose what's visible in shared & embedded views.
             </div>
             <PR label="cam label"><Toggle v={node.props.showCamLabel!==false} onChange={v=>onChange({props:{...node.props,showCamLabel:v}})}/></PR>
@@ -991,16 +995,16 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                 onChange({props:{...node.props, hiddenScalars:[...next]}});
               };
               return <>
-                <div style={{fontSize:13,color:"#1e2840",marginTop:7,marginBottom:3,borderTop:"1px solid #141628",paddingTop:5}}>
+                <div style={{fontSize:13,color:ui.uiMuted,marginTop:7,marginBottom:3,borderTop:"1px solid #141628",paddingTop:5}}>
                   HUD scalars:
                 </div>
                 {wiredScalars.map(sc => {
                   const meta = TYPE_META[sc.type]||{tc:"#888"};
                   return (
                     <div key={sc.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
-                      <div style={{width:6,height:6,borderRadius:2,flexShrink:0,background:meta.tc}}/>
-                      <span style={{flex:1,color:"#4a5870",fontSize:14,fontFamily:"monospace"}}>{sc.name}</span>
-                      <span style={{color:"#232540",fontSize:13}}>{meta.tag}</span>
+                      <div style={{width:6,height:6,borderRadius:2,flexShrink:0,background:metaTc}}/>
+                      <span style={{flex:1,color:ui.uiMuted,fontSize:14,fontFamily:"monospace"}}>{sc.name}</span>
+                      <span style={{color:ui.uiMuted,fontSize:13}}>{meta.tag}</span>
                       <Toggle v={!hidden.has(sc.id)} onChange={()=>toggleScalar(sc.id)}/>
                     </div>
                   );

@@ -61,8 +61,8 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
           const val = resolveNum(n.props.value, ownSc, 0);
           return (
             <div key={n.id} style={{display:"flex",gap:6,alignItems:"center"}}>
-              <span style={{color:"#303860",fontSize:12}}>=</span>
-              <span style={{color:"#5a6070",flex:1}}>{n.name}</span>
+              <span style={{color:"#8a93b8",fontSize:12}}>=</span>
+              <span style={{color:"#aab4cc",flex:1}}>{n.name}</span>
               <span style={{color:"#fba"}}>{fmt4(val)}</span>
             </div>
           );
@@ -71,8 +71,8 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
           const val = resolveNum(n.props.expr, ownSc, NaN);
           return (
             <div key={n.id} style={{display:"flex",gap:6,alignItems:"center"}}>
-              <span style={{color:"#0c2030",fontSize:12}}>≈</span>
-              <span style={{color:"#5a6070",flex:1}}>{n.name}</span>
+              <span style={{color:"#7fb8d8",fontSize:12}}>≈</span>
+              <span style={{color:"#aab4cc",flex:1}}>{n.name}</span>
               <span style={{color:"#b5e8ff"}}>{isFinite(val)?fmt4(val):"…"}</span>
             </div>
           );
@@ -88,8 +88,8 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
           return (
             <div key={n.id} style={{display:"flex",flexDirection:"column",gap:1,marginBottom:2}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <span style={{color:"#303860",fontSize:12}}>⊟</span>
-                <span style={{color:"#5a6070",flex:1}}>{n.name}</span>
+                <span style={{color:"#8a93b8",fontSize:12}}>⊟</span>
+                <span style={{color:"#aab4cc",flex:1}}>{n.name}</span>
                 <span style={{color:"#fd8",minWidth:52,textAlign:"right"}}>{fmt4(val)}</span>
               </div>
               <input
@@ -110,11 +110,11 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <button
                   onClick={() => onUpdateNode && onUpdateNode(n.id, {playing: !n.playing})}
-                  style={{background:"none",border:"none",cursor:"pointer",color:n.playing?"#f84":"#5a6070",padding:0,fontSize:13,lineHeight:1,fontFamily:"monospace"}}
+                  style={{background:"none",border:"none",cursor:"pointer",color:n.playing?"#f84":"#aab4cc",padding:0,fontSize:13,lineHeight:1,fontFamily:"monospace"}}
                 >
                   {n.playing ? "■" : "▶"}
                 </button>
-                <span style={{color:"#5a6070",flex:1}}>{n.name}</span>
+                <span style={{color:"#aab4cc",flex:1}}>{n.name}</span>
                 <span style={{color:"#f76",minWidth:52,textAlign:"right"}}>{fmt4(val)}</span>
               </div>
               <div style={{height:3,background:"#0e0f1e",borderRadius:2,overflow:"hidden",margin:"1px 0 2px"}}>

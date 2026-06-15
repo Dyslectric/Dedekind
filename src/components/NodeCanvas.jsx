@@ -323,14 +323,14 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
                 fill="none" stroke={e.color} strokeWidth={e.isAux?1.5/zoom:2/zoom} strokeOpacity={e.isAux?0.5:0.6}
                 strokeDasharray={e.isAux?`${5/zoom},${3/zoom}`:undefined}/>
               <circle className="edge-mid" cx={(e.op.x+e.ip.x)/2} cy={(e.op.y+e.ip.y)/2} r={7/zoom}
-                fill="#0e1028" stroke="#232545" strokeWidth={1/zoom} style={{cursor:"pointer"}}
+                fill={nodePal.nodeHdrBg} stroke={nodePal.nodeBorder} strokeWidth={1/zoom} style={{cursor:"pointer"}}
                 onClick={()=>onDisconnect("dep",e.fromId,e.toId)}/>
               <text className="edge-mid-txt" x={(e.op.x+e.ip.x)/2} y={(e.op.y+e.ip.y)/2+4/zoom}
-                textAnchor="middle" fontSize={14/zoom} fill="#f77" fontFamily="monospace" style={{pointerEvents:"none"}}>×</text>
+                textAnchor="middle" fontSize={14/zoom} fill={nodePal.accent?nodePal.accent("#ee6666"):"#ee6666"} fontFamily="monospace" style={{pointerEvents:"none"}}>×</text>
             </g>
           ))}
         </g>
-        {wireNow&&(()=>{const fn=nodes[wireNow.fromId];if(!fn)return null;const fp=wireNow.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+wireNow.curX)/2;return<path id="wire-line" d={`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${wireNow.curY} ${wireNow.curX},${wireNow.curY}`} fill="none" stroke="#7af" strokeWidth={2/zoom} strokeDasharray={`${6/zoom},${4/zoom}`} opacity={0.8}/>;})()}
+        {wireNow&&(()=>{const fn=nodes[wireNow.fromId];if(!fn)return null;const fp=wireNow.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+wireNow.curX)/2;return<path id="wire-line" d={`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${wireNow.curY} ${wireNow.curX},${wireNow.curY}`} fill="none" stroke={nodePal.nodeSel} strokeWidth={2/zoom} strokeDasharray={`${6/zoom},${4/zoom}`} opacity={0.8}/>;})()}
         {Object.values(nodes).map(n=>(
           <CanvasNode key={n.id} node={n} selected={selected===n.id} inSelection={selSet.has(n.id)} zoom={zoom} nodes={nodes} pal={nodePal}
             onMouseDown={e=>onNodeDown(e,n.id)} onPortDown={onPortDown}
@@ -344,7 +344,7 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
         const x=Math.min(marquee.x0,marquee.x1), y=Math.min(marquee.y0,marquee.y1);
         const w=Math.abs(marquee.x1-marquee.x0), h=Math.abs(marquee.y1-marquee.y0);
         const sub=marquee.mode==="subtract";
-        const stroke=sub?"#f7716b":"#6aceff";
+        const stroke=sub?(nodePal.accent?nodePal.accent("#f7716b"):"#f7716b"):nodePal.nodeSel;
         return <rect x={x} y={y} width={w} height={h}
           fill={stroke} fillOpacity={0.10} stroke={stroke} strokeOpacity={0.9}
           strokeWidth={1.5} strokeDasharray="5,3" style={{pointerEvents:"none"}}/>;
@@ -364,7 +364,10 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
   const h=nodeHeight(node,nodes);
   const dimmed=isCamera&&node.enabled===false;
   const displayVal=liveVal!=null?liveVal:(node.value??0);
-  const tint=node.color||meta.tc;
+  const rawTint=node.color||meta.tc;
+  // On light themes the light-pastel identity colors wash out; tcFor darkens
+  // them to a readable level (identity on dark themes passes through unchanged).
+  const tint=(pal.tcFor?pal.tcFor(rawTint):rawTint);
 
   const connectedCamCount = (isScalar||isFunctionType(node.type)||isDomainType(node.type))
     ? Object.values(nodes).filter(c=>(c.attachments||[]).includes(node.id)).length
@@ -387,22 +390,25 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
       <text x={47} y={17} fontSize={14.5} fill={pal.nodeLabel} fontFamily="monospace" fontWeight="bold" style={{pointerEvents:"none"}}>{node.label}{node.name?` (${node.name})`:""}</text>
       {node.color&&<circle cx={NW-14} cy={13} r={5} fill={node.color} stroke={pal.nodeBorder} strokeWidth={0.5} style={{pointerEvents:"none"}}/>}
       {isCamera&&<>
+        {(()=>{const en=pal.chip("#43d088"),off=pal.chip("#e06a6a");const c=node.enabled?en:off;return(
         <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();onToggleEnabled(node.id);}}>
-          <rect x={NW-40} y={5} width={15} height={15} rx={3} fill={node.enabled?"#0c281a":"#1e0e0e"} stroke={node.enabled?"#285a3a":"#4a1a1a"} strokeWidth={0.8}/>
-          <text x={NW-32.5} y={16} textAnchor="middle" fontSize={13} fill={node.enabled?"#4fa":"#a44"} fontFamily="monospace" style={{pointerEvents:"none"}}>{node.enabled?"●":"○"}</text>
-        </g>
+          <rect x={NW-40} y={5} width={15} height={15} rx={3} fill={c.bg} stroke={c.border} strokeWidth={0.8}/>
+          <text x={NW-32.5} y={16} textAnchor="middle" fontSize={13} fill={c.fg} fontFamily="monospace" style={{pointerEvents:"none"}}>{node.enabled?"●":"○"}</text>
+        </g>);})()}
+        {(()=>{const c=pal.chip("#4a90d8");return(
         <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();onDetach(node.id);}}>
-          <rect x={NW-22} y={5} width={15} height={15} rx={3} fill="#0c1a28" stroke="#253a5a" strokeWidth={0.8}/>
-          <text x={NW-14.5} y={16} textAnchor="middle" fontSize={13} fill="#48a" fontFamily="monospace" style={{pointerEvents:"none"}}>⊞</text>
-        </g>
+          <rect x={NW-22} y={5} width={15} height={15} rx={3} fill={c.bg} stroke={c.border} strokeWidth={0.8}/>
+          <text x={NW-14.5} y={16} textAnchor="middle" fontSize={13} fill={c.fg} fontFamily="monospace" style={{pointerEvents:"none"}}>⊞</text>
+        </g>);})()}
       </>}
-      {!isProject&&!isCamera&&<g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();onDelete(node.id);}}>
-        <rect x={NW-9} y={-3} width={13} height={13} rx={3} fill="#281010" stroke="#521818" strokeWidth={0.8}/>
-        <text x={NW-2.5} y={7} textAnchor="middle" fontSize={13} fill="#f55" fontFamily="monospace" style={{pointerEvents:"none"}}>×</text>
-      </g>}
+      {!isProject&&!isCamera&&(()=>{const c=pal.chip("#e85555");return(
+      <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();onDelete(node.id);}}>
+        <rect x={NW-9} y={-3} width={13} height={13} rx={3} fill={c.bg} stroke={c.border} strokeWidth={0.8}/>
+        <text x={NW-2.5} y={7} textAnchor="middle" fontSize={13} fill={c.fg} fontFamily="monospace" style={{pointerEvents:"none"}}>×</text>
+      </g>);})()}
       <line x1={8} y1={28} x2={NW-8} y2={28} stroke={pal.nodeBorder} strokeWidth={0.7} opacity={0.6} style={{pointerEvents:"none"}}/>
       {/* Camera shows its plot list (the one genuinely useful body content). */}
-      {isCamera&&(node.attachments||[]).filter(a=>catOf(nodes[a]?.type)==="plot").map((cid,i)=>{const child=nodes[cid];if(!child)return null;const m=TYPE_META[child.type]||{};return<g key={cid} style={{pointerEvents:"none"}}><rect x={11} y={35+i*18} width={6} height={6} rx={1.5} fill={child.color||m.tc||"#556"} opacity={0.9}/><text x={23} y={43+i*18} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace">{child.label}</text></g>;})}
+      {isCamera&&(node.attachments||[]).filter(a=>catOf(nodes[a]?.type)==="plot").map((cid,i)=>{const child=nodes[cid];if(!child)return null;const m=TYPE_META[child.type]||{};const dotC=(pal.tcFor?pal.tcFor(child.color||m.tc||"#556"):(child.color||m.tc||"#556"));return<g key={cid} style={{pointerEvents:"none"}}><rect x={11} y={35+i*18} width={6} height={6} rx={1.5} fill={dotC} opacity={0.9}/><text x={23} y={43+i*18} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace">{child.label}</text></g>;})}
       {/* Slider: live value readout + an interactive drag track. */}
       {node.type==="slider"&&(()=>{
         const min=resolveNum(node.props?.min,{}, -5), max=resolveNum(node.props?.max,{},5);
@@ -429,7 +435,7 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
           ? (Math.abs(exprVal)>=1e5||(Math.abs(exprVal)<1e-4&&exprVal!==0) ? exprVal.toExponential(3) : Number(exprVal.toPrecision(6)).toString())
           : null;
         return <g style={{pointerEvents:"none"}}>
-          <text x={12} y={39} fontSize={12.5} fill={"#b5e8ff"} fontFamily="monospace" opacity={0.8}>{shown||" "}</text>
+          <text x={12} y={39} fontSize={12.5} fill={pal.accent?pal.accent("#7fd8ff"):"#7fd8ff"} fontFamily="monospace" opacity={0.85}>{shown||" "}</text>
           <text x={12} y={52} fontSize={12.5} fontFamily="monospace" fill={out!=null?tint:pal.nodeSub} opacity={out!=null?0.95:0.5}>
             {out!=null ? `= ${out}` : "= …"}
           </text>
@@ -448,7 +454,7 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
               // play glyph (triangle)
               : <path d={`M17.5,${by-4.5} L24,${by} L17.5,${by+4.5} Z`} fill={tint} style={{pointerEvents:"none"}}/>}
           </g>
-          <text x={36} y={by+4.5} fontSize={13.5} fill={playing?"#f84":pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(displayVal).toFixed(3)}</text>
+          <text x={36} y={by+4.5} fontSize={13.5} fill={playing?(pal.accent?pal.accent("#ff8844"):"#ff8844"):pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(displayVal).toFixed(3)}</text>
         </g>;
       })()}
       {isScalar&&connectedCamCount>0&&<text x={NW-16} y={40} fontSize={13} fill={pal.nodeSub} fontFamily="monospace" textAnchor="end" style={{pointerEvents:"none"}}>→{connectedCamCount}</text>}
@@ -457,7 +463,7 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
         <circle cx={NW} cy={isScalar?20:34} r={7} fill={pal.nodeHdrBg} stroke={tint} strokeWidth={1.4} opacity={0.95}/><circle cx={NW} cy={isScalar?20:34} r={3} fill={tint} opacity={0.9}/>
       </g>}
       {canConsume(node.type)&&<g style={{cursor:"crosshair"}} onMouseDown={e=>onPortDown(e,node.id,"in")}>
-        <circle cx={0} cy={isCamera?18:28} r={7} fill={pal.nodeHdrBg} stroke={pal.nodeBorder} strokeWidth={1.4}/><circle cx={0} cy={isCamera?18:28} r={3} fill={meta.tc} opacity={0.8}/>
+        <circle cx={0} cy={isCamera?18:28} r={7} fill={pal.nodeHdrBg} stroke={pal.nodeBorder} strokeWidth={1.4}/><circle cx={0} cy={isCamera?18:28} r={3} fill={tint} opacity={0.8}/>
       </g>}
     </g>
   );

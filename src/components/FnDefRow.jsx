@@ -6,6 +6,7 @@ import { resolveNum, safeEval, makeFn } from "../core/math.js";
 // Renders a small HUD showing scalars connected to this camera
 // ── Inline fnDef editor for ScalarOverlay ───────────────────────────────────
 function FnDefRow({ node, scope, onUpdateNode }) {
+  const { ui, S } = useUI();
   const [editExpr, setEditExpr] = useState(node.props?.expr || "");
   const [editParams, setEditParams] = useState(node.props?.params || "x");
   const [exprFocused, setExprFocused] = useState(false);
@@ -34,8 +35,8 @@ function FnDefRow({ node, scope, onUpdateNode }) {
   return (
     <div style={{marginBottom:3}}>
       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:1}}>
-        <span style={{color:"#303860",fontSize:12}}>fn</span>
-        <span style={{color:"#4a6a40",flex:"0 0 auto"}}>{node.name}(</span>
+        <span style={{color:ui.uiFaint,fontSize:12}}>fn</span>
+        <span style={{color:ui.uiText,flex:"0 0 auto"}}>{node.name}(</span>
         <input
           value={editParams}
           onChange={e => setEditParams(e.target.value)}
@@ -43,16 +44,15 @@ function FnDefRow({ node, scope, onUpdateNode }) {
           onBlur={() => { setParamsFocused(false); commitParams(editParams); }}
           onKeyDown={e => { if (e.key === "Enter") { commitParams(editParams); e.target.blur(); } e.stopPropagation(); }}
           style={{
-            background:"#080e0a", border:"1px solid #1a2a1a", color:"#8adb80",
-            borderRadius:3, padding:"1px 4px", fontSize:12, fontFamily:"monospace",
-            width: Math.max(30, editParams.length * 7 + 10), outline:"none",
+            ...S.inp, padding:"1px 4px", fontSize:12,
+            width: Math.max(30, editParams.length * 7 + 10),
           }}
         />
-        <span style={{color:"#4a6a40",flex:"0 0 auto"}}>)</span>
-        {preview && <span style={{color:"#2a4a28",fontSize:11,marginLeft:"auto"}}>→{preview}</span>}
+        <span style={{color:ui.uiText,flex:"0 0 auto"}}>)</span>
+        {preview && <span style={{color:ui.uiFaint,fontSize:11,marginLeft:"auto"}}>→{preview}</span>}
       </div>
       <div style={{display:"flex",gap:4,alignItems:"center"}}>
-        <span style={{color:"#303860",fontSize:11,flexShrink:0}}>=</span>
+        <span style={{color:ui.uiMuted,fontSize:11,flexShrink:0}}>=</span>
         <input
           value={editExpr}
           onChange={e => setEditExpr(e.target.value)}
@@ -60,9 +60,7 @@ function FnDefRow({ node, scope, onUpdateNode }) {
           onBlur={() => { setExprFocused(false); commitExpr(editExpr); }}
           onKeyDown={e => { if (e.key === "Enter") { commitExpr(editExpr); e.target.blur(); } e.stopPropagation(); }}
           style={{
-            background:"#080e0a", border:"1px solid #1a2a1a", color:"#afd",
-            borderRadius:3, padding:"1px 5px", fontSize:12, fontFamily:"monospace",
-            width:"100%", outline:"none",
+            ...S.inp, padding:"1px 5px", fontSize:12, width:"100%",
           }}
         />
       </div>
