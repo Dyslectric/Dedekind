@@ -169,6 +169,16 @@ function makeFn(name, params, expr, sc) {
     return r??NaN;
   };
   fn._d = 0; fn._calls = 0;
+  // Identity metadata for cache invalidation. The geometry cache keys off a
+  // textual signature; functions are closures (not numbers) so they're invisible
+  // to a value scan. We expose the definition (name+params+body) and the scope
+  // the function closed over, so scopeSig() can (a) detect when the function
+  // BODY changes and (b) recurse into the scalars the body transitively depends
+  // on (e.g. f(x)=a*x where `a` is a slider not named in the caller's expr).
+  fn._fnName = name;
+  fn._fnParams = params;
+  fn._fnExpr = expr;
+  fn._fnScope = sc;
   return fn;
 }
 

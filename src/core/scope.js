@@ -3,11 +3,19 @@ import { resolveNum, safeEval, makeFn } from "./math.js";
 import * as math from "mathjs";
 
 // ── Scope resolution ─────────────────────────────────────────────────────────
-// New model: `node.attachments` lists the node's UPSTREAM dependencies — the
-// scalars, functions and domains it consumes (and, for a camera, the plots it
-// shows). Scope for a consumer is built by walking its attached scalars and
-// functions transitively, so a plot sees exactly the values wired into it (or
-// into the functions wired into it).
+// `node.attachments` lists the node's UPSTREAM dependencies. A node may only
+// evaluate the scalars/functions/exprs that are DIRECTLY attached to it — not
+// ones reachable only transitively through another node. So a plot attached to
+// function f sees `f`, but NOT the slider `a` that f is attached to; `a` is
+// visible only inside f's own body (because a is directly attached to f).
+//
+// To make that work, every function/expr is a closure over ITS OWN direct
+// scope, built recursively. The consumer just receives the named closure and
+// the scalars on its own attachment list.
+//
+// `collectScalarDeps` still walks transitively — it is used elsewhere for
+// dirty-tracking ("is this node downstream of a playing animator?"), which is a
+// different question from "what may this node's expressions reference".
 function collectScalarDeps(nodeId, nodes, acc, guard){
   const n=nodes[nodeId]; if(!n) return;
   if(guard.has(nodeId)) return; guard.add(nodeId);
@@ -26,49 +34,78 @@ function collectScalarDeps(nodeId, nodes, acc, guard){
     }
   }
 }
-// Build a {name: value|fn} scope for a consumer node from its attached deps.
-function resolveScope(consumerId, nodes, animVals){
-  const sc={};
-  const deps=new Set();
-  collectScalarDeps(consumerId, nodes, deps, new Set());
-  const list=[...deps].map(id=>nodes[id]).filter(Boolean);
-  // sliders and animators first (no expression deps)
-  for(const n of list){
-    if(!n.name) continue;
-    if(n.type==="slider") sc[n.name]=typeof n.value==="number"?n.value:0;
-    else if(n.type==="animator") sc[n.name]=animVals?.[n.id]??(typeof n.value==="number"?n.value:0);
-  }
-  // constants after — their expressions may reference sliders/animators/other constants
-  for(const n of list){
-    if(!n.name) continue;
-    if(n.type==="constant") sc[n.name]=resolveNum(n.props.value,sc,0);
-  }
-  // functions built before expr so expr nodes can call named functions
-  for(const n of list){
-    if(n.type==="fnDef" && n.name && n.props?.expr){
-      const params=(n.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
-      sc[n.name]=makeFn(n.name,params,n.props.expr,sc);
+
+// Build the value of a single named scalar/function node, resolved against its
+// OWN direct-attachment scope. `building` guards against attachment cycles.
+// Returns undefined for node types that don't contribute a named value.
+function resolveNodeValue(node, nodes, animVals, building){
+  if(!node) return undefined;
+  switch(node.type){
+    case "slider":   return typeof node.value==="number"?node.value:0;
+    case "animator": return animVals?.[node.id] ?? (typeof node.value==="number"?node.value:0);
+    case "constant": return resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building), 0);
+    case "expr":     return resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building), 0);
+    case "fnDef": {
+      if(!node.name || !node.props?.expr) return undefined;
+      const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
+      // The function closes over its OWN direct scope (computed lazily at call
+      // time via makeFn's captured scope object). We pass a snapshot built now;
+      // makeFn keeps a reference, and the values are frame-stable within a build.
+      const fnScope=ownScope(node.id,nodes,animVals,building);
+      return makeFn(node.name, params, node.props.expr, fnScope);
     }
+    default: return undefined;
   }
-  // expr nodes last — full scope (sliders, animators, constants, functions) available.
-  // Evaluate in topological order so an expr that references another expr's name
-  // gets the correct value; naive iteration order could evaluate A before B even
-  // when A's expression references B's variable name.
-  const exprNodes=list.filter(n=>n.name && n.type==="expr");
+}
+
+// Build a {name: value|fn} scope from a node's DIRECT attachments only. This is
+// the scope a node's own expressions are evaluated against. Functions/exprs in
+// the result are themselves resolved against their own direct scopes.
+function ownScope(consumerId, nodes, animVals, building){
+  const consumer=nodes[consumerId]; if(!consumer) return {};
+  // Cycle guard: if we're already resolving this node further up the stack,
+  // stop — a node cannot directly depend on itself through a finite chain.
+  if(building && building.has(consumerId)) return {};
+  const guard = building ? building : new Set();
+  guard.add(consumerId);
+  const sc={};
+  const direct=(consumer.attachments||[]).map(id=>nodes[id]).filter(Boolean);
+  // Resolve each directly-attached named node to a value/closure. Order matters
+  // only for same-scope expr→expr references; resolveNodeValue recurses into
+  // each dep's own scope independently, so a flat pass over direct deps is
+  // sufficient here (exprs attached to the SAME consumer that reference each
+  // other are handled by the expr ordering pass below).
+  // sliders / animators / constants / functions first.
+  for(const dep of direct){
+    if(!dep.name) continue;
+    if(dep.type==="expr") continue; // handled below in dependency order
+    const v=resolveNodeValue(dep,nodes,animVals,guard);
+    if(v!==undefined) sc[dep.name]=v;
+  }
+  // expr nodes attached directly to this consumer, evaluated in dependency
+  // order so a directly-attached expr that references another directly-attached
+  // expr resolves correctly. Each still resolves against its OWN direct scope.
+  const exprNodes=direct.filter(n=>n.name && n.type==="expr");
   const exprById=new Map(exprNodes.map(n=>[n.id,n]));
-  const exprDone=new Set();
+  const done=new Set();
   function evalExpr(n){
-    if(exprDone.has(n.id)) return;
-    exprDone.add(n.id);
-    // Evaluate any expr deps this node's attachments reference first
+    if(done.has(n.id)) return;
+    done.add(n.id);
     for(const depId of (n.attachments||[])){
       const dep=exprById.get(depId);
       if(dep) evalExpr(dep);
     }
-    sc[n.name]=resolveNum(n.props.expr,sc,0);
+    const v=resolveNodeValue(n,nodes,animVals,guard);
+    if(v!==undefined) sc[n.name]=v;
   }
   for(const n of exprNodes) evalExpr(n);
+  guard.delete(consumerId);
   return sc;
+}
+
+// Build a {name: value|fn} scope for a consumer node from its DIRECT deps only.
+function resolveScope(consumerId, nodes, animVals){
+  return ownScope(consumerId, nodes, animVals, new Set());
 }
 // A camera's own scope = union of the scopes of the plots it shows, plus any
 // scalars attached directly to the camera (for camera props that depend on a
@@ -101,44 +138,11 @@ function plotDomain(plotId, nodes){
   return null;
 }
 
-function buildGlobalScope(nodes, animVals) {
-  const sc = {};
-  // sliders and animators first (no expression deps)
-  for (const n of Object.values(nodes)) {
-    if (!n.name) continue;
-    if (n.type === "slider") sc[n.name] = typeof n.value === "number" ? n.value : 0;
-    else if (n.type === "animator") sc[n.name] = animVals?.[n.id] ?? (typeof n.value === "number" ? n.value : 0);
-  }
-  // constants after — can reference sliders/animators
-  for (const n of Object.values(nodes)) {
-    if (!n.name) continue;
-    if (n.type === "constant") sc[n.name] = resolveNum(n.props.value, sc, 0);
-  }
-  // functions before expr so expr nodes can call named functions
-  for (const n of Object.values(nodes)) {
-    if (n.type === "fnDef" && n.name && n.props?.expr) {
-      const params = (n.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
-      sc[n.name] = makeFn(n.name, params, n.props.expr, sc);
-    }
-  }
-  // expr nodes last — full scope available including functions.
-  // Evaluate in topological order so expr-depends-on-expr resolves correctly.
-  const allExprNodes=Object.values(nodes).filter(n=>n.name && n.type==="expr");
-  const gExprById=new Map(allExprNodes.map(n=>[n.id,n]));
-  const gExprDone=new Set();
-  function gEvalExpr(n){
-    if(gExprDone.has(n.id)) return;
-    gExprDone.add(n.id);
-    for(const depId of (n.attachments||[])){
-      const dep=gExprById.get(depId);
-      if(dep) gEvalExpr(dep);
-    }
-    sc[n.name] = resolveNum(n.props.expr, sc, 0);
-  }
-  for(const n of allExprNodes) gEvalExpr(n);
-  return sc;
-}
-
+// NOTE: a previous `buildGlobalScope` helper that exposed every named scalar to
+// every node regardless of wiring has been removed. Evaluation scope is now
+// strictly per-node (see resolveScope/ownScope): a node may reference only the
+// scalars/functions/exprs directly attached to it. Reintroducing an ambient
+// global scope would silently break that guarantee.
 
 // ── 3D scene rebuilder ───────────────────────────────────────────────────────
 // Signature of the geometry-affecting props for a node. If only scalar
@@ -149,9 +153,9 @@ function geomSignature(node, scope){
   const p=node.props;
   const c=node.color||"";
   switch(node.type){
-    case "surf3d": return `s|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${resolveNum(p.res,scope,40)}`;
-    case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}`;
-    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}`;
+    case "surf3d": return `s|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${resolveNum(p.res,scope,40)}|${scopeSigFns(node,scope)}`;
+    case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
+    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${scopeSigFns(node,scope)}`;
     case "paramvol": return `pv|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${p.wMin}|${p.wMax}|${resolveNum(p.uRes,scope,14)}|${resolveNum(p.vRes,scope,14)}|${resolveNum(p.wRes,scope,14)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
     case "curve3d": return `c|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.tMin,scope,0)}|${resolveNum(p.tMax,scope,6.283)}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
     case "plane": return `pl|${c}|${resolveNum(p.centerX,scope,0)}|${resolveNum(p.centerY,scope,0)}|${resolveNum(p.centerZ,scope,0)}|${resolveNum(p.normalX,scope,0)}|${resolveNum(p.normalY,scope,1)}|${resolveNum(p.normalZ,scope,0)}|${resolveNum(p.size,scope,8)}`;
@@ -159,7 +163,7 @@ function geomSignature(node, scope){
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
     case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${scopeSig(node,scope)}`;
     case "pointSeq": return `ps|${c}|${p.points}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
-    case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${p.normalize!==false}`;
+    case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "glyphField": return `gl|${c}|${p.pairs}|${resolveNum(p.arrowLen,scope,0.5)}|${p.lenMode||(p.normalize===false?"scaled":"uniform")}|${p.anim||"crest"}|${resolveNum(p.speed,scope,1)}|${p.crestColor||""}|${scopeSig(node,scope)}`;
     case "flow": return `fl|${c}|${resolveNum(p.steps,scope,500)}|${resolveNum(p.stepSize,scope,0.02)}|${p.output||"surface"}|${resolveNum(p.volSlices,scope,6)}|${p.gradient?1:0}|${p.gradA||""}|${p.gradB||""}|${p.__fnSig||""}|${p.__paramSig||""}|${scopeSig(node,scope)}`;
     default: return null;
@@ -178,18 +182,92 @@ function scopeSig(node, scope){
   const text=nodeExprText(node);
   if(!text) return "";
   const parts=[];
-  for(const k in scope){
-    const v=scope[k];
-    if(typeof v!=="number") continue;            // skip functions
-    // word-boundary match so "a" doesn't match inside "abs"
-    if(new RegExp("(^|[^A-Za-z0-9_])"+escapeRe(k)+"([^A-Za-z0-9_]|$)").test(text)){
-      parts.push(k+"="+v);
+  const seenFns=new Set();
+  // Walk the names referenced by `text`. For numeric scope vars we record
+  // name=value. For function vars we record the function's DEFINITION (so a body
+  // edit invalidates the cache) and then recurse into the names the function
+  // body references against the scope the function closed over — this pulls in
+  // scalars a plot depends on only transitively (e.g. f(x)=a*x, slider `a`).
+  function appearsIn(name, hay){
+    return new RegExp("(^|[^A-Za-z0-9_])"+escapeRe(name)+"([^A-Za-z0-9_]|$)").test(hay);
+  }
+  function visit(hay, sc){
+    if(!hay) return;
+    for(const k in sc){
+      const v=sc[k];
+      if(!appearsIn(k, hay)) continue;
+      if(typeof v==="number"){
+        parts.push(k+"="+v);
+      } else if(typeof v==="function" && v._fnExpr!=null){
+        // Guard against recursive/self-referential function definitions.
+        const fnKey=k+":"+(v._fnName||"");
+        if(seenFns.has(fnKey)) continue;
+        seenFns.add(fnKey);
+        // Definition signature: body change ⇒ different signature ⇒ rebuild.
+        parts.push(k+"@="+(v._fnParams||[]).join(",")+"=>"+v._fnExpr);
+        // Recurse into the function body using the scope it closed over, so the
+        // scalars/functions IT depends on also enter the caller's signature.
+        // A parameter shadows any same-named outer scalar inside the body, so
+        // strip parameter names from the recursion scope to avoid folding in an
+        // unrelated slider that merely shares a name with a bound parameter.
+        const fnScope=v._fnScope||sc;
+        const paramSet=new Set(v._fnParams||[]);
+        const reduced={};
+        for(const key in fnScope){ if(!paramSet.has(key)) reduced[key]=fnScope[key]; }
+        visit(v._fnExpr, reduced);
+      }
     }
   }
-  parts.sort();
-  return parts.join(",");
+  visit(text, scope);
+  // De-dupe (a var may be reached via several paths) and sort for stability.
+  const uniq=[...new Set(parts)];
+  uniq.sort();
+  return uniq.join(",");
 }
 function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
+// Function-only signature fragment. Used by the GPU-fast-path surface types
+// (surf3d/paramsurf/quiver3d) whose direct slider variables become live shader
+// uniforms and therefore must NOT force a geometry rebuild when they change.
+// User-defined functions, however, cannot be expressed as uniforms — referencing
+// one forces the CPU/baked path — so their DEFINITIONS and the scalars they
+// transitively pull in DO need to invalidate the cache. This returns only the
+// function-definition and through-function scalar parts, leaving direct sliders
+// to the uniform path.
+function scopeSigFns(node, scope){
+  if(!scope) return "";
+  const text=nodeExprText(node);
+  if(!text) return "";
+  const parts=[];
+  const seenFns=new Set();
+  const appearsIn=(name,hay)=>new RegExp("(^|[^A-Za-z0-9_])"+escapeRe(name)+"([^A-Za-z0-9_]|$)").test(hay);
+  // top-level: only descend into FUNCTIONS named in the node text; direct numeric
+  // vars are intentionally skipped (they're uniforms).
+  function descend(hay, sc, topLevel){
+    if(!hay) return;
+    for(const k in sc){
+      const v=sc[k];
+      if(!appearsIn(k,hay)) continue;
+      if(typeof v==="function" && v._fnExpr!=null){
+        const fnKey=k+":"+(v._fnName||"");
+        if(seenFns.has(fnKey)) continue;
+        seenFns.add(fnKey);
+        parts.push(k+"@="+(v._fnParams||[]).join(",")+"=>"+v._fnExpr);
+        const fnScope=v._fnScope||sc;
+        const paramSet=new Set(v._fnParams||[]);
+        const reduced={};
+        for(const key in fnScope){ if(!paramSet.has(key)) reduced[key]=fnScope[key]; }
+        // inside a function body, numeric deps DO matter (they're baked, not uniforms)
+        descend(v._fnExpr, reduced, false);
+      } else if(typeof v==="number" && !topLevel){
+        parts.push(k+"="+v);
+      }
+    }
+  }
+  descend(text, scope, true);
+  const uniq=[...new Set(parts)];
+  uniq.sort();
+  return uniq.join(",");
+}
 // Concatenated raw expression text of a node (all expression-bearing props).
 const _nodeTextCache=new Map();
 function nodeExprText(node){
@@ -236,5 +314,5 @@ function updateGpuUniforms(objs, scope){
 }
 
 export {
-  collectScalarDeps, resolveScope, buildScopeForCamera, resolveDomain, plotDomain, buildGlobalScope, referencedVars, geomSignature, scopeSig, nodeExprText, escapeRe
+  collectScalarDeps, resolveScope, buildScopeForCamera, resolveDomain, plotDomain, referencedVars, geomSignature, scopeSig, scopeSigFns, nodeExprText, escapeRe
 };

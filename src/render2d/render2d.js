@@ -1,6 +1,6 @@
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
-import { resolveScope, plotDomain, buildGlobalScope } from "../core/scope.js";
+import { resolveScope, plotDomain } from "../core/scope.js";
 import { applyDomain } from "../geometry/rebuild.js";
 import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
 import { integrateFlow } from "../geometry/flow.js";
@@ -232,13 +232,12 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
   const basis = isPlane ? getPlane2DBasis(p2d, scope) : null;
   const threshold = resolveNum(p2d.planeThreshold, scope, 0.15);
 
-  const globalSc = buildGlobalScope(nodes, animVals||{});
   for (const childId of (camNode.attachments||[])) {
     const rawNode = nodes[childId]; if (!rawNode) continue;
     if (catOf(rawNode.type)!=="plot") continue;
     const node = normalizedNode(rawNode);
-    const own = animVals ? resolveScope(childId, nodes, animVals) : null;
-    const pscope = {...globalSc, ...scope, ...(own && Object.keys(own).length ? own : {})};
+    // Per-plot scope: only the variables directly attached to THIS plot.
+    const pscope = resolveScope(childId, nodes, animVals||{});
     const dom = plotDomain(childId, nodes);
     const np = dom ? applyDomain(node.props, node.type, dom) : node.props;
     const color = rawNode.color||"#5b9cf6";

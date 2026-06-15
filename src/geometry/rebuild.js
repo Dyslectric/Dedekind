@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
-import { resolveScope, plotDomain, geomSignature, buildGlobalScope } from "../core/scope.js";
+import { resolveScope, plotDomain, geomSignature } from "../core/scope.js";
 import { disposeObjs, updateGpuUniforms } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
@@ -45,11 +45,6 @@ function pointGradientColors(pts, p, scope){
 
 function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
   const seen=new Set();if(!camNode)return;
-  // Build a global scope that includes ALL named scalars (sliders, constants,
-  // animators) regardless of wiring, so plots can reference slider variables in
-  // expression fields like arrowLen without needing an explicit attachment edge.
-  // Per-plot/camera wired scope still takes priority (spread last).
-  const globalSc = buildGlobalScope(nodes, animVals||{});
   for(const childId of(camNode.attachments||[])){
     const rawNode=nodes[childId];if(!rawNode)continue;
     if(catOf(rawNode.type)!=="plot") continue;   // only plots render in a camera
@@ -57,11 +52,11 @@ function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
     // Normalize unified authoring kinds (scalarFn/paramSpace/points) down to the
     // legacy vocabulary the builders understand. childId stays the original id.
     const node=normalizedNode(rawNode);
-    // Per-plot scope: scalars/functions attached to THIS plot. Merged over the
-    // global scope so any slider variable is available even when not explicitly
-    // wired. Camera-union scope and per-plot wired scope both take priority.
-    const own = animVals ? resolveScope(childId, nodes, animVals) : null;
-    const pscope = {...globalSc, ...scope, ...(own && Object.keys(own).length ? own : {})};
+    // Per-plot scope: ONLY the scalars/functions/exprs directly attached to THIS
+    // plot. A plot can no longer reference variables it isn't wired to — neither
+    // ambient globals nor scalars reachable only through another node. Functions
+    // attached to the plot still close over their own direct deps internally.
+    const pscope = resolveScope(childId, nodes, animVals||{});
     const dom = plotDomain(childId, nodes);
     const p = dom ? applyDomain(node.props, node.type, dom) : node.props;
     rebuildOnePlot(scene,objMap,childId,node,p,pscope,nodes,camNode,animVals);

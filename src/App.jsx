@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ComputeWorker } from "./core/worker.js";
 import { catOf, canAttach, SCALAR_TYPES, isCameraType } from "./core/taxonomy.js";
-import { buildScopeForCamera, buildGlobalScope, resolveScope, collectScalarDeps } from "./core/scope.js";
+import { buildScopeForCamera, resolveScope, collectScalarDeps } from "./core/scope.js";
 import { serializeProject, deserializeProject, serializeCameraShare, migrateModel } from "./core/serialize.js";
 import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from "./nodes/model.js";
 import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
@@ -102,13 +102,6 @@ function Editor({initialHash}){
     return m;
   },[nodes,animTick]);
 
-  // Static global scope: animators contribute their stored value, not their live
-  // per-frame value. Rebuilt only when nodes change, so its identity is stable
-  // across animation frames. This is the base for editing nodes that aren't
-  // animated. The live variant folds in current animator values for previews of
-  // nodes that ARE animated.
-  const staticGlobalScope=useMemo(()=>buildGlobalScope(nodes,{}),[nodes]);
-  const globalScope=useMemo(()=>buildGlobalScope(nodes,animValsRef.current),[nodes,animTick]);
 
   const projectNode=useMemo(()=>Object.values(nodes).find(n=>n.type==="project"),[nodes]);
   const theme=useMemo(()=>buildTheme(projectNode),[projectNode]);

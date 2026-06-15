@@ -3,7 +3,7 @@ import { catOf, canAttach, canBeDependency, canConsume, SCALAR_TYPES, isFunction
 import { NW, getOutPort, getInPort, TYPE_META } from "../nodes/model.js";
 import { buildNodePalette, NODE_DARK } from "../theme/tokens.jsx";
 import { resolveNum } from "../core/math.js";
-import { buildGlobalScope } from "../core/scope.js";
+import { resolveScope } from "../core/scope.js";
 
 // Card height for a node, matching CanvasNode's own calc. Cameras grow with the
 // number of plots they show; sliders/animators are taller to fit an interactive
@@ -305,10 +305,11 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
 
   const wireNow=wireRef.current;
   const nodePal=useMemo(()=>buildNodePalette(projectNode||{props:theme}),[projectNode,theme]);
-  // Global scope for evaluating expr-node outputs shown on their cards. Rebuilt
-  // when the node graph changes or an animator advances (tick), so the readout
-  // tracks live slider/animator values. Cheap relative to a geometry rebuild.
-  const gScope=useMemo(()=>buildGlobalScope(nodes,animValsRef.current),[nodes,tick]);
+  // expr-node card readouts are evaluated per-node against each expr's OWN direct
+  // scope (see exprVal below), matching the strict rule that a node may only use
+  // variables wired directly to it. `tick` is referenced there so the readout
+  // still tracks live animator values.
+  void tick;
 
   return(
     <svg ref={svgRef} style={{width:"100%",height:"100%",userSelect:"none",background:(theme.nodeBg||"#0a0c18")}} onMouseDown={onBgDown}
@@ -335,7 +336,7 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
             onMouseDown={e=>onNodeDown(e,n.id)} onPortDown={onPortDown}
             onDelete={onDelete} onToggleEnabled={onToggleEnabled} onDetach={onDetach}
             onSliderDown={onSliderDown} onTogglePlay={onTogglePlay}
-            exprVal={n.type==="expr"?(n.name&&typeof gScope[n.name]==="number"?gScope[n.name]:resolveNum(n.props?.expr,gScope,NaN)):undefined}
+            exprVal={n.type==="expr"?(()=>{ const es=resolveScope(n.id,nodes,animValsRef.current); return n.name&&typeof es[n.name]==="number"?es[n.name]:resolveNum(n.props?.expr,es,NaN); })():undefined}
             liveVal={n.type==="animator"?(animValsRef.current[n.id]??n.value):undefined}/>
         ))}
       </g>
