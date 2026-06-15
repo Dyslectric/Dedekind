@@ -255,11 +255,11 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
 
   // Begin dragging a slider card's thumb. trackLocalX0 / trackLocalW are the
   // track's geometry in card-local (world) units; we precompute the world-space
-  // track start so onMM can map the pointer straight to a value. Selecting the
-  // node too keeps the props panel in sync, but we DON'T start a node-move drag.
+  // track start so onMM can map the pointer straight to a value. We do NOT
+  // select the node — adjusting a slider shouldn't steal selection from whatever
+  // the user currently has focused — and we DON'T start a node-move drag.
   const onSliderDown=useCallback((e,id,trackLocalX0,trackLocalW,min,max,step)=>{
     if(e.button!==0)return; e.stopPropagation();
-    onSelect(id,false);
     const node=nodes[id]; if(!node)return;
     dragRef.current={ type:"slider", id, onUpdate:onUpdateNode,
       trackX0:node.pos.x+trackLocalX0, trackW:trackLocalW, min, max, step, lastVal:undefined };
@@ -271,13 +271,13 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
     dragRef.current.lastVal=val; onUpdateNode && onUpdateNode(id,{value:val});
   },[nodes,onSelect,onUpdateNode]);
 
-  // Toggle an animator's play state. Selecting keeps the panel in sync.
+  // Toggle an animator's play state. We do NOT select the node — hitting play
+  // shouldn't steal selection from whatever the user currently has focused.
   const onTogglePlay=useCallback((e,id)=>{
     e.stopPropagation();
     const node=nodes[id]; if(!node)return;
-    onSelect(id,false);
     onUpdateNode && onUpdateNode(id,{playing:!node.playing});
-  },[nodes,onSelect,onUpdateNode]);
+  },[nodes,onUpdateNode]);
 
   const{panX,panY,zoom}=viewRef.current;
 

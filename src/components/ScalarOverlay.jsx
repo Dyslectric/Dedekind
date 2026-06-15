@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { catOf, SCALAR_TYPES } from "../core/taxonomy.js";
-import { collectScalarDeps } from "../core/scope.js";
+import { collectScalarDeps, resolveScope } from "../core/scope.js";
 import { resolveNum } from "../core/math.js";
 import { FnDefRow } from "./FnDefRow.jsx";
 import { useUI } from "../theme/tokens.jsx";
@@ -53,8 +53,12 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
       onWheel={e => e.stopPropagation()}
     >
       {scalars.map(n => {
+        // Each node's value is computed against ITS OWN direct scope (strict
+        // scoping): an expr/constant/fnDef may reference only variables wired
+        // directly into it, so the shared camera scope is not the right context.
+        const ownSc = resolveScope(n.id, nodes, animValsRef?.current||{});
         if (n.type === "constant") {
-          const val = resolveNum(n.props.value, scope, 0);
+          const val = resolveNum(n.props.value, ownSc, 0);
           return (
             <div key={n.id} style={{display:"flex",gap:6,alignItems:"center"}}>
               <span style={{color:"#303860",fontSize:12}}>=</span>
@@ -64,7 +68,7 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
           );
         }
         if (n.type === "expr") {
-          const val = resolveNum(n.props.expr, scope, NaN);
+          const val = resolveNum(n.props.expr, ownSc, NaN);
           return (
             <div key={n.id} style={{display:"flex",gap:6,alignItems:"center"}}>
               <span style={{color:"#0c2030",fontSize:12}}>≈</span>
@@ -74,12 +78,12 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
           );
         }
         if (n.type === "fnDef") {
-          return <FnDefRow key={n.id} node={n} scope={scope} onUpdateNode={onUpdateNode}/>;
+          return <FnDefRow key={n.id} node={n} scope={ownSc} onUpdateNode={onUpdateNode}/>;
         }
         if (n.type === "slider") {
-          const min = resolveNum(n.props.min, scope, -5);
-          const max = resolveNum(n.props.max, scope, 5);
-          const step = resolveNum(n.props.step, scope, 0.01);
+          const min = resolveNum(n.props.min, ownSc, -5);
+          const max = resolveNum(n.props.max, ownSc, 5);
+          const step = resolveNum(n.props.step, ownSc, 0.01);
           const val = n.value ?? 0;
           return (
             <div key={n.id} style={{display:"flex",flexDirection:"column",gap:1,marginBottom:2}}>
@@ -98,8 +102,8 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
         }
         if (n.type === "animator") {
           const val = animValsRef?.current?.[n.id] ?? n.value ?? 0;
-          const min = resolveNum(n.props.min, scope, 0);
-          const max = resolveNum(n.props.max, scope, 1);
+          const min = resolveNum(n.props.min, ownSc, 0);
+          const max = resolveNum(n.props.max, ownSc, 1);
           const pct = (max - min) > 0 ? (val - min) / (max - min) : 0;
           return (
             <div key={n.id} style={{display:"flex",flexDirection:"column",gap:1,marginBottom:2}}>

@@ -83,18 +83,25 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     // For transformers AND flows, fold the wired fnMap + paramSpace expressions
     // into the signature so geometry rebuilds when those upstream nodes change.
     let pSig=p;
+    let sigScope=scope;
     if(node.type==="transformer"||node.type==="flow"){
       let fnSig="",paramSig="",eqSig="";
+      const structScopes=[];
+      const animV=animVals||{};
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
-        if(dep.type==="fnMap") fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}`;
-        else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; }
-        else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; }
-        else if(dep.type==="points"){ paramSig=`pts|${dep.props.space}|${dep.props.data}`; }
+        if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+        else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+        else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+        else if(dep.type==="points"){ paramSig=`pts|${dep.props.space}|${dep.props.data}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       }
       pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig};
+      // Fold each structural node's own scope into the scope used for the
+      // signature, so a slider wired into the fnMap/equation/paramSpace (not the
+      // transformer itself) still invalidates the cache when it changes.
+      sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);
     }
-    const sig=geomSignature({...node,props:pSig},scope);
+    const sig=geomSignature({...node,props:pSig},sigScope);
     const prev=objMap.get(childId);
 
     // ── Cache hit ───────────────────────────────────────────────────────────
@@ -181,7 +188,18 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         else if(dep.type==="equation" && !eqNode) eqNode=dep;
         else if(dep.type==="paramSpace" && !paramNode) paramNode=dep;
       }
-      objs=buildTransformer(node,fnNode,paramNode,scope,node.color||"#ffb454",eqNode);
+      // Each structural input (fnMap / equation / paramSpace) owns its own
+      // expressions, which may reference scalars/functions wired directly into
+      // THAT node. Under strict scoping those aren't in the transformer's scope,
+      // so evaluate against a scope that layers each structural node's own direct
+      // scope over the transformer's. (Transformer props still use `scope`.)
+      const animV=animVals||{};
+      const fnSc    = fnNode    ? resolveScope(fnNode.id, nodes, animV)    : null;
+      const eqSc    = eqNode    ? resolveScope(eqNode.id, nodes, animV)    : null;
+      const paramSc = paramNode ? resolveScope(paramNode.id, nodes, animV) : null;
+      const tScope={...scope,
+        ...(paramSc||{}), ...(eqSc||{}), ...(fnSc||{})};
+      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode);
     }
     if(node.type==="pointSeq"){
       const pts=parsePointSeq(p.points,scope);
@@ -206,10 +224,17 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       if(fnNode && seedNode){
         const field={ exprX:fnNode.props.out0||"0", exprY:fnNode.props.out1||"0", exprZ:fnNode.props.out2||"0" };
         const fromPoints = seedNode.type==="points";
+        // The fnMap's field exprs and the seed source own their expressions and
+        // may reference scalars/functions wired directly into those nodes. Build
+        // each one's own direct scope and evaluate against it (layered over the
+        // flow's scope so the flow's own variables remain available too).
+        const animV=animVals||{};
+        const fieldSc={...scope, ...resolveScope(fnNode.id, nodes, animV)};
+        const seedSc ={...scope, ...resolveScope(seedNode.id, nodes, animV)};
         const seedInfo = fromPoints
-          ? { pts: parsePointSeq(seedNode.props.data, scope), grid:false }
-          : sampleParamSpace(seedNode, scope);
-        objs=buildFlowFromSeeds(field, seedInfo, steps, stepSize, scope, node.color||"#f7cc4f", {
+          ? { pts: parsePointSeq(seedNode.props.data, seedSc), grid:false }
+          : sampleParamSpace(seedNode, seedSc);
+        objs=buildFlowFromSeeds(field, seedInfo, steps, stepSize, fieldSc, node.color||"#f7cc4f", {
           // discrete point seeds always render as individual stream curves;
           // a continuous seed space honours the output mode.
           lines: fromPoints || p.output==="lines",

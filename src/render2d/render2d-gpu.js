@@ -336,7 +336,7 @@ function build2DGlyphField(np, pscope, color, px){
   return objs;
 }
 
-function build2DFlow(np, rawNode, nodes, pscope, color, px){
+function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals){
   let fnNode=null, seedNode=null;
   for(const depId of (rawNode.attachments||[])){
     const d=nodes[depId]; if(!d)continue;
@@ -344,13 +344,18 @@ function build2DFlow(np, rawNode, nodes, pscope, color, px){
     else if((d.type==="paramSpace"||d.type==="points")&&!seedNode)seedNode=d;
   }
   if(!fnNode||!seedNode) return [];
+  // fnMap field exprs and the seed source reference scalars wired into THOSE
+  // nodes; evaluate each against its own direct scope (strict scoping).
+  const av=animVals||{};
+  const fieldSc={...pscope, ...resolveScope(fnNode.id,nodes,av)};
+  const seedSc={...pscope, ...resolveScope(seedNode.id,nodes,av)};
   const steps=Math.max(2,Math.min(2000,resolveNum(np.steps,pscope,500)));
   const stepSize=resolveNum(np.stepSize,pscope,0.02);
   const field={exprX:fnNode.props.out0||"0",exprY:fnNode.props.out1||"0",exprZ:fnNode.props.out2||"0"};
   const seedInfo=seedNode.type==="points"
-    ?{pts:parsePointSeq(seedNode.props.data,pscope),grid:false}
-    :sampleParamSpace(seedNode,pscope);
-  const trajs=(seedInfo.pts||[]).map(s=>integrateFlow(s,field.exprX,field.exprY,field.exprZ,steps,stepSize,pscope));
+    ?{pts:parsePointSeq(seedNode.props.data,seedSc),grid:false}
+    :sampleParamSpace(seedNode,seedSc);
+  const trajs=(seedInfo.pts||[]).map(s=>integrateFlow(s,field.exprX,field.exprY,field.exprZ,steps,stepSize,fieldSc));
   const seedDeg=seedNode.type==="paramSpace"?Math.max(1,Math.min(2,Math.round(Number(seedNode.props.degree||"1")))):0;
   const fillArea=seedDeg===1&&np.output!=="lines"&&trajs.length>=2;
   const objs=[];
@@ -408,11 +413,15 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     else if(rawNode.type==="transformer"){
       let fnNode=null,paramNode=null,eqNode=null;
       for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(!d)continue; if(d.type==="fnMap"&&!fnNode)fnNode=d; else if(d.type==="equation"&&!eqNode)eqNode=d; else if(d.type==="paramSpace"&&!paramNode)paramNode=d; }
-      if(eqNode) built=build2DImplicit(rawNode,eqNode,pscope,color,px);
-      else built=build2DTransformer(rawNode,fnNode,paramNode,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
+      // fnMap/equation/paramSpace exprs reference scalars wired into THOSE nodes;
+      // layer their own direct scopes over the transformer's (strict scoping).
+      const av=animVals||{};
+      const tScope={...pscope, ...(paramNode?resolveScope(paramNode.id,nodes,av):{}), ...(eqNode?resolveScope(eqNode.id,nodes,av):{}), ...(fnNode?resolveScope(fnNode.id,nodes,av):{})};
+      if(eqNode) built=build2DImplicit(rawNode,eqNode,tScope,color,px);
+      else built=build2DTransformer(rawNode,fnNode,paramNode,tScope,color,wxMin,wxMax,wyMin,wyMax,px);
     }
     else if(node.type==="glyphField") built=build2DGlyphField(np,pscope,color,px);
-    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color,px);
+    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color,px,animVals||{});
     else if(node.type==="plane"){
       const nx=resolveNum(np.normalX,pscope,0),ny=resolveNum(np.normalY,pscope,1);
       const cx2=resolveNum(np.centerX,pscope,0),cy2=resolveNum(np.centerY,pscope,0);
