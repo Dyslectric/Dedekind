@@ -13,6 +13,7 @@ const CURVE_3D_PX = 2.6;
 // expression(s) can't be translated to GLSL.
 function buildSurfGPU(kind, p, scope, color){
   // a parametrized grid of (u,v) or (x,y) in [0,1]^2 mapped to the domain
+  const showWire = p.showWire!==false;
   let bodyP, uniforms=new Set(), umin, umax, vmin, vmax, ures, vres;
   if(kind==="surf3d"){
     const gx=exprToGLSL(p.expr, new Set(["x","y"]), uniforms);
@@ -38,22 +39,92 @@ function buildSurfGPU(kind, p, scope, color){
              vec3 P = vec3(${sx}, ${sy}, ${sz});`;
   } else return null;
 
-  // Build a unit grid geometry; the shader maps positions through the domain.
+  return assembleSurfGPU(bodyP, [...uniforms], scope, color, ures, vres, showWire);
+}
+// Given a GLSL body that sets `vec3 P` (math-order x,y,z) from grid coords d∈[0,1]²,
+// build the unit grid geometry + fill/wire shader meshes. Shared by analytic
+// surfaces and GPU-accelerated graph-mode transformers. `colorOpts` (optional):
+// { colorBody, colorLo, colorHi, cmin, cmax } enables per-vertex gradient fill.
+function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colorOpts){
   const geo = new THREE.PlaneGeometry(1,1, ures-1, vres-1);
-  // PlaneGeometry spans [-0.5,0.5]; shift to [0,1].
   const arr = geo.attributes.position.array;
   for(let i=0;i<arr.length;i+=3){ arr[i]+=0.5; arr[i+1]+=0.5; arr[i+2]=0; }
   geo.attributes.position.needsUpdate = true;
-
-  const uNames=[...uniforms];
-  const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false);
+  const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts);
+  const mesh = new THREE.Mesh(geo, matFill);
+  // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
+  // shader, so three.js's CPU-side bounding volume (a tiny 1×1 patch) does NOT
+  // reflect where the surface actually is. Without disabling frustum culling the
+  // mesh gets culled the moment the camera frames the displaced geometry — which
+  // looked like "only the wireframe renders / fill is invisible".
+  mesh.frustumCulled = false;
+  mesh._gpuSurface = { uNames };
+  if(showWire===false) return [mesh];
   const matWire = makeSurfaceShader(bodyP, uNames, scope, color, true);
   matWire.uniforms.uColor.value = new THREE.Color(hexToThree(color)).multiplyScalar(1.4);
-  const mesh = new THREE.Mesh(geo, matFill);
-  const wire = new THREE.Mesh(geo.clone(), matWire);
-  mesh._gpuSurface = wire._gpuSurface = { uNames };
+  // Wireframe shares the SAME geometry (no clone): two meshes can reference one
+  // BufferGeometry, halving vertex memory and skipping a full-buffer clone on
+  // each rebuild. Dispose must not double-free, so the wire is flagged shared.
+  const wire = new THREE.Mesh(geo, matWire);
+  wire.frustumCulled = false;
+  wire._sharedGeometry = true;
+  wire._gpuSurface = { uNames };
   return [mesh, wire];
 }
+// GPU-accelerated graph-mode transformer with TWO inputs → a surface.
+// The two input axes sweep a grid (a,b) ∈ [aMin,aMax]×[bMin,bMax], mapped to the
+// map's input symbols x=a, y=b. Each world axis (X,Y,Z math-order) is filled by
+// an input value or, if an output is assigned to it, the output expression
+// (outputs win on collision — matching placeGraph). Returns null if any needed
+// output expression isn't GLSL-translatable, or the config isn't a 2-in graph.
+//   tp     : transformer props (per-output bindings outAxis0..3 ∈ x/y/z/color/none)
+//   outs   : array of output expression strings (out0..outN), length = outDim
+//   inDim/outDim : map dimensions
+//   colorInfo (optional): { lo, hi, cmin, cmax } for a gradient fill driven by
+//     whichever output is bound to "color". Returns null (→ CPU) if an output
+//     expression isn't GLSL-translatable or the config isn't a 2-in graph.
+function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo){
+  if(inDim!==2) return null;                      // only 2-input → surface here
+  const AX={x:0,y:1,z:2};                          // color/none/undefined → not spatial
+  const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
+  const bMin=resolveNum(tp.bMin,scope,-5),bMax=resolveNum(tp.bMax,scope,5);
+  const res=Math.max(2,Math.min(256,Math.round(resolveNum(tp.res,scope,40))));
+  const uniforms=new Set();
+  // input grid coords in map symbols: x=a, y=b
+  const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
+  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3];
+  // world[axis] default 0; place inputs, then outputs (outputs overwrite)
+  const world=["0.0","0.0","0.0"];
+  const inSym=["x","y"];               // grid coords mapped to these GLSL vars
+  for(let k=0;k<inDim;k++){ const ax=AX[inAx[k]]; if(ax!=null) world[ax]=inSym[k]; }
+  // Transpile each output expression once (needed for axis placement and color).
+  const outGLSL=[];
+  for(let k=0;k<outDim;k++){
+    const g=exprToGLSL(outs[k]||"0", new Set(["x","y"]), uniforms);
+    if(g==null) return null;           // unsupported expr → caller uses CPU path
+    outGLSL[k]=g;
+  }
+  for(let k=0;k<outDim;k++){
+    const ax=AX[outAx[k]]; if(ax==null) continue;   // skip color/none/unbound
+    world[ax]=outGLSL[k];
+  }
+  // grid coord setup: d.x∈[0,1]→a (x symbol), d.y∈[0,1]→b (y symbol)
+  const bodyP = `x = ${_glslNum(aMin)} + d.x*${_glslNum(aMax-aMin)};
+                 y = ${_glslNum(bMin)} + d.y*${_glslNum(bMax-bMin)};
+                 vec3 P = vec3(${world[0]}, ${world[1]}, ${world[2]});`;
+  let colorOpts=null;
+  if(colorInfo){
+    // The color value is the output bound to "color"; its GLSL is just that
+    // output's expression (which references the domain x,y mathColor provides).
+    let ci=-1; for(let k=0;k<outDim;k++){ if((outAx[k]||"")==="color"){ ci=k; break; } }
+    if(ci>=0 && outGLSL[ci]!=null){
+      colorOpts={ colorBody:outGLSL[ci], colorLo:colorInfo.lo, colorHi:colorInfo.hi, cmin:colorInfo.cmin, cmax:colorInfo.cmax };
+    }
+    // if color expr can't transpile, fall back to flat-colored GPU surface
+  }
+  return assembleSurfGPU(bodyP, [...uniforms], scope, color, res, res, tp.showWire!==false, colorOpts);
+}
+
 function buildFn1dGPU(p, scope, color){
   // buildFn1dGPU can't use a custom vertex shader with LineMaterial (which has
   // its own), so fall back to CPU sampling + buildCurve3d for thick lines.
@@ -112,7 +183,7 @@ function buildCurve3d(pts,color,cols=null){
     return line;
   });
 }
-function buildSurf(rows,color,colRows=null){
+function buildSurf(rows,color,colRows=null,showWire=true){
   const nv=rows.length,nu=rows[0].length,pos=[],idx=[],colArr=[];
   const useCol=!!colRows;
   for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
@@ -126,7 +197,10 @@ function buildSurf(rows,color,colRows=null){
   g.setIndex(idx);g.computeVertexNormals();
   const c3=hexToThree(color);
   const mat=new THREE.MeshPhongMaterial({color:useCol?0xffffff:c3,vertexColors:useCol,side:THREE.DoubleSide,transparent:true,opacity:0.82,shininess:40});
-  return[new THREE.Mesh(g,mat),new THREE.LineSegments(new THREE.WireframeGeometry(g),new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.18}))];
+  const mesh=new THREE.Mesh(g,mat);
+  if(!showWire) return [mesh];
+  // WireframeGeometry builds a whole extra edge buffer; skip it when off.
+  return[mesh,new THREE.LineSegments(new THREE.WireframeGeometry(g),new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.18}))];
 }
 function buildPlane3d(center,normal,size,color){
   const n=new THREE.Vector3(...normal).normalize(),geo=new THREE.PlaneGeometry(size,size,12,12),c3=hexToThree(color);
@@ -535,5 +609,5 @@ function buildScalarVolume(p, scope, color){
 }
 
 export {
-  buildSurfGPU, buildFn1dGPU, buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
+  buildSurfGPU, buildTransformerGraphGPU, buildFn1dGPU, buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
 };

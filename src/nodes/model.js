@@ -232,7 +232,6 @@ function makeDemoScene(){
   const surf=add(makeNode("transformer",{x:680,y:120}));surf.label="Ripple Surface";surf.color="#8aadf4";
   surf.props.mode="graph";surf.props.inAxis0="x";surf.props.inAxis1="y";surf.props.outAxis0="z";
   surf.props.aMin="-5";surf.props.aMax="5";surf.props.bMin="-5";surf.props.bMax="5";surf.props.res="56";
-  surf.props.colorMode="gradient";surf.props.colorExpr="out0";surf.props.colorLo="#1b3a8f";surf.props.colorHi="#ed8796";
   surf.attachments=[surfFn.id];
 
   // 2) Swirl 3-D vector field, twisting with t and the twist slider.
@@ -243,9 +242,10 @@ function makeDemoScene(){
   swirlFn.attachments=[twist.id,t.id];
 
   const field=add(makeNode("transformer",{x:680,y:300}));field.label="Swirl Field";field.color="#a6da95";
-  field.props.mode="field";field.props.colorMode="gradient";field.props.colorLo="#a6da95";field.props.colorHi="#ed8796";
+  field.props.mode="field";field.props.colorLo="#a6da95";field.props.colorHi="#ed8796";
   field.props.inAxis0="x";field.props.inAxis1="y";field.props.inAxis2="z";
-  field.props.outAxis0="x";field.props.outAxis1="y";field.props.outAxis2="z";
+  field.props.outAxis0="x";field.props.outAxis1="y";field.props.outAxis2="z";field.props.outAxis3="color";
+  field.props.colorMin="0";field.props.colorMax="5";
   field.props.aMin="-4";field.props.aMax="4";field.props.bMin="-4";field.props.bMax="4";field.props.cMin="-1.5";field.props.cMax="1.5";
   field.props.res="5";field.props.arrowLen="0.7";
   field.attachments=[swirlFn.id];

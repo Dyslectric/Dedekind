@@ -35,6 +35,7 @@ function normalizeNode(node){
       if(dims===2){
         return { type:"surf3d", props:{
           expr:p.expr, xMin:p.xMin, xMax:p.xMax, yMin:p.yMin, yMax:p.yMax, res:p.res,
+          showWire:p.showWire,
         }};
       }
       // dims===3 → sampled scalar volume rendered as a value-coloured point cloud
@@ -58,6 +59,7 @@ function normalizeNode(node){
         return { type:"paramsurf", props:{
           exprX:p.exprXu, exprY:p.exprYu, exprZ:p.exprZu,
           uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax, uRes:p.uRes, vRes:p.vRes,
+          showWire:p.showWire,
         }};
       }
       return { type:"curve3d", props:{

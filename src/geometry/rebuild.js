@@ -90,7 +90,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       const animV=animVals||{};
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
-        if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+        if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
         else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
         else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
         else if(dep.type==="points"){ paramSig=`pts|${dep.props.space}|${dep.props.data}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
@@ -109,7 +109,10 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     // GPU objects we still refresh uniforms (sliders animate for free); for CPU
     // objects we skip the rebuild entirely.
     if(prev && sig!=null && prev._sig===sig){
-      if(prev._gpu) updateGpuUniforms(prev,scope);
+      // For GPU objects, push fresh uniform values (sliders/animators animate for
+      // free). Use sigScope so transformers pick up scalars attached to the wired
+      // fnMap/equation/paramSpace, not just the transformer's own scope.
+      if(prev._gpu) updateGpuUniforms(prev,sigScope);
       // sequencing reveal is cheap and may change every frame — apply it live
       if(prev._sequenced) applySequence(prev,node,scope);
       return;
@@ -146,8 +149,8 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     let objs=[];
     if(node.type==="curve3d"){const ts=linspace(resolveNum(p.tMin,scope,0),resolveNum(p.tMax,scope,Math.PI*2),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(ts.map(t=>{const x=safeEval(p.exprX,{...scope,t}),y=safeEval(p.exprY,{...scope,t}),z=safeEval(p.exprZ,{...scope,t});return x!=null&&y!=null&&z!=null?[x,y,z]:[NaN,NaN,NaN];}),node.color||"#5b9cf6");}
     if(node.type==="fn1d"){const xs=linspace(resolveNum(p.xMin,scope,-5),resolveNum(p.xMax,scope,5),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(xs.map(x=>{const y=safeEval(p.expr,{...scope,x});return y!=null?[x,y,0]:[NaN,NaN,NaN];}),node.color||"#f7cc4f");}
-    if(node.type==="surf3d"){const res=Math.max(2,Math.min(80,resolveNum(p.res,scope,40)));const xs=linspace(resolveNum(p.xMin,scope,-4),resolveNum(p.xMax,scope,4),res),ys=linspace(resolveNum(p.yMin,scope,-4),resolveNum(p.yMax,scope,4),res);objs=buildSurf(ys.map(y=>xs.map(x=>{const z=safeEval(p.expr,{...scope,x,y});return z!=null?[x,y,z]:null;})),node.color||"#5b9cf6");}
-    if(node.type==="paramsurf"){const ur=Math.max(2,Math.min(80,resolveNum(p.uRes,scope,40))),vr=Math.max(2,Math.min(80,resolveNum(p.vRes,scope,30)));const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);objs=buildSurf(vs.map(v=>us.map(u=>{const x=safeEval(p.exprX,{...scope,u,v}),y=safeEval(p.exprY,{...scope,u,v}),z=safeEval(p.exprZ,{...scope,u,v});return x!=null&&y!=null&&z!=null?[x,y,z]:null;})),node.color||"#c761f7");}
+    if(node.type==="surf3d"){const res=Math.max(2,Math.min(80,resolveNum(p.res,scope,40)));const xs=linspace(resolveNum(p.xMin,scope,-4),resolveNum(p.xMax,scope,4),res),ys=linspace(resolveNum(p.yMin,scope,-4),resolveNum(p.yMax,scope,4),res);objs=buildSurf(ys.map(y=>xs.map(x=>{const z=safeEval(p.expr,{...scope,x,y});return z!=null?[x,y,z]:null;})),node.color||"#5b9cf6",null,p.showWire!==false);}
+    if(node.type==="paramsurf"){const ur=Math.max(2,Math.min(80,resolveNum(p.uRes,scope,40))),vr=Math.max(2,Math.min(80,resolveNum(p.vRes,scope,30)));const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);objs=buildSurf(vs.map(v=>us.map(u=>{const x=safeEval(p.exprX,{...scope,u,v}),y=safeEval(p.exprY,{...scope,u,v}),z=safeEval(p.exprZ,{...scope,u,v});return x!=null&&y!=null&&z!=null?[x,y,z]:null;})),node.color||"#c761f7",null,p.showWire!==false);}
     if(node.type==="paramvol"){
       // A degree-3 parametric manifold: sample a (u,v,w) grid and map each node
       // into 3-D space, drawn as a point cloud (optionally gradient-colored).

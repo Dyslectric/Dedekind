@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
-import { buildCurve3d, buildSurf, buildGlyphFieldGPU } from "./builders.js";
+import { buildCurve3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU } from "./builders.js";
 import { marchingSquares, marchingCubes } from "./implicit.js";
 
 // ── Transformer: render a pure map (fnMap) over a domain ─────────────────────
@@ -22,7 +22,8 @@ const AXIS_INDEX = { x:0, y:1, z:2, none:-1 };
 
 function fnSpec(fnNode){
   const p=fnNode?.props||{};
-  const inDim=clampDim(p.inDim,1), outDim=clampDim(p.outDim,1);
+  const inDim=Math.max(1,Math.min(3,Math.round(Number(p.inDim))||1));
+  const outDim=Math.max(1,Math.min(4,Math.round(Number(p.outDim))||1));
   const outs=[p.out0,p.out1,p.out2,p.out3].slice(0,outDim).map(e=>e||"0");
   return { inDim, outDim, outs };
 }
@@ -36,19 +37,22 @@ function evalMap(outs, scope, inVec){
   return r;
 }
 
-// Is gradient coloring active on this transformer?
-function colorOn(tp){ return (tp.colorMode||"off")==="gradient"; }
-// Per-sample color scalar: colorExpr with input symbols, out0..out3, domain
-// param p (and i index) in scope. If colorExpr is blank, falls back to
-// defaultVal (used by field mode to color by the reserved last output).
+// Is gradient coloring active? True when some output is bound to the color
+// channel (outAxisK === "color"). Returns the bound output index, or -1.
+function colorOutIndex(tp, outDim){
+  for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color") return k; }
+  return -1;
+}
+function colorOn(tp, outDim){ return colorOutIndex(tp, outDim) >= 0; }
+// Per-sample color scalar: the value of the output bound to the color channel.
+// (Color is a binding target like X/Y/Z; whichever output holds "color" drives
+// the gradient.) Falls back to defaultVal when no output is colorbound.
 function colorScalar(tp, scope, inVec, outVec, param, i, defaultVal){
-  const expr=tp.colorExpr;
-  if((expr==null||expr==="") && defaultVal!=null) return isFinite(defaultVal)?defaultVal:0;
-  const sc={...scope, x:inVec[0]??0, y:inVec[1]??0, z:inVec[2]??0, w:inVec[3]??0,
-    out0:outVec[0]??0, out1:outVec[1]??0, out2:outVec[2]??0, out3:outVec[3]??0,
-    t:param??0, u:param??0, v:param??0, n:i??0, i:i??0};
-  const val=safeEval(expr||"out0",sc);
-  return (val==null||!isFinite(val))?0:val;
+  const outDim=outVec.length;
+  const ci=colorOutIndex(tp, outDim);
+  if(ci<0) return isFinite(defaultVal)?(defaultVal||0):0;
+  const v=outVec[ci];
+  return (v==null||!isFinite(v))?0:v;
 }
 // Map an array of scalars onto the lo→hi ramp across [min,max] (auto when blank).
 function rampColors(vals, tp, scope){
@@ -201,19 +205,22 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
     // colored by out3; a 2-output map becomes a 1D vector field colored by out1.
     // When off, all outputs form the vector with a single static color (valid for
     // 2- or 3-output maps; a 4-output map always colors, since there's no 4th axis).
-    const useColor = colorOn(tp) || outDim>=4;
-    const vecDim = useColor ? Math.max(1,Math.min(3,outDim-1)) : Math.min(3,outDim);
+    // Color comes from whichever output is bound to the color channel (if any).
+    // Outputs bound to a spatial axis form the vector; the colorbound output (and
+    // any unbound ones) don't contribute to the arrow direction.
+    const ci=colorOutIndex(tp, outDim);
+    const useColor = ci>=0;
     const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
-    const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2];
+    const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3];
     const pairs=[]; const cvals=useColor?[]:null;
     for(let s=0;s<dom.pts.length;s++){
       const inVec=dom.pts[s];
       const outVec=evalMap(outs,scope,inVec);
       const posM=[0,0,0], vecM=[0,0,0];
       for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) posM[ax]=inVec[k]??0; }
-      for(let k=0;k<vecDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
+      for(let k=0;k<outDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
       pairs.push({ pos:posM, vec:vecM });   // glyph builder applies its own axis swap
-      if(useColor) cvals.push(colorScalar(tp,scope,inVec,outVec, s, s, outVec[outDim-1]));
+      if(useColor) cvals.push(outVec[ci]??0);
     }
     const opts={ arrowLen:resolveNum(tp.arrowLen,scope,0.5), normalize:tp.normalize!==false, anim:"none", speed:1 };
     if(useColor) opts.cols=rampColors(cvals,tp,scope);
@@ -221,7 +228,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
   }
 
   // graph mode
-  const gradient=colorOn(tp);
+  const gradient=colorOn(tp, outDim);
   if(inDim===1){
     // buildCurve3d / buildSurf apply the world (x,z,y) swap themselves, so we
     // hand them math-order [X,Y,Z] from placeGraph (NOT toWorld) — otherwise the
@@ -237,6 +244,32 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
     return buildCurve3d(pts, color, gradient?rampColors(vals,tp,scope):null);
   }
   if(inDim===2 && dom.grid){
+    // GPU fast path: an inline-grid graph surface is analytic in (a,b) — evaluate
+    // the output expressions in a vertex shader instead of CPU-sampling nu×nv
+    // points. Only when the domain is the inline grid (a wired paramSpace supplies
+    // arbitrary input points the shader can't reproduce). Gradient coloring is
+    // supported on the GPU only when the color range [min,max] is given explicitly
+    // (the shader can't auto-range without a CPU pre-pass), so an auto-range
+    // gradient still falls to CPU.
+    if(!paramNode){
+      let colorInfo=null, gpuOk=true;
+      if(gradient){
+        const hasMin = tp.colorMin!=="" && tp.colorMin!=null;
+        const hasMax = tp.colorMax!=="" && tp.colorMax!=null;
+        if(hasMin && hasMax){
+          colorInfo={ lo:new THREE.Color(tp.colorLo||"#3a6aff"), hi:new THREE.Color(tp.colorHi||"#ff5ea8"),
+                      cmin:resolveNum(tp.colorMin,scope,0), cmax:resolveNum(tp.colorMax,scope,1) };
+        } else {
+          // Color binding requires a manual range; without it the shader can't
+          // ramp. Fall back to the CPU path (which auto-fits) so it still draws.
+          gpuOk=false;
+        }
+      }
+      if((!gradient || colorInfo) && gpuOk){
+        const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo);
+        if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
+      }
+    }
     const nu=dom.nu, nv=dom.nv, rows=[], colRows=gradient?[]:null, flatVals=gradient?[]:null;
     let idx=0;
     for(let j=0;j<nv;j++){
@@ -253,7 +286,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
       const flat=rampColors(flatVals,tp,scope);
       let k=0; for(let j=0;j<nv;j++) for(let i=0;i<nu;i++) colRows[j][i]=flat[k++];
     }
-    return buildSurf(rows, color, gradient?colRows:null);
+    return buildSurf(rows, color, gradient?colRows:null, tp.showWire!==false);
   }
   // 3 inputs in graph mode: render as a value-coloured point cloud at the
   // graphed positions (no single surface to draw).

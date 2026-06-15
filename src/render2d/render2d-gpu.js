@@ -241,10 +241,10 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   const outs=[fnNode.props.out0,fnNode.props.out1,fnNode.props.out2,fnNode.props.out3].slice(0,outDim).map(e=>e||"0");
   const AX={x:0,y:1,z:2,none:-1};
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2].map(a=>AX[a??"none"]);
-  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2].map(a=>AX[a??"none"]);
+  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3].map(a=>AX[a??"none"]);
   const evalOut=(inVec)=>{const sc={...pscope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0,w:inVec[3]??0};return outs.map(e=>{const v=safeEval(e,sc);return v==null||!isFinite(v)?0:v;});};
-  const useColor=(tp.colorMode||"off")==="gradient"||outDim>=4;
-  const vecDim=useColor?Math.max(1,Math.min(3,outDim-1)):Math.min(3,outDim);
+  let colorIdx=-1; for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color"){ colorIdx=k; break; } }
+  const useColor=colorIdx>=0;
   const loC=hexRGB(tp.colorLo||"#3a6aff"), hiC=hexRGB(tp.colorHi||"#ff5ea8");
   const ramp=(t)=>{t=t<0?0:t>1?1:t;return`#${[loC,hiC].reduce((acc,_,i)=>{const c=Math.round(loC[i]*255+(hiC[i]-loC[i])*255*t);return acc+(c<16?"0":"")+c.toString(16);},"")}`;}
 
@@ -283,10 +283,10 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
     for(const inVec of samples){
       const outVec=evalOut(inVec);
       const base=[0,0]; for(let k=0;k<inDim;k++){if(inAx[k]===0)base[0]=inVec[k]??0; else if(inAx[k]===1)base[1]=inVec[k]??0;}
-      const vec=[0,0]; for(let k=0;k<vecDim;k++){if(outAx[k]===0)vec[0]=outVec[k]??0; else if(outAx[k]===1)vec[1]=outVec[k]??0;}
+      const vec=[0,0]; for(let k=0;k<outDim;k++){if(outAx[k]===0)vec[0]=outVec[k]??0; else if(outAx[k]===1)vec[1]=outVec[k]??0;}
       const m=Math.hypot(vec[0],vec[1]); if(m>maxMag)maxMag=m;
       let cval=0;
-      if(useColor){ const cexpr=tp.colorExpr; if(cexpr&&cexpr!==""){ const csc={...pscope,x:inVec[0]??0,y:inVec[1]??0,out0:outVec[0]??0,out1:outVec[1]??0,out2:outVec[2]??0,out3:outVec[3]??0}; const cv=safeEval(cexpr,csc); cval=cv==null||!isFinite(cv)?0:cv; } else cval=outVec[outDim-1]??0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
+      if(useColor){ cval=outVec[colorIdx]??0; if(!isFinite(cval))cval=0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
       raw.push({base,vec,m,cval});
     }
     maxMag=maxMag||1;

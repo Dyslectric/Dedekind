@@ -97,11 +97,12 @@ function render2DTransformer(ctx,tNode,fnNode,paramNode,scope,toS,color){
   const outs=[fnNode.props.out0,fnNode.props.out1,fnNode.props.out2,fnNode.props.out3].slice(0,outDim).map(e=>e||"0");
   const AX={x:0,y:1,z:2,none:-1};
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2].map(a=>AX[a??"none"]);
-  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2].map(a=>AX[a??"none"]);
+  const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3].map(a=>AX[a??"none"]);
   const evalOut=(inVec)=>{const sc={...scope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0,w:inVec[3]??0};return outs.map(e=>{const v=safeEval(e,sc);return v==null||!isFinite(v)?0:v;});};
-  // Field + color: reserve the last output for the gradient, vector uses the rest.
-  const useColor=(tp.colorMode||"off")==="gradient" || outDim>=4;
-  const vecDim=useColor?Math.max(1,Math.min(3,outDim-1)):Math.min(3,outDim);
+  // Color = the output bound to the "color" target (if any). Vector = outputs
+  // bound to a spatial axis (placed via outAx; color/none outputs aren't placed).
+  let colorIdx=-1; for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color"){ colorIdx=k; break; } }
+  const useColor=colorIdx>=0;
   // hex→rgb and a small lerp for the gradient ramp
   const hx=(h)=>{h=(h||"#888").replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
   const loC=hx(tp.colorLo||"#3a6aff"), hiC=hx(tp.colorHi||"#ff5ea8");
@@ -141,17 +142,11 @@ function render2DTransformer(ctx,tNode,fnNode,paramNode,scope,toS,color){
     for(const inVec of samples){
       const outVec=evalOut(inVec);
       const base=[0,0,0];for(let k=0;k<inDim;k++){if(inAx[k]>=0)base[inAx[k]]=inVec[k]??0;}
-      const vec=[0,0,0];for(let k=0;k<vecDim;k++){if(outAx[k]>=0)vec[outAx[k]]=outVec[k]??0;}
+      const vec=[0,0,0];for(let k=0;k<outDim;k++){if(outAx[k]>=0)vec[outAx[k]]=outVec[k]??0;}
       const m=Math.hypot(vec[0],vec[1]);if(m>maxMag)maxMag=m;
       let cval=0;
       if(useColor){
-        const cexpr=tp.colorExpr;
-        if(cexpr&&cexpr!==""){
-          const csc={...scope,x:inVec[0]??0,y:inVec[1]??0,z:inVec[2]??0,w:inVec[3]??0,out0:outVec[0]??0,out1:outVec[1]??0,out2:outVec[2]??0,out3:outVec[3]??0};
-          const cv=safeEval(cexpr,csc); cval=(cv==null||!isFinite(cv))?0:cv;
-        } else {
-          cval=outVec[outDim-1]??0;
-        }
+        cval=outVec[colorIdx]??0;
         if(!isFinite(cval))cval=0;
         if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval;
       }
