@@ -1,7 +1,13 @@
 import * as THREE from "three";
+import { Line2 } from "three/addons/lines/Line2.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { exprToGLSL, _glslNum } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
+
+// Target on-screen thickness for 1-space curves in 3D cameras (CSS pixels).
+const CURVE_3D_PX = 2.6;
 
 // Attempt a GPU-evaluated surface. Returns [mesh, wire] or null if the
 // expression(s) can't be translated to GLSL.
@@ -49,46 +55,61 @@ function buildSurfGPU(kind, p, scope, color){
   return [mesh, wire];
 }
 function buildFn1dGPU(p, scope, color){
-  const uniforms=new Set();
-  const gy=exprToGLSL(p.expr, new Set(["x"]), uniforms);
-  if(gy==null) return null;
+  // buildFn1dGPU can't use a custom vertex shader with LineMaterial (which has
+  // its own), so fall back to CPU sampling + buildCurve3d for thick lines.
   const xmin=resolveNum(p.xMin,scope,-5), xmax=resolveNum(p.xMax,scope,5);
   const res=Math.max(2,Math.min(2000,resolveNum(p.res,scope,300)));
-  const uNames=[...uniforms];
-  const uobj={ uColor:{value:new THREE.Color(hexToThree(color))} };
-  for(const u of uNames) uobj[u]={value:Number(scope[u])||0};
-  const decls=uNames.map(u=>`uniform float ${u};`).join("\n");
-  const vert=`${decls}
-    void main(){ float x = ${_glslNum(xmin)} + position.x*${_glslNum(xmax-xmin)};
-      float y = ${gy}; vec3 p = vec3(x, 0.0, y);
-      gl_Position = projectionMatrix*modelViewMatrix*vec4(p,1.0); }`;
-  const frag=`precision highp float; uniform vec3 uColor; void main(){ gl_FragColor=vec4(uColor,1.0); }`;
-  const mat=new THREE.ShaderMaterial({uniforms:uobj,vertexShader:vert,fragmentShader:frag});
-  mat._uniformNames=uNames;
-  const positions=new Float32Array(res*3);
-  for(let i=0;i<res;i++) positions[i*3]=i/(res-1); // x param in [0,1]
-  const g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(positions,3));
-  const line=new THREE.Line(g,mat); line._gpuSurface={uNames};
-  return [line];
+  const xs=linspace(xmin,xmax,res);
+  // Evaluate y = expr(x) in scope. safeEval handles errors → NaN.
+  const pts=xs.map(x=>{
+    const y=safeEval(p.expr,{...scope,x});
+    return (y!=null&&isFinite(y))?[x,y,0]:[NaN,NaN,NaN];
+  });
+  return buildCurve3d(pts, color);
 }
 
 function buildCurve3d(pts,color,cols=null){
+  // Split at NaN gaps into continuous segments, then build each as a Line2
+  // (screen-space fat line) so the width is a true CSS-pixel value on all
+  // WebGL drivers (LineBasicMaterial.linewidth is ignored on most hardware).
   const segs=[]; let cur=[];
   for(let i=0;i<pts.length;i++){
     const p=pts[i];
-    if(p&&p.every(isFinite)) cur.push({v:new THREE.Vector3(p[0],p[2],p[1]), c:cols?cols[i]:null});
+    if(p&&p.every(isFinite)) cur.push({v:p, c:cols?cols[i]:null});
     else { if(cur.length>1)segs.push(cur); cur=[]; }
   }
   if(cur.length>1)segs.push(cur);
+
+  const c3=new THREE.Color(hexToThree(color));
   return segs.map(s=>{
-    const g=new THREE.BufferGeometry().setFromPoints(s.map(o=>o.v));
+    const geo=new LineGeometry();
+    // LineGeometry expects a flat [x,y,z, x,y,z, ...] array in world order.
+    // buildCurve3d receives math-order [X,Y,Z]; apply the (x,z,y) world swap here.
+    const pos=new Float32Array(s.length*3);
+    for(let k=0;k<s.length;k++){
+      const [mx,my,mz]=s[k].v;
+      pos[k*3]=mx; pos[k*3+1]=mz; pos[k*3+2]=my;
+    }
+    geo.setPositions(pos);
+
     const useCol=!!cols;
     if(useCol){
       const ca=new Float32Array(s.length*3);
       for(let k=0;k<s.length;k++){const c=s[k].c||[1,1,1];ca[k*3]=c[0];ca[k*3+1]=c[1];ca[k*3+2]=c[2];}
-      g.setAttribute("color",new THREE.Float32BufferAttribute(ca,3));
+      geo.setColors(ca);
     }
-    return new THREE.Line(g,new THREE.LineBasicMaterial({color:useCol?0xffffff:hexToThree(color),vertexColors:useCol,linewidth:2}));
+
+    const mat=new LineMaterial({
+      color: useCol ? 0xffffff : c3.getHex(),
+      vertexColors: useCol,
+      linewidth: CURVE_3D_PX,
+      worldUnits: false,   // linewidth in CSS pixels, not world units
+      resolution: new THREE.Vector2(800,600), // overwritten by Viewport3D on resize
+    });
+    mat._isCurve3d = true; // sentinel for Viewport3D ResizeObserver
+    const line=new Line2(geo,mat);
+    line.computeLineDistances();
+    return line;
   });
 }
 function buildSurf(rows,color,colRows=null){

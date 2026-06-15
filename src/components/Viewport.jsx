@@ -182,6 +182,9 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
         if(!isOrtho){persp.fov=resolveNum(p.fov,s,50);persp.near=resolveNum(p.near,s,0.01);persp.far=resolveNum(p.far,s,2000);persp.updateProjectionMatrix();}
         else{const asp=(el.clientWidth||w)/(el.clientHeight||h);const os=resolveNum(p.orthoSize,s,10)/2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.near=resolveNum(p.near,s,0.01);ortho.far=resolveNum(p.far,s,2000);ortho.updateProjectionMatrix();}
         rebuildScene(scene,objMap,cn,ns,s,stRef.current.animValsRef?.current);
+        // Seed correct viewport size into any screen-space LineMaterials just built.
+        { const w2=el.clientWidth||w, h2=el.clientHeight||h;
+          scene.traverse(o=>{if(o.material?._isCurve3d) o.material.resolution.set(w2,h2);}); }
         // Frame the orbit pivot on the actual visible geometry. Runs on an
         // explicit refit (reset-view button) so rotation always centers on
         // what's drawn, regardless of where the geometry sits in world space.
@@ -228,6 +231,8 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
       renderer.setSize(w2,h2,false);persp.aspect=w2/h2;persp.updateProjectionMatrix();
       const cn=stRef.current.camNode,sc=stRef.current.scope||{};
       if(cn?.props.projection==="orthographic"){const os=resolveNum(cn.props.orthoSize,sc,10)/2,asp=w2/h2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.updateProjectionMatrix();}
+      // Update screen-space LineMaterial resolution so curve widths stay correct.
+      scene.traverse(o=>{if(o.material?._isCurve3d) o.material.resolution.set(w2,h2);});
     });
     ro.observe(el);
 
