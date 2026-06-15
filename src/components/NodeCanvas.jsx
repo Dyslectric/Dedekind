@@ -2,17 +2,22 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { catOf, canAttach, canBeDependency, canConsume, SCALAR_TYPES, isFunctionType, isDomainType, isCameraType } from "../core/taxonomy.js";
 import { NW, getOutPort, getInPort, TYPE_META } from "../nodes/model.js";
 import { buildNodePalette, NODE_DARK } from "../theme/tokens.jsx";
+import { resolveNum } from "../core/math.js";
+import { buildGlobalScope } from "../core/scope.js";
 
 // Card height for a node, matching CanvasNode's own calc. Cameras grow with the
-// number of plots they show; sliders/animators are a touch taller (they show a
-// live value); everything else is a compact single-line card. Used both for
-// rendering and for marquee hit-testing.
+// number of plots they show; sliders/animators are taller to fit an interactive
+// control (a drag track / a play button); expr cards show a value line.
+// Everything else is a compact single-line card. Used both for rendering and
+// for marquee hit-testing.
 function nodeHeight(node, nodes){
   if(isCameraType(node.type)) return Math.max(56,40+(node.attachments?.filter(a=>catOf(nodes[a]?.type)==="plot").length||0)*18+8);
-  return (node.type==="slider"||node.type==="animator"||node.type==="expr")?44:40;
+  if(node.type==="slider") return 54;
+  if(node.type==="animator") return 60;
+  return node.type==="expr"?58:40;
 }
 
-function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMany, onConnect, onDisconnect, onDelete, onMarqueeSelect, onPasteAtWorld, onToggleEnabled, onDetach, animValsRef, theme, projectNode }) {
+function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMany, onConnect, onDisconnect, onDelete, onMarqueeSelect, onPasteAtWorld, onToggleEnabled, onDetach, onUpdateNode, animValsRef, theme, projectNode }) {
   const selSet = selectionSet || (selected?new Set([selected]):new Set());
   const svgRef=useRef(null),gRef=useRef(null),edgesRef=useRef(null);
   const viewRef=useRef({panX:50,panY:50,zoom:1});
@@ -57,6 +62,21 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
       mouseRef.current.x=e.clientX-rr.left; mouseRef.current.y=e.clientY-rr.top;
       const d=dragRef.current;
       if(d){const{zoom}=viewRef.current;
+        if(d.type==="slider"){
+          // Map pointer X along the card-local track to a value in [min,max],
+          // snapped to step. Track geometry was captured (in world units) at
+          // pointer-down; convert the pointer to world X the same way.
+          const r=svg.getBoundingClientRect();const{panX}=viewRef.current;
+          const worldX=(e.clientX-r.left-panX)/zoom;
+          let f=(worldX-d.trackX0)/(d.trackW||1);
+          f=f<0?0:f>1?1:f;
+          let val=d.min+f*(d.max-d.min);
+          if(d.step>0) val=Math.round(val/d.step)*d.step;
+          // avoid fp noise from the snap
+          val=Math.round(val*1e6)/1e6;
+          if(val!==d.lastVal){ d.lastVal=val; d.onUpdate(d.id,{value:val}); }
+          return;
+        }
         if(d.type==="marquee"){
           d.x1=e.clientX; d.y1=e.clientY;
           // Render as screen-space rect relative to the svg element.
@@ -233,6 +253,32 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
   },[nodes,onSelect,selSet]);
   const onPortDown=useCallback((e,id,pt)=>{e.stopPropagation();const r=svgRef.current.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;wireRef.current={fromId:id,portType:pt,curX:(e.clientX-r.left-panX)/zoom,curY:(e.clientY-r.top-panY)/zoom};setWireKey(k=>k+1);},[]);
 
+  // Begin dragging a slider card's thumb. trackLocalX0 / trackLocalW are the
+  // track's geometry in card-local (world) units; we precompute the world-space
+  // track start so onMM can map the pointer straight to a value. Selecting the
+  // node too keeps the props panel in sync, but we DON'T start a node-move drag.
+  const onSliderDown=useCallback((e,id,trackLocalX0,trackLocalW,min,max,step)=>{
+    if(e.button!==0)return; e.stopPropagation();
+    onSelect(id,false);
+    const node=nodes[id]; if(!node)return;
+    dragRef.current={ type:"slider", id, onUpdate:onUpdateNode,
+      trackX0:node.pos.x+trackLocalX0, trackW:trackLocalW, min, max, step, lastVal:undefined };
+    // commit immediately so a click (no move) also jumps the thumb to the point
+    const r=svgRef.current.getBoundingClientRect();const{panX,zoom}=viewRef.current;
+    const worldX=(e.clientX-r.left-panX)/zoom;
+    let f=(worldX-(node.pos.x+trackLocalX0))/(trackLocalW||1); f=f<0?0:f>1?1:f;
+    let val=min+f*(max-min); if(step>0) val=Math.round(val/step)*step; val=Math.round(val*1e6)/1e6;
+    dragRef.current.lastVal=val; onUpdateNode && onUpdateNode(id,{value:val});
+  },[nodes,onSelect,onUpdateNode]);
+
+  // Toggle an animator's play state. Selecting keeps the panel in sync.
+  const onTogglePlay=useCallback((e,id)=>{
+    e.stopPropagation();
+    const node=nodes[id]; if(!node)return;
+    onSelect(id,false);
+    onUpdateNode && onUpdateNode(id,{playing:!node.playing});
+  },[nodes,onSelect,onUpdateNode]);
+
   const{panX,panY,zoom}=viewRef.current;
 
   const edges=useMemo(()=>{
@@ -259,6 +305,10 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
 
   const wireNow=wireRef.current;
   const nodePal=useMemo(()=>buildNodePalette(projectNode||{props:theme}),[projectNode,theme]);
+  // Global scope for evaluating expr-node outputs shown on their cards. Rebuilt
+  // when the node graph changes or an animator advances (tick), so the readout
+  // tracks live slider/animator values. Cheap relative to a geometry rebuild.
+  const gScope=useMemo(()=>buildGlobalScope(nodes,animValsRef.current),[nodes,tick]);
 
   return(
     <svg ref={svgRef} style={{width:"100%",height:"100%",userSelect:"none",background:(theme.nodeBg||"#0a0c18")}} onMouseDown={onBgDown}
@@ -284,6 +334,8 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
           <CanvasNode key={n.id} node={n} selected={selected===n.id} inSelection={selSet.has(n.id)} zoom={zoom} nodes={nodes} pal={nodePal}
             onMouseDown={e=>onNodeDown(e,n.id)} onPortDown={onPortDown}
             onDelete={onDelete} onToggleEnabled={onToggleEnabled} onDetach={onDetach}
+            onSliderDown={onSliderDown} onTogglePlay={onTogglePlay}
+            exprVal={n.type==="expr"?(n.name&&typeof gScope[n.name]==="number"?gScope[n.name]:resolveNum(n.props?.expr,gScope,NaN)):undefined}
             liveVal={n.type==="animator"?(animValsRef.current[n.id]??n.value):undefined}/>
         ))}
       </g>
@@ -300,7 +352,7 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
   );
 }
 
-function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown, onPortDown, onDelete, onToggleEnabled, onDetach, liveVal }) {
+function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown, onPortDown, onDelete, onToggleEnabled, onDetach, onSliderDown, onTogglePlay, exprVal, liveVal }) {
   pal = pal || NODE_DARK;
   const isCamera=isCameraType(node.type),isProject=node.type==="project",isScalar=SCALAR_TYPES.has(node.type);
   const meta=TYPE_META[node.type]||{tag:"?",tc:"#888"};
@@ -350,11 +402,55 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
       <line x1={8} y1={28} x2={NW-8} y2={28} stroke={pal.nodeBorder} strokeWidth={0.7} opacity={0.6} style={{pointerEvents:"none"}}/>
       {/* Camera shows its plot list (the one genuinely useful body content). */}
       {isCamera&&(node.attachments||[]).filter(a=>catOf(nodes[a]?.type)==="plot").map((cid,i)=>{const child=nodes[cid];if(!child)return null;const m=TYPE_META[child.type]||{};return<g key={cid} style={{pointerEvents:"none"}}><rect x={11} y={35+i*18} width={6} height={6} rx={1.5} fill={child.color||m.tc||"#556"} opacity={0.9}/><text x={23} y={43+i*18} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace">{child.label}</text></g>;})}
-      {/* Scalars/animators show only their live value — no expression dump. */}
-      {node.type==="slider"&&<text x={12} y={39} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(node.value||0).toFixed(3)}</text>}
-      {node.type==="expr"&&<text x={12} y={39} fontSize={12.5} fill={"#b5e8ff"} fontFamily="monospace" style={{pointerEvents:"none"}} opacity={0.75}>{(node.props?.expr||"").slice(0,18)}{(node.props?.expr||"").length>18?"…":""}</text>}
-      {node.type==="animator"&&<text x={12} y={39} fontSize={13.5} fill={node.playing?"#f84":pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(displayVal).toFixed(3)} {node.playing?"▶":"■"}</text>}
-      {isScalar&&connectedCamCount>0&&<text x={NW-16} y={39} fontSize={13} fill={pal.nodeSub} fontFamily="monospace" textAnchor="end" style={{pointerEvents:"none"}}>→{connectedCamCount}</text>}
+      {/* Slider: live value readout + an interactive drag track. */}
+      {node.type==="slider"&&(()=>{
+        const min=resolveNum(node.props?.min,{}, -5), max=resolveNum(node.props?.max,{},5);
+        const step=resolveNum(node.props?.step,{},0);
+        const val=Number(node.value||0);
+        const tx0=12, tw=NW-24, ty=46;
+        let f=(val-min)/((max-min)||1); f=f<0?0:f>1?1:f;
+        const thumbX=tx0+f*tw;
+        return <g>
+          <text x={12} y={40} fontSize={13.5} fill={pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{val.toFixed(3)}</text>
+          {/* hit area + track + filled portion + thumb */}
+          <rect x={tx0-3} y={ty-7} width={tw+6} height={14} fill="transparent"
+            style={{cursor:"pointer"}}
+            onMouseDown={e=>onSliderDown(e,node.id,tx0,tw,min,max,step)}/>
+          <rect x={tx0} y={ty-1.5} width={tw} height={3} rx={1.5} fill={pal.nodeBorder} style={{pointerEvents:"none"}}/>
+          <rect x={tx0} y={ty-1.5} width={Math.max(0,thumbX-tx0)} height={3} rx={1.5} fill={tint} opacity={0.85} style={{pointerEvents:"none"}}/>
+          <circle cx={thumbX} cy={ty} r={5.5} fill={tint} stroke={pal.nodeCardBg} strokeWidth={1.5} style={{pointerEvents:"none"}}/>
+        </g>;
+      })()}
+      {node.type==="expr"&&(()=>{
+        const exprStr=node.props?.expr||"";
+        const shown=exprStr.slice(0,20)+(exprStr.length>20?"…":"");
+        const out = (typeof exprVal==="number" && isFinite(exprVal))
+          ? (Math.abs(exprVal)>=1e5||(Math.abs(exprVal)<1e-4&&exprVal!==0) ? exprVal.toExponential(3) : Number(exprVal.toPrecision(6)).toString())
+          : null;
+        return <g style={{pointerEvents:"none"}}>
+          <text x={12} y={39} fontSize={12.5} fill={"#b5e8ff"} fontFamily="monospace" opacity={0.8}>{shown||" "}</text>
+          <text x={12} y={52} fontSize={12.5} fontFamily="monospace" fill={out!=null?tint:pal.nodeSub} opacity={out!=null?0.95:0.5}>
+            {out!=null ? `= ${out}` : "= …"}
+          </text>
+        </g>;
+      })()}
+      {/* Animator: play/pause button + live value readout. */}
+      {node.type==="animator"&&(()=>{
+        const playing=!!node.playing;
+        const by=46;          // button center y — lowered for more bottom room
+        return <g>
+          <g style={{cursor:"pointer"}} onMouseDown={e=>onTogglePlay(e,node.id)}>
+            <circle cx={20} cy={by} r={9} fill={playing?tint:pal.nodeHdrBg} stroke={playing?tint:pal.nodeBorder} strokeWidth={1.2} opacity={playing?0.9:1}/>
+            {playing
+              // pause glyph (two bars), centered on the button
+              ? <g style={{pointerEvents:"none"}}><rect x={16.5} y={by-4} width={2.5} height={8} rx={0.6} fill={pal.nodeCardBg}/><rect x={21} y={by-4} width={2.5} height={8} rx={0.6} fill={pal.nodeCardBg}/></g>
+              // play glyph (triangle)
+              : <path d={`M17.5,${by-4.5} L24,${by} L17.5,${by+4.5} Z`} fill={tint} style={{pointerEvents:"none"}}/>}
+          </g>
+          <text x={36} y={by+4.5} fontSize={13.5} fill={playing?"#f84":pal.nodeSub} fontFamily="monospace" style={{pointerEvents:"none"}}>{Number(displayVal).toFixed(3)}</text>
+        </g>;
+      })()}
+      {isScalar&&connectedCamCount>0&&<text x={NW-16} y={40} fontSize={13} fill={pal.nodeSub} fontFamily="monospace" textAnchor="end" style={{pointerEvents:"none"}}>→{connectedCamCount}</text>}
       {/* Ports */}
       {canBeDependency(node.type)&&<g style={{cursor:"crosshair"}} onMouseDown={e=>onPortDown(e,node.id,"out")}>
         <circle cx={NW} cy={isScalar?20:34} r={7} fill={pal.nodeHdrBg} stroke={tint} strokeWidth={1.4} opacity={0.95}/><circle cx={NW} cy={isScalar?20:34} r={3} fill={tint} opacity={0.9}/>

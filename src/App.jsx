@@ -549,7 +549,7 @@ function Editor({initialHash}){
               <NodeCanvas nodes={nodes} selected={selected} selectionSet={selectionSet} onSelect={selectNode} onMove={moveNode} onMoveMany={moveNodes}
                 onConnect={connect} onDisconnect={disconnect} onDelete={deleteNode}
                 onMarqueeSelect={marqueeSelect} onPasteAtWorld={pasteAtWorld}
-                onToggleEnabled={toggleEnabled} onDetach={detachCamera} animValsRef={animValsRef} theme={theme} projectNode={projectNode}/>
+                onToggleEnabled={toggleEnabled} onDetach={detachCamera} onUpdateNode={updateNode} animValsRef={animValsRef} theme={theme} projectNode={projectNode}/>
             </div>
             {panelSpan==="main" && panelSide==="right" && panelDock}
           </div>
