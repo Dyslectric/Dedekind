@@ -12,6 +12,7 @@ export default defineConfig({
         manualChunks: {
           three: ["three"],
           mathjs: ["mathjs"],
+          mathlive: ["mathlive"],
           react: ["react", "react-dom"],
         },
       },

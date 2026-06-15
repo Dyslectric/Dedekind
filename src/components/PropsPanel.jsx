@@ -7,6 +7,7 @@ import { TYPE_META, makeNode } from "../nodes/model.js";
 import { ADDABLE_KINDS, kindEnabled } from "../nodes/kinds.js";
 import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
 import { EI, MathInput } from "./MathInput.jsx";
+import { XF } from "./MathField.jsx";
 import { Sec, PR, Toggle, ColorRow, Btn2, NodeAddGrid, PanelTopBar } from "./primitives.jsx";
 import { ThemeEditor } from "./ThemeEditor.jsx";
 import { FnDefRow } from "./FnDefRow.jsx";
@@ -164,7 +165,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Scalar node params ── */}
         {node.type==="constant"&&<Sec title="Value"><PR label="val"><EI v={node.props.value} sc={scope} onChange={v=>onChange({props:{...node.props,value:v}})}/></PR></Sec>}
         {node.type==="expr"&&<Sec title="Expression">
-          <PR label={`${node.name||"e"} =`}><EI v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
+          <PR label={`${node.name||"e"} =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
           <div style={{marginTop:6,padding:"6px 9px",background:"#050e18",borderRadius:4,border:"1px solid #0c1e2e",fontSize:14,color:"#7ac0d8",fontFamily:"monospace",lineHeight:1.9}}>
             {(()=>{
               const val=resolveNum(node.props.expr,scope,NaN);
@@ -211,7 +212,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Function definition ── */}
         {node.type==="fnDef"&&<Sec title="Definition">
           <PR label="params"><EI v={node.props.params||"x"} sc={scope} onChange={v=>onChange({props:{...node.props,params:v}})}/></PR>
-          <PR label={`${node.name||"f"}(…) =`}><EI v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
+          <PR label={`${node.name||"f"}(…) =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
           <div style={{marginTop:8,padding:"7px 9px",background:"#08100a",borderRadius:4,border:"1px solid #162010",fontSize:14,color:"#7a9a70",fontFamily:"monospace",lineHeight:1.9}}>
             {(()=>{
               const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
@@ -257,7 +258,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             </Sec>
             <Sec title={`Components ( in ${inVars} )`}>
               {Array.from({length:outDim}).map((_,k)=>(
-                <PR key={k} label={`out${k}`}><EI v={node.props["out"+k]} sc={scope} onChange={v=>set("out"+k,v)}/></PR>
+                <PR key={k} label={`out${k}`}><XF v={node.props["out"+k]} sc={scope} onChange={v=>set("out"+k,v)}/></PR>
               ))}
             </Sec>
           </>;
@@ -285,9 +286,9 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               </div>
             </Sec>
             <Sec title="Relation">
-              <PR label="lhs"><EI v={node.props.lhs||""} sc={scope} onChange={v=>set("lhs",v)}/></PR>
+              <PR label="lhs"><XF v={node.props.lhs||""} sc={scope} onChange={v=>set("lhs",v)}/></PR>
               <div style={{textAlign:"center",color:TYPE_META.equation.tc,fontWeight:"bold",fontSize:16,margin:"2px 0"}}>=</div>
-              <PR label="rhs"><EI v={node.props.rhs||""} sc={scope} onChange={v=>set("rhs",v)}/></PR>
+              <PR label="rhs"><XF v={node.props.rhs||""} sc={scope} onChange={v=>set("rhs",v)}/></PR>
             </Sec>
             <Sec title="Variables">
               <PR label="a (→X)"><input value={node.props.varA||"x"} onChange={e=>set("varA",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>
@@ -414,11 +415,11 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
             </Sec>
             {(node.props.colorMode||"off")==="gradient"&&<Sec title="Coloring">
-              {mode==="graph"&&<PR label="value"><EI v={node.props.colorExpr??"out0"} sc={scope} onChange={v=>set("colorExpr",v)}/></PR>}
+              {mode==="graph"&&<PR label="value"><XF v={node.props.colorExpr??"out0"} sc={scope} onChange={v=>set("colorExpr",v)}/></PR>}
               {mode==="field"&&<div style={{fontSize:12.5,color:ui.uiFaint,marginBottom:6,lineHeight:1.5}}>
                 The reserved last output drives the gradient. Override with a custom <em>value</em> expression if you like (blank = last output).
               </div>}
-              {mode==="field"&&<PR label="value"><EI v={node.props.colorExpr??""} sc={scope} onChange={v=>set("colorExpr",v)} placeholder={`out${outDim-1} (last output)`}/></PR>}
+              {mode==="field"&&<PR label="value"><XF v={node.props.colorExpr??""} sc={scope} onChange={v=>set("colorExpr",v)} placeholder={`out${outDim-1} (last output)`}/></PR>}
               <PR label="ramp">
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <input type="color" value={node.props.colorLo||"#3a6aff"} onChange={e=>set("colorLo",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
@@ -456,7 +457,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               </div>
             </Sec>
             <Sec title="Expression">
-              <PR label={label}><EI v={node.props.expr} sc={scope} onChange={v=>set("expr",v)}/></PR>
+              <PR label={label}><XF v={node.props.expr} sc={scope} onChange={v=>set("expr",v)}/></PR>
             </Sec>
             <Sec title="Domain">
               {[["x₀","xMin"],["x₁","xMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
@@ -493,21 +494,21 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             </Sec>
             {deg==="1"?<>
               <Sec title="Parametric x,y,z (t)">
-                {[["x(t)","exprX"],["y(t)","exprY"],["z(t)","exprZ"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                {[["x(t)","exprX"],["y(t)","exprY"],["z(t)","exprZ"]].map(([l,k])=><PR key={k} label={l}><XF v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               </Sec>
               <Sec title="Domain">
                 {[["t₀","tMin"],["t₁","tMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               </Sec>
             </>:deg==="2"?<>
               <Sec title="Parametric x,y,z (u,v)">
-                {[["x(u,v)","exprXu"],["y(u,v)","exprYu"],["z(u,v)","exprZu"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                {[["x(u,v)","exprXu"],["y(u,v)","exprYu"],["z(u,v)","exprZu"]].map(([l,k])=><PR key={k} label={l}><XF v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               </Sec>
               <Sec title="Domain">
                 {[["u₀","uMin"],["u₁","uMax"],["v₀","vMin"],["v₁","vMax"],["uRes","uRes"],["vRes","vRes"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
               </Sec>
             </>:<>
               <Sec title="Parametric x,y,z (u,v,w)">
-                {[["x(u,v,w)","exprXw"],["y(u,v,w)","exprYw"],["z(u,v,w)","exprZw"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+                {[["x(u,v,w)","exprXw"],["y(u,v,w)","exprYw"],["z(u,v,w)","exprZw"]].map(([l,k])=><PR key={k} label={l}><XF v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
                 <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
                   Three parameters sweep a solid region, drawn as a point cloud filling the image. Keep the resolutions modest — the point count is uRes×vRes×wRes.
                 </div>
@@ -524,7 +525,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                   </select>
                 </PR>
                 {(node.props.volColorMode||"off")==="gradient"&&<>
-                  <PR label="value"><EI v={node.props.volColorExpr??"u"} sc={scope} onChange={v=>set("volColorExpr",v)}/></PR>
+                  <PR label="value"><XF v={node.props.volColorExpr??"u"} sc={scope} onChange={v=>set("volColorExpr",v)}/></PR>
                   <PR label="ramp">
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <input type="color" value={node.props.volColorLo||"#3a6aff"} onChange={e=>set("volColorLo",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
@@ -595,7 +596,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                 </select>
               </PR>
               {(node.props.colorMode||"off")==="gradient"&&<>
-                <PR label="value"><EI v={node.props.colorExpr??"i"} sc={scope} onChange={v=>set("colorExpr",v)}/></PR>
+                <PR label="value"><XF v={node.props.colorExpr??"i"} sc={scope} onChange={v=>set("colorExpr",v)}/></PR>
                 <PR label="ramp">
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <input type="color" value={node.props.colorLo||"#3a6aff"} onChange={e=>set("colorLo",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
@@ -782,16 +783,16 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
           </>}
         </Sec></>}
         {node.type==="quiver2d"&&<><Sec title="Field">
-          <PR label="vx(x,y)"><EI v={node.props.exprX} sc={scope} onChange={v=>onChange({props:{...node.props,exprX:v}})}/></PR>
-          <PR label="vy(x,y)"><EI v={node.props.exprY} sc={scope} onChange={v=>onChange({props:{...node.props,exprY:v}})}/></PR>
+          <PR label="vx(x,y)"><XF v={node.props.exprX} sc={scope} onChange={v=>onChange({props:{...node.props,exprX:v}})}/></PR>
+          <PR label="vy(x,y)"><XF v={node.props.exprY} sc={scope} onChange={v=>onChange({props:{...node.props,exprY:v}})}/></PR>
         </Sec><Sec title="Grid">
           {[["n","gridN"],["x₀","xMin"],["x₁","xMax"],["y₀","yMin"],["y₁","yMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
           <PR label="norm"><Toggle v={node.props.normalize!==false} onChange={v=>onChange({props:{...node.props,normalize:v}})}/></PR>
         </Sec></>}
         {node.type==="quiver3d"&&<><Sec title="Field">
-          <PR label="vx(x,y,z)"><EI v={node.props.exprX} sc={scope} onChange={v=>onChange({props:{...node.props,exprX:v}})}/></PR>
-          <PR label="vy(x,y,z)"><EI v={node.props.exprY} sc={scope} onChange={v=>onChange({props:{...node.props,exprY:v}})}/></PR>
-          <PR label="vz(x,y,z)"><EI v={node.props.exprZ} sc={scope} onChange={v=>onChange({props:{...node.props,exprZ:v}})}/></PR>
+          <PR label="vx(x,y,z)"><XF v={node.props.exprX} sc={scope} onChange={v=>onChange({props:{...node.props,exprX:v}})}/></PR>
+          <PR label="vy(x,y,z)"><XF v={node.props.exprY} sc={scope} onChange={v=>onChange({props:{...node.props,exprY:v}})}/></PR>
+          <PR label="vz(x,y,z)"><XF v={node.props.exprZ} sc={scope} onChange={v=>onChange({props:{...node.props,exprZ:v}})}/></PR>
         </Sec><Sec title="Grid">
           <PR label="n/axis"><EI v={node.props.gridN} sc={scope} onChange={v=>onChange({props:{...node.props,gridN:v}})}/></PR>
           {[["x₀","xMin"],["x₁","xMax"],["y₀","yMin"],["y₁","yMax"],["z₀","zMin"],["z₁","zMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
@@ -846,10 +847,10 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             </Sec>
           </>;
         })()}
-        {node.type==="fn1d"&&<><Sec title="Expression"><PR label="y(x)"><EI v={node.props.expr} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR></Sec><Sec title="Domain">{[["x₀","xMin"],["x₁","xMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
-        {node.type==="curve3d"&&<><Sec title="Parametric">{[["x(t)","exprX"],["y(t)","exprY"],["z(t)","exprZ"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec><Sec title="Domain">{[["t₀","tMin"],["t₁","tMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
-        {node.type==="surf3d"&&<><Sec title="Expression"><PR label="z(x,y)"><EI v={node.props.expr} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR></Sec><Sec title="Domain">{[["x₀","xMin"],["x₁","xMax"],["y₀","yMin"],["y₁","yMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
-        {node.type==="paramsurf"&&<><Sec title="Parametric">{[["x(u,v)","exprX"],["y(u,v)","exprY"],["z(u,v)","exprZ"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec><Sec title="Domain">{[["u₀","uMin"],["u₁","uMax"],["v₀","vMin"],["v₁","vMax"],["uRes","uRes"],["vRes","vRes"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
+        {node.type==="fn1d"&&<><Sec title="Expression"><PR label="y(x)"><XF v={node.props.expr} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR></Sec><Sec title="Domain">{[["x₀","xMin"],["x₁","xMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
+        {node.type==="curve3d"&&<><Sec title="Parametric">{[["x(t)","exprX"],["y(t)","exprY"],["z(t)","exprZ"]].map(([l,k])=><PR key={k} label={l}><XF v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec><Sec title="Domain">{[["t₀","tMin"],["t₁","tMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
+        {node.type==="surf3d"&&<><Sec title="Expression"><PR label="z(x,y)"><XF v={node.props.expr} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR></Sec><Sec title="Domain">{[["x₀","xMin"],["x₁","xMax"],["y₀","yMin"],["y₁","yMax"],["res","res"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
+        {node.type==="paramsurf"&&<><Sec title="Parametric">{[["x(u,v)","exprX"],["y(u,v)","exprY"],["z(u,v)","exprZ"]].map(([l,k])=><PR key={k} label={l}><XF v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec><Sec title="Domain">{[["u₀","uMin"],["u₁","uMax"],["v₀","vMin"],["v₁","vMax"],["uRes","uRes"],["vRes","vRes"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}</Sec></>}
 
         {/* ── Camera ── */}
         {isCamera&&<>
@@ -887,9 +888,9 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             </>}
             {node.props.planeMode==="paramsurf"&&<>
               <div style={{color:"#3a5040",fontSize:14,margin:"4px 0 2px"}}>Surface (axes = u,v param domain)</div>
-              <PR label="x(u,v)"><EI v={node.props.psExprX||"cos(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprX:v}})}/></PR>
-              <PR label="y(u,v)"><EI v={node.props.psExprY||"sin(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprY:v}})}/></PR>
-              <PR label="z(u,v)"><EI v={node.props.psExprZ||"cos(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprZ:v}})}/></PR>
+              <PR label="x(u,v)"><XF v={node.props.psExprX||"cos(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprX:v}})}/></PR>
+              <PR label="y(u,v)"><XF v={node.props.psExprY||"sin(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprY:v}})}/></PR>
+              <PR label="z(u,v)"><XF v={node.props.psExprZ||"cos(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprZ:v}})}/></PR>
               <div style={{color:"#252a40",fontSize:14,margin:"4px 0 2px"}}>Domain</div>
               {[["u₀","psUMin"],["u₁","psUMax"],["v₀","psVMin"],["v₁","psVMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
               <PR label="res"><EI v={node.props.psRes||"16"} sc={scope} onChange={v=>onChange({props:{...node.props,psRes:v}})}/></PR>
