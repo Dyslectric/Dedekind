@@ -75,9 +75,11 @@ function MathField({ v, sc, onChange, placeholder }){
   const [empty,setEmpty]=useState((v??"")==="");
   const [foc,setFoc]=useState(false);
   const valRef=useRef(v??"");      // latest text value
+  const scRef=useRef(sc??null);    // latest scope for latexToText
   const focusedRef=useRef(false);
   const onChangeRef=useRef(onChange);
   onChangeRef.current=onChange;
+  scRef.current=sc??null;
 
   // Mount the math-field once MathLive is loaded.
   useEffect(()=>{
@@ -126,7 +128,7 @@ function MathField({ v, sc, onChange, placeholder }){
 
       const onInput=()=>{
         const latex=mf.getValue ? mf.getValue("latex") : (mf.value||"");
-        const text=latexToText(latex);
+        const text=latexToText(latex, scRef.current);
         valRef.current=text;
         setEmpty(text==="");
         onChangeRef.current && onChangeRef.current(text);
@@ -137,7 +139,7 @@ function MathField({ v, sc, onChange, placeholder }){
         // Compare by text (LaTeX is normalized internally by MathLive).
         if(!mf.isConnected) return;
         try{
-          const curText=latexToText(mf.getValue("latex"));
+          const curText=latexToText(mf.getValue("latex"), scRef.current);
           if(curText!==valRef.current) mf.setValue(textToLatex(valRef.current),{ silenceNotifications:true });
         }catch{ /* not mounted */ }
       };

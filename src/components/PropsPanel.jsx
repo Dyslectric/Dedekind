@@ -168,8 +168,12 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
           <PR label={`${node.name||"e"} =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
           <div style={{marginTop:6,padding:"6px 9px",background:"#050e18",borderRadius:4,border:"1px solid #0c1e2e",fontSize:14,color:"#7ac0d8",fontFamily:"monospace",lineHeight:1.9}}>
             {(()=>{
-              const val=resolveNum(node.props.expr,scope,NaN);
               if(!node.name)return<span style={{color:"#1a3040"}}>set a variable name above</span>;
+              // Prefer the value already resolved into scope (computed from the
+              // node's full transitive deps, same path the plot output uses); fall
+              // back to re-evaluating the raw expression if it's not present.
+              let val=typeof scope[node.name]==="number"?scope[node.name]:NaN;
+              if(!isFinite(val)) val=resolveNum(node.props.expr,scope,NaN);
               if(!isFinite(val))return<span style={{color:"#1a3040"}}>…</span>;
               const fmtd=Math.abs(val)>=1000||(Math.abs(val)<0.001&&val!==0)?val.toExponential(4):Number(val.toPrecision(6)).toString();
               return<span><span style={{color:"#3a7090"}}>{node.name} =</span> <span style={{color:"#8fd8f8"}}>{fmtd}</span></span>;

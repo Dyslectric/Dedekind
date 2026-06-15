@@ -193,10 +193,11 @@ class LatexParser{
     if(c==="|"){ this.i++; this.barDepth++; const e=this.parseExpr(); this.barDepth--; this.eat("|"); return `abs(${e})`; }
     if(/[0-9.]/.test(c)){ let n=""; while(/[0-9.]/.test(this.s[this.i]||"")){ n+=this.s[this.i]; this.i++; } return n; }
     if(/[A-Za-z]/.test(c)){ let id=""; while(/[A-Za-z0-9_]/.test(this.s[this.i]||"")){ id+=this.s[this.i]; this.i++; }
-      // A bare function name directly followed by "(" is a call, e.g. a user
-      // typed "sin(x)" and MathLive stored it without the \sin macro.
+      // A bare identifier directly followed by "(" is a function call, e.g. a
+      // user typed "sin(x)" or "f(x)" and MathLive stored it without a macro.
+      // Parentheses after an identifier are unambiguously application.
       this.skipSpace();
-      if(this.s[this.i]==="(" && isFuncName(id)){ this.i++; const e=this.parseExpr(); this.eat(")"); return `${FUNC_RENAME[id]||id}(${e})`; }
+      if(this.s[this.i]==="("){ this.i++; const args=this.parseArgList(); this.eat(")"); return `${FUNC_RENAME[id]||id}(${args.join(",")})`; }
       return id;
     }
     if(c==="\\"){
@@ -251,15 +252,45 @@ class LatexParser{
     return "";
   }
   maybeApply(id){
-    if(MACRO_FUNC.has(id) || isFuncName(id)) return this.applyFunc(FUNC_RENAME[id]||id);
+    // A \mathrm{name}/\operatorname{name} group followed by "(" is a function
+    // call — parentheses after a named group are unambiguously application in
+    // MathLive's LaTeX output (it wraps user-defined function names this way).
+    // Peek past whitespace and a possible \left to see if a "(" follows.
+    let j=this.i;
+    while(j<this.s.length){
+      const ch=this.s[j];
+      if(ch===" "||ch==="\t"||ch==="\n"||ch==="~"){ j++; continue; }
+      if(this.s.startsWith("\\left",j)){ j+=5; continue; }
+      if(this.s.startsWith("\\,",j)||this.s.startsWith("\\;",j)||
+         this.s.startsWith("\\ ",j)||this.s.startsWith("\\!",j)||
+         this.s.startsWith("\\:",j)){ j+=2; continue; }
+      break;
+    }
+    const nextIsParen=this.s[j]==="(";
+    if(MACRO_FUNC.has(id) || isFuncName(id) || nextIsParen) return this.applyFunc(FUNC_RENAME[id]||id);
     return id;
   }
   applyFunc(fname){
     this.skipSpace();
-    if(this.s[this.i]==="("){ this.i++; const e=this.parseExpr(); this.eat(")"); return `${fname}(${e})`; }
+    if(this.s[this.i]==="("){ this.i++; const args=this.parseArgList(); this.eat(")"); return `${fname}(${args.join(",")})`; }
     if(this.s[this.i]==="{"){ const inner=this.readBraced(); return `${fname}(${new LatexParser(inner).parseExpr()})`; }
     const arg=this.parseFactor();
     return `${fname}(${arg})`;
+  }
+  // Parse a comma-separated argument list (already past the opening "("),
+  // stopping at the closing ")". Each argument is a full expression.
+  parseArgList(){
+    const args=[];
+    for(;;){
+      this.skipSpace();
+      if(this.s[this.i]===")"||this.s[this.i]==null) break;
+      const e=this.parseExpr();
+      args.push(e);
+      this.skipSpace();
+      if(this.s[this.i]===","){ this.i++; continue; }
+      break;
+    }
+    return args.length?args:[""];
   }
   // Read the _{…}^{…} (or ^{…}_{…}) bound groups after \sum/\prod/\int. Each
   // bound may also be a single unbraced token (e.g. \sum_1^n).

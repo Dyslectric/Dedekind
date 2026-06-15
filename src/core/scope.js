@@ -50,11 +50,24 @@ function resolveScope(consumerId, nodes, animVals){
       sc[n.name]=makeFn(n.name,params,n.props.expr,sc);
     }
   }
-  // expr nodes last — full scope (sliders, animators, constants, functions) available
-  for(const n of list){
-    if(!n.name) continue;
-    if(n.type==="expr") sc[n.name]=resolveNum(n.props.expr,sc,0);
+  // expr nodes last — full scope (sliders, animators, constants, functions) available.
+  // Evaluate in topological order so an expr that references another expr's name
+  // gets the correct value; naive iteration order could evaluate A before B even
+  // when A's expression references B's variable name.
+  const exprNodes=list.filter(n=>n.name && n.type==="expr");
+  const exprById=new Map(exprNodes.map(n=>[n.id,n]));
+  const exprDone=new Set();
+  function evalExpr(n){
+    if(exprDone.has(n.id)) return;
+    exprDone.add(n.id);
+    // Evaluate any expr deps this node's attachments reference first
+    for(const depId of (n.attachments||[])){
+      const dep=exprById.get(depId);
+      if(dep) evalExpr(dep);
+    }
+    sc[n.name]=resolveNum(n.props.expr,sc,0);
   }
+  for(const n of exprNodes) evalExpr(n);
   return sc;
 }
 // A camera's own scope = union of the scopes of the plots it shows, plus any
@@ -108,11 +121,21 @@ function buildGlobalScope(nodes, animVals) {
       sc[n.name] = makeFn(n.name, params, n.props.expr, sc);
     }
   }
-  // expr nodes last — full scope available including functions
-  for (const n of Object.values(nodes)) {
-    if (!n.name) continue;
-    if (n.type === "expr") sc[n.name] = resolveNum(n.props.expr, sc, 0);
+  // expr nodes last — full scope available including functions.
+  // Evaluate in topological order so expr-depends-on-expr resolves correctly.
+  const allExprNodes=Object.values(nodes).filter(n=>n.name && n.type==="expr");
+  const gExprById=new Map(allExprNodes.map(n=>[n.id,n]));
+  const gExprDone=new Set();
+  function gEvalExpr(n){
+    if(gExprDone.has(n.id)) return;
+    gExprDone.add(n.id);
+    for(const depId of (n.attachments||[])){
+      const dep=gExprById.get(depId);
+      if(dep) gEvalExpr(dep);
+    }
+    sc[n.name] = resolveNum(n.props.expr, sc, 0);
   }
+  for(const n of allExprNodes) gEvalExpr(n);
   return sc;
 }
 
