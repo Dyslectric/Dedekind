@@ -64,6 +64,28 @@ const THEME_PRESETS = {
   "Catppuccin Frappé":    preset(catppuccinView(CAT["Frappé"]), catppuccinUI(CAT["Frappé"])),
   "Catppuccin Macchiato": preset(catppuccinView(CAT.Macchiato), catppuccinUI(CAT.Macchiato)),
   "Catppuccin Mocha":     preset(catppuccinView(CAT.Mocha),     catppuccinUI(CAT.Mocha)),
+
+  // Ableton Live-like: a mid neutral-grey workspace with dark text. The panel
+  // bar sits around #b8bcc0 so node identity colors auto-darken for contrast.
+  "Ableton":  preset(
+    {canvasBg:"#a8acb0",nodeBg:"#b0b4b8",bg2d:"#bdc1c5",grid2d:"#9da1a6",axes2d:"#5c6064",label2d:"#3a3d42",bg3d:"#b8bcc0",grid3d:"#a2a6aa",grid3d2:"#b0b4b8",overlayBg:"#c4c8ccdd",overlayBorder:"#9498a0",overlayText:"#33363c"},
+    {uiHeading:"#1d1f24",uiText:"#2c2f35",uiMuted:"#44474e",uiFaint:"#4a4d54",uiAccent:"#1f5688",
+     uiInputText:"#1d1f24",uiInputBg:"#cdd0d4",uiInputBorder:"#9296a0",uiBtnText:"#2c2f35",
+     uiBtnBg:"#c2c5ca",uiBtnBorder:"#9296a0",uiPanelBar:"#b8bcc0",uiDanger:"#a82424",uiGood:"#246e33"}),
+
+  // Gruvbox Light (medium): warm beige backgrounds, dark text.
+  "Gruvbox Light": preset(
+    {canvasBg:"#d5c4a1",nodeBg:"#ebdbb2",bg2d:"#f2e5bc",grid2d:"#c8b692",axes2d:"#7c6f64",label2d:"#504945",bg3d:"#ebdbb2",grid3d:"#cdbb92",grid3d2:"#ddcca7",overlayBg:"#ebdbb2dd",overlayBorder:"#bdae93",overlayText:"#3c3836"},
+    {uiHeading:"#282828",uiText:"#3c3836",uiMuted:"#504945",uiFaint:"#665c54",uiAccent:"#076678",
+     uiInputText:"#282828",uiInputBg:"#f9f5d7",uiInputBorder:"#bdae93",uiBtnText:"#3c3836",
+     uiBtnBg:"#f2e5bc",uiBtnBorder:"#bdae93",uiPanelBar:"#ebdbb2",uiDanger:"#9d0006",uiGood:"#427b58"}),
+
+  // Gruvbox Dark: dark backgrounds, light warm text.
+  "Gruvbox Dark": preset(
+    {canvasBg:"#282828",nodeBg:"#1d2021",bg2d:"#1b1b1b",grid2d:"#3c3836",axes2d:"#7c6f64",label2d:"#a89984",bg3d:"#1b1b1b",grid3d:"#32302f",grid3d2:"#242220",overlayBg:"#1d2021dd",overlayBorder:"#3c3836",overlayText:"#a89984"},
+    {uiHeading:"#fbf1c7",uiText:"#ebdbb2",uiMuted:"#bdae93",uiFaint:"#a89984",uiAccent:"#83a598",
+     uiInputText:"#fbf1c7",uiInputBg:"#1d2021",uiInputBorder:"#504945",uiBtnText:"#ebdbb2",
+     uiBtnBg:"#32302f",uiBtnBorder:"#504945",uiPanelBar:"#1d2021",uiDanger:"#fb4934",uiGood:"#b8bb26"}),
 };
 const THEME_KEYS=["canvasBg","nodeBg","bg2d","grid2d","axes2d","label2d","bg3d","grid3d","grid3d2","overlayBg","overlayBorder","overlayText"];
 const ALL_THEME_KEYS=[...THEME_KEYS,...UI_KEYS];

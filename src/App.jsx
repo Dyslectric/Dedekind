@@ -7,7 +7,7 @@ import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from
 import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
 import { uid, makeFn, resolveNum } from "./core/math.js";
 import { kindEnabled, ADDABLE_KINDS, ALL_KINDS } from "./nodes/kinds.js";
-import { UICtx, UI_DEFAULTS, buildUI, makeS } from "./theme/tokens.jsx";
+import { UICtx, UI_DEFAULTS, buildUI, makeS, darken, relLum } from "./theme/tokens.jsx";
 import { buildTheme } from "./theme/presets.js";
 import { useAnimators } from "./hooks/useAnimators.js";
 import { useHistory } from "./hooks/useHistory.js";
@@ -522,8 +522,15 @@ function Editor({initialHash}){
           <button onClick={()=>copyUrl("project")} style={{...uiCtx.S.btnSm,color:copied==="project"?ui.uiGood:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>{copied==="project"?"✓ copied":"⎘ copy url"}</button>
           <button onClick={importFromClipboard} title="Import a selection (JSON) from the clipboard as new nodes" style={{...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>⇲ import sel</button>
           {clipMsg&&<span style={{color:ui.uiGood,fontSize:12.5,fontFamily:"monospace"}}>{clipMsg}</span>}
-          {ALL_KINDS.filter(t=>kindEnabled(projectNode,t)).map(t=>{const m=TYPE_META[t]||{tc:ui.uiAccent,tag:t};return(
-            <button key={t} onClick={()=>addNode(t)} style={{...uiCtx.S.btnSm,color:m.tc,borderColor:m.tc+"33",padding:"2px 5px",background:ui.uiBtnBg}}>+{m.tag}</button>
+          {ALL_KINDS.filter(t=>kindEnabled(projectNode,t)).map(t=>{const m=TYPE_META[t]||{tc:ui.uiAccent,tag:t};
+            // Identity colors are light pastels; on a light/mid toolbar they
+            // vanish. Darken proportionally to how light the button bg is so the
+            // label keeps ~AA contrast across dark, mid (Ableton) and light themes.
+            const bl=relLum(ui.uiBtnBg||"#0c0e20");
+            const amt=bl>0.6?0.7:bl>0.3?0.64:bl>0.12?0.42:0;
+            const tcol=amt>0?darken(m.tc,amt):m.tc;
+            return(
+            <button key={t} onClick={()=>addNode(t)} style={{...uiCtx.S.btnSm,color:tcol,borderColor:tcol+"55",padding:"2px 5px",background:ui.uiBtnBg}}>+{m.tag}</button>
           );})}
         </div>
       </div>
