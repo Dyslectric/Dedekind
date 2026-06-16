@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
-import { resolveScope, plotDomain, geomSignature } from "../core/scope.js";
+import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/scope.js";
 import { disposeObjs, updateGpuUniforms } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
@@ -80,28 +80,20 @@ function applyDomain(props, type, dom){
   return o;
 }
 function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals){
-    // For transformers AND flows, fold the wired fnMap + paramSpace expressions
-    // into the signature so geometry rebuilds when those upstream nodes change.
-    let pSig=p;
+    // Geometry signature (folds wired fnMap/paramSpace/equation expressions and
+    // their scopes) — shared with the 2-D scene cache so both invalidate alike.
+    const sig=plotSignature(node,p,scope,nodes,animVals);
+    // sigScope is needed below for live uniform updates on cache hits.
     let sigScope=scope;
     if(node.type==="transformer"||node.type==="flow"){
-      let fnSig="",paramSig="",eqSig="";
       const structScopes=[];
       const animV=animVals||{};
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
-        if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
-        else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
-        else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
-        else if(dep.type==="points"){ paramSig=`pts|${dep.props.space}|${dep.props.data}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+        if(dep.type==="fnMap"||dep.type==="equation"||dep.type==="paramSpace"||dep.type==="points") structScopes.push(resolveScope(dep.id,nodes,animV));
       }
-      pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig};
-      // Fold each structural node's own scope into the scope used for the
-      // signature, so a slider wired into the fnMap/equation/paramSpace (not the
-      // transformer itself) still invalidates the cache when it changes.
       sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);
     }
-    const sig=geomSignature({...node,props:pSig},sigScope);
     const prev=objMap.get(childId);
 
     // ── Cache hit ───────────────────────────────────────────────────────────
@@ -243,6 +235,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
           lines: fromPoints || p.output==="lines",
           gradient: !!p.gradient, gradA:p.gradA, gradB:p.gradB,
           slices: resolveNum(p.volSlices,scope,6),
+          showWire: !!p.showWire,
         });
       } else {
         objs=[]; // unwired flow renders nothing (panel shows guidance)

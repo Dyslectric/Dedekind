@@ -165,9 +165,33 @@ function geomSignature(node, scope){
     case "pointSeq": return `ps|${c}|${p.points}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
     case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "glyphField": return `gl|${c}|${p.pairs}|${resolveNum(p.arrowLen,scope,0.5)}|${p.lenMode||(p.normalize===false?"scaled":"uniform")}|${p.anim||"crest"}|${resolveNum(p.speed,scope,1)}|${p.crestColor||""}|${scopeSig(node,scope)}`;
-    case "flow": return `fl|${c}|${resolveNum(p.steps,scope,500)}|${resolveNum(p.stepSize,scope,0.02)}|${p.output||"surface"}|${resolveNum(p.volSlices,scope,6)}|${p.gradient?1:0}|${p.gradA||""}|${p.gradB||""}|${p.__fnSig||""}|${p.__paramSig||""}|${scopeSig(node,scope)}`;
+    case "flow": return `fl|${c}|${resolveNum(p.steps,scope,500)}|${resolveNum(p.stepSize,scope,0.02)}|${p.output||"surface"}|${resolveNum(p.volSlices,scope,6)}|${p.gradient?1:0}|${p.gradA||""}|${p.gradB||""}|${p.showWire?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${scopeSig(node,scope)}`;
     default: return null;
   }
+}
+
+// Full geometry signature for a plot, folding in the expressions/scopes of any
+// wired structural nodes (fnMap / equation / paramSpace / points) for
+// transformers and flows. Shared by the 3-D rebuild cache (rebuild.js) and the
+// 2-D scene cache (render2d-gpu.js) so both invalidate on exactly the same
+// changes. Returns a string, or null for types with no signature.
+function plotSignature(node, p, scope, nodes, animVals){
+  let pSig=p, sigScope=scope;
+  if(node.type==="transformer"||node.type==="flow"){
+    let fnSig="",paramSig="",eqSig="";
+    const structScopes=[];
+    const animV=animVals||{};
+    for(const depId of (node.attachments||[])){
+      const dep=nodes[depId]; if(!dep) continue;
+      if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="points"){ paramSig=`pts|${dep.props.space}|${dep.props.data}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+    }
+    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig};
+    sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);
+  }
+  return geomSignature({...node,props:pSig},sigScope);
 }
 // Build a signature fragment from the scalar values this node actually depends
 // on, so geometry rebuilds when a slider/animator it uses changes — but not when
@@ -314,5 +338,5 @@ function updateGpuUniforms(objs, scope){
 }
 
 export {
-  collectScalarDeps, resolveScope, buildScopeForCamera, resolveDomain, plotDomain, referencedVars, geomSignature, scopeSig, scopeSigFns, nodeExprText, escapeRe
+  collectScalarDeps, resolveScope, buildScopeForCamera, resolveDomain, plotDomain, referencedVars, geomSignature, plotSignature, scopeSig, scopeSigFns, nodeExprText, escapeRe
 };

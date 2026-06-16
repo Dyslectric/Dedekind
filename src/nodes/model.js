@@ -42,7 +42,11 @@ const TYPE_META={
 // ── Node factory ─────────────────────────────────────────────────────────────
 const PROJECT_ID=uid();
 function makeNode(type,pos){
-  const camProps=(mode)=>({posX:"6",posY:"4",posZ:"6",targetX:"0",targetY:"0",targetZ:"0",orbTheta:"0.8",orbPhi:"1.0",orbRadius:"14",fov:"50",near:"0.01",far:"2000",projection:"perspective",orthoSize:"10",mode,showGrid:true,showAxes:true,bgOverride:false,bgColor:"#0d0f18",showScalarOverlay:true,showCamLabel:true,showResetBtn:true,showHints:false,showShareBtn:true,planeMode:"xy",planeOx:"0",planeOy:"0",planeOz:"0",planeUx:"1",planeUy:"0",planeUz:"0",planeVx:"0",planeVy:"1",planeVz:"0",planeThreshold:"0.15",psExprX:"cos(u)*sin(v)",psExprY:"sin(u)*sin(v)",psExprZ:"cos(v)",psUMin:"0",psUMax:"2*pi",psVMin:"0",psVMax:"pi",psRes:"16",psDistThreshold:"0.35"});
+  const camProps=(mode)=>({posX:"6",posY:"4",posZ:"6",targetX:"0",targetY:"0",targetZ:"0",orbTheta:"0.8",orbPhi:"1.0",orbRadius:"14",fov:"50",near:"0.01",far:"2000",projection:"perspective",orthoSize:"10",mode,showGrid:true,showAxes:true,bgOverride:false,bgColor:"#0d0f18",showScalarOverlay:true,showCamLabel:true,showResetBtn:true,showHints:false,showShareBtn:true,
+    // ── 2-D camera plane: a single flat plane defined by an origin point and a
+    // gradient / normal vector. 3-D plots are orthographically projected onto it
+    // (no notion of distance). Default = world XY plane (normal +Z).
+    planeOx:"0",planeOy:"0",planeOz:"0",normalX:"0",normalY:"0",normalZ:"1"});
   const defs={
     camera:{label:"Camera",props:camProps("3d"),attachments:[],enabled:true},
     camera3d:{label:"Camera 3D",props:camProps("3d"),attachments:[],enabled:true},
@@ -265,21 +269,22 @@ function makeDemoScene(){
   ortho.props.projection="orthographic";ortho.props.orthoSize="7";ortho.props.orbTheta="2.3";ortho.props.orbPhi="0.95";ortho.props.orbRadius="13";
 
   const top=add(makeNode("camera2d",{x:1040,y:400}));top.label="Top (xy)";
-  top.props.planeMode="xy";
+  // default plane is world XY (normal +Z) — nothing to set.
 
   const side=add(makeNode("camera2d",{x:1040,y:560}));side.label="Side (xz)";
-  side.props.planeMode="plane";
-  // view the x–z plane: u = world X axis, v = world Z axis
-  side.props.planeUx="1";side.props.planeUy="0";side.props.planeUz="0";
-  side.props.planeVx="0";side.props.planeVy="0";side.props.planeVz="1";
-  side.props.planeThreshold="0.4";
+  // view the x–z plane: looking along −Y, so the plane normal is +Y.
+  side.props.normalX="0";side.props.normalY="1";side.props.normalZ="0";
 
-  // Every camera sees the surface, the field, and the knot.
-  const plots=[surf.id,field.id,knot.id];
-  persp.attachments=[...plots];
-  ortho.attachments=[...plots];
-  top.attachments=[...plots];
-  side.attachments=[...plots];
+  // Every 3-D camera sees the surface, the field, and the knot. The 2-D cameras
+  // skip the dense ripple surface (projecting a 56×56 graph every frame was the
+  // main 2-D performance sink) and instead show the field + knot projected onto
+  // their plane, which is light and reads clearly.
+  const plots3d=[surf.id,field.id,knot.id];
+  const plots2d=[field.id,knot.id];
+  persp.attachments=[...plots3d];
+  ortho.attachments=[...plots3d];
+  top.attachments=[...plots2d];
+  side.attachments=[...plots2d];
 
   return N;
 }

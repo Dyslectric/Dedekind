@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
-import { resolveScope, plotDomain } from "../core/scope.js";
+import { resolveScope, plotDomain, plotSignature } from "../core/scope.js";
 import { applyDomain } from "../geometry/rebuild.js";
 import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
 import { integrateFlow } from "../geometry/flow.js";
@@ -9,6 +9,8 @@ import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
 import { marchingSquares } from "../geometry/implicit.js";
 import { hexToThree } from "../geometry/three-helpers.js";
+import { planeFrame, projectPt, projectPts } from "./project2d.js";
+import { advectSeeds } from "../geometry/flow.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function nicestep(r){ if(!r||!isFinite(r))return 1; const m=Math.pow(10,Math.floor(Math.log10(Math.abs(r)))); const f=r/m; return m*(f<2?1:f<5?2:5); }
@@ -98,7 +100,40 @@ function ribbonMesh(run, half, color, opacity=1){
   return new THREE.Mesh(g,mat);
 }
 
-// Build a thick arrow as a filled triangle mesh: a rectangular shaft plus a
+// Build a SOLID filled mesh from a grid of projected [u,v] points
+// (rows[r][c] = [u,v] | null). Triangulates each quad cell directly into two
+// triangles — it does NOT triangulate a boundary polygon, so a self-intersecting
+// stream surface keeps every cell and never drops parts. Solid color, no alpha.
+// A cell is emitted only when all four corners are finite; a missing/NaN corner
+// just skips that one cell (the rest of the sheet stays intact).
+function buildFilledGrid2D(rows, color){
+  const pos=[];
+  for(let r=0;r<rows.length-1;r++){
+    const ra=rows[r], rb=rows[r+1];
+    if(!ra||!rb) continue;
+    const cols=Math.min(ra.length, rb.length);
+    for(let c=0;c<cols-1;c++){
+      const a=ra[c], b=ra[c+1], d=rb[c], e=rb[c+1];
+      if(!a||!b||!d||!e) continue;
+      // quad (a,b,e,d) → two triangles. DoubleSide so winding never hides it.
+      pos.push(a[0],a[1],0, b[0],b[1],0, e[0],e[1],0);
+      pos.push(a[0],a[1],0, e[0],e[1],0, d[0],d[1],0);
+    }
+  }
+  if(!pos.length) return [];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  // SOLID: opaque, no alpha. depthWrite off keeps it flat-composited with other
+  // 2-D plot meshes (everything sits on z=0) without z-fighting artifacts.
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),side:THREE.DoubleSide,depthTest:false,depthWrite:false});
+  return [new THREE.Mesh(g,mat)];
+}
+
+// Build a thin-line WIREFRAME (both grid directions) from a projected grid.
+// (Reserved helper — 2-D flow surfaces are solid-only and never wireframed, so
+// this is intentionally unused by the 2-D pipeline.)
+
+
 // triangular head. shaft `thickness` and `headLen` are in WORLD units; callers
 // derive them from screen pixels (px(...)) so the arrow keeps a constant on-
 // screen weight at any zoom. A filled mesh is used (not GL lines) because
@@ -153,46 +188,48 @@ function buildDisk2D(cx,cy, r, color, opacity=1){
 // On-screen line weight for 1-space (curve) plots, in CSS pixels.
 const LINE_PX = 2.6;
 
-function build2DFn1d(np, pscope, color, wxMin, wxMax, px){
+function build2DFn1d(np, pscope, color, wxMin, wxMax, px, fr){
   const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
   const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,600)));
   const pts=linspace(xMin,xMax,res).map(x=>{
     const y=safeEval(np.expr,{...pscope,x});
-    return (y!=null&&isFinite(y)) ? [x,y] : null;
+    return (y!=null&&isFinite(y)) ? [x,y,0] : null;
   });
-  return buildThickLine2D(pts, color, px(LINE_PX)/2);
+  return buildThickLine2D(projectPts(fr,pts), color, px(LINE_PX)/2);
 }
 
-function build2DCurve3d(np, pscope, color, px){
+function build2DCurve3d(np, pscope, color, px, fr){
   const tMin=resolveNum(np.tMin,pscope,0), tMax=resolveNum(np.tMax,pscope,Math.PI*2);
   const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,400)));
   const pts=linspace(tMin,tMax,res).map(t=>{
-    const x=safeEval(np.exprX,{...pscope,t}), y=safeEval(np.exprY,{...pscope,t});
-    return (x!=null&&y!=null&&isFinite(x)&&isFinite(y)) ? [x,y] : null;
+    const x=safeEval(np.exprX,{...pscope,t}), y=safeEval(np.exprY,{...pscope,t}), z=safeEval(np.exprZ,{...pscope,t});
+    return (x!=null&&y!=null&&isFinite(x)&&isFinite(y)) ? [x,y,(z!=null&&isFinite(z))?z:0] : null;
   });
-  return buildThickLine2D(pts, color, px(LINE_PX)/2);
+  return buildThickLine2D(projectPts(fr,pts), color, px(LINE_PX)/2);
 }
 
-function build2DPointSeq(np, pscope, color, px){
+function build2DPointSeq(np, pscope, color, px, fr){
   const pts=parsePointSeq(np.points||np.data, pscope);
   const rPx=resolveNum(np.radius,pscope,4);
   const r=px(rPx); // constant on-screen radius
   const objs=[];
-  if(np.drawLines!==false && pts.length>1){
-    objs.push(...buildThickLine2D(pts.map(([x,y])=>[x,y]), color, px(LINE_PX)/2));
+  const proj=pts.map(([x,y,z])=>projectPt(fr,x,y,z||0));
+  if(np.drawLines!==false && proj.length>1){
+    objs.push(...buildThickLine2D(proj, color, px(LINE_PX)/2));
   }
-  for(const [x,y] of pts){
-    objs.push(buildDisk2D(x,y,r,color));
+  for(const [u,v] of proj){
+    objs.push(buildDisk2D(u,v,r,color));
   }
   return objs;
 }
 
-function build2DPoint(np, pscope, color, px){
-  const x=resolveNum(np.x,pscope,0), y=resolveNum(np.y,pscope,0);
-  return [buildDisk2D(x,y,px(5),color)];
+function build2DPoint(np, pscope, color, px, fr){
+  const x=resolveNum(np.x,pscope,0), y=resolveNum(np.y,pscope,0), z=resolveNum(np.z,pscope,0);
+  const [u,v]=projectPt(fr,x,y,z);
+  return [buildDisk2D(u,v,px(5),color)];
 }
 
-function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
+function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
   const gridN=Math.max(3,Math.min(30,resolveNum(np.gridN,pscope,12)));
   const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
   const yMin=resolveNum(np.yMin,pscope,wyMin), yMax=resolveNum(np.yMax,pscope,wyMax);
@@ -213,15 +250,52 @@ function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
     if(mag<1e-10) continue;
     const scale=np.normalize!==false ? L : L*(mag/maxMag);
     const nx=vx/mag, ny=vy/mag;
-    const a=buildArrow2D(x,y, nx*scale, ny*scale, color, Math.min(head, scale*0.5), thick);
+    // project base and tip onto the plane so a tilted view shears arrows correctly
+    const b=projectPt(fr,x,y,0);
+    const tip=projectPt(fr,x+nx*scale,y+ny*scale,0);
+    const a=buildArrow2D(b[0],b[1], tip[0]-b[0], tip[1]-b[1], color, Math.min(head, scale*0.5), thick);
     if(a) objs.push(a);
   }
   return objs;
 }
 
-// Implicit curve: marching squares over the transformer's inline domain box.
-// Emits flat thick line segments (in the XY plane) where lhs=rhs holds.
-function build2DImplicit(tNode, eqNode, pscope, color, px){
+// 3-D quiver in a 2-D viewport: sample a 3-D grid, size each arrow in true 3-D,
+// then project base→tip so out-of-plane arrows foreshorten correctly (same
+// orthographic treatment as a 3-D vector field).
+function build2DQuiver3d(np, pscope, color, px, fr){
+  const gridN=Math.max(2,Math.min(14,resolveNum(np.gridN,pscope,5)));
+  const xMin=resolveNum(np.xMin,pscope,-3),xMax=resolveNum(np.xMax,pscope,3);
+  const yMin=resolveNum(np.yMin,pscope,-3),yMax=resolveNum(np.yMax,pscope,3);
+  const zMin=resolveNum(np.zMin,pscope,-3),zMax=resolveNum(np.zMax,pscope,3);
+  const xs=linspace(xMin,xMax,gridN),ys=linspace(yMin,yMax,gridN),zs=linspace(zMin,zMax,gridN);
+  let maxMag=0; const raw=[];
+  for(const x of xs)for(const y of ys)for(const z of zs){
+    const sc={...pscope,x,y,z};
+    const vx=safeEval(np.exprX,sc)??0,vy=safeEval(np.exprY,sc)??0,vz=safeEval(np.exprZ,sc)??0;
+    const m=Math.hypot(vx,vy,vz); if(m>maxMag)maxMag=m;
+    raw.push({x,y,z,vx,vy,vz,m});
+  }
+  if(!maxMag) return [];
+  const spacing=Math.min((xMax-xMin)/(gridN-1||1),(yMax-yMin)/(gridN-1||1),(zMax-zMin)/(gridN-1||1));
+  const L=spacing*0.5;
+  const head=px(11), thick=px(2.6);
+  const objs=[];
+  for(const {x,y,z,vx,vy,vz,m} of raw){
+    if(m<1e-10) continue;
+    const len=(np.normalize!==false?L:L*(m/maxMag));
+    const s=len/m;
+    const b=projectPt(fr,x,y,z);
+    const t=projectPt(fr,x+vx*s,y+vy*s,z+vz*s);
+    const dx=t[0]-b[0],dy=t[1]-b[1];
+    const sl=Math.hypot(dx,dy); if(sl<1e-9) continue;
+    const a=buildArrow2D(b[0],b[1],dx,dy,color,Math.min(head,sl*0.5),thick);
+    if(a) objs.push(a);
+  }
+  return objs;
+}
+
+
+function build2DImplicit(tNode, eqNode, pscope, color, px, fr){
   // 3D implicit surfaces require a 3D camera; nothing meaningful to draw in 2D.
   if((eqNode.props.dims||"2d")==="3d") return [];
   const tp=tNode.props||{};
@@ -230,10 +304,11 @@ function build2DImplicit(tNode, eqNode, pscope, color, px){
   const res=Math.max(2,Math.min(600,Math.round(resolveNum(tp.res,pscope,160))));
   const segs=marchingSquares(eqNode, pscope, aMin, aMax, bMin, bMax, res);
   if(!segs.length) return [];
-  return buildThickSegments2D(segs, color, px(LINE_PX)/2);
+  const proj=segs.map(([a,b])=>[projectPt(fr,a[0],a[1],0),projectPt(fr,b[0],b[1],0)]);
+  return buildThickSegments2D(proj, color, px(LINE_PX)/2);
 }
 
-function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMax, wyMin, wyMax, px){
+function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
   if(!fnNode) return [];
   const tp=tNode.props||{};
   const inDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1"))));
@@ -248,8 +323,107 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   const loC=hexRGB(tp.colorLo||"#3a6aff"), hiC=hexRGB(tp.colorHi||"#ff5ea8");
   const ramp=(t)=>{t=t<0?0:t>1?1:t;return`#${[loC,hiC].reduce((acc,_,i)=>{const c=Math.round(loC[i]*255+(hiC[i]-loC[i])*255*t);return acc+(c<16?"0":"")+c.toString(16);},"")}`;}
 
-  // build samples
-  let samples=[];
+  // Place an input/output pair into a MATH-space [x,y,z] triple using the
+  // transformer's axis assignments, then project onto the camera plane. This is
+  // the 3-D world position the 3-D viewport would draw, viewed orthographically.
+  const world3=(inVec,outVec)=>{const w=[0,0,0];
+    for(let k=0;k<inDim;k++){const a=inAx[k]; if(a>=0)w[a]=inVec[k]??0;}
+    for(let k=0;k<outDim;k++){const a=outAx[k]; if(a>=0)w[a]=outVec[k]??0;}
+    return w;};
+  const place=(inVec,outVec)=>{const w=world3(inVec,outVec); return projectPt(fr,w[0],w[1],w[2]);};
+
+  // ── FIELD mode ──
+  // Orthographic projection of a vector field onto the camera plane. The arrow
+  // is sized in TRUE 3-D first (so normalization and magnitude-scaling use the
+  // real |v|, not the in-plane component), then base and tip are projected. This
+  // makes a vector pointing out of the plane correctly foreshorten (it appears
+  // short) instead of being stretched back to full length by 2-D normalization,
+  // and keeps in-plane direction faithful. A vector lying exactly along the
+  // plane normal projects to a point (zero on-screen length), which is the
+  // correct orthographic result.
+  if(tp.mode==="field"){
+    const samples=transformerSamples(tp,paramNode,pscope,inDim);
+    // First pass: true-3D magnitude (and color) per sample.
+    let maxMag=0, cMin=Infinity, cMax=-Infinity; const raw=[];
+    for(const inVec of samples){
+      const outVec=evalOut(inVec);
+      // base = sample position placed on the INPUT axes only. (world3 also
+      // applies output axes, which in field mode are the vector's direction
+      // axes — applying them with a zero vector would wrongly zero the base.)
+      const base3=[0,0,0];
+      for(let k=0;k<inDim;k++){const a=inAx[k]; if(a>=0)base3[a]=inVec[k]??0;}
+      // the field vector placed on its output axes (3-D), relative to base
+      const v3=[0,0,0];
+      for(let k=0;k<outDim;k++){const a=outAx[k]; if(a>=0)v3[a]=outVec[k]??0;}
+      const m3=Math.hypot(v3[0],v3[1],v3[2]); if(m3>maxMag)maxMag=m3;
+      let cval=0;
+      if(useColor){ cval=outVec[colorIdx]??0; if(!isFinite(cval))cval=0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
+      raw.push({base3,v3,m3,cval});
+    }
+    maxMag=maxMag||1;
+    const alen=resolveNum(tp.arrowLen,pscope,0.5);
+    if(useColor){ if(tp.colorMin!==""&&tp.colorMin!=null)cMin=resolveNum(tp.colorMin,pscope,cMin); if(tp.colorMax!==""&&tp.colorMax!=null)cMax=resolveNum(tp.colorMax,pscope,cMax); }
+    const cspan=(cMax-cMin)||1;
+    const head=px(11), thick=px(2.6);
+    const objs=[];
+    for(const {base3,v3,m3,cval} of raw){
+      if(m3<1e-9) continue;
+      // length in 3-D world units: normalized → constant |L|; else scaled by |v|.
+      const L=alen*(tp.normalize!==false?1:Math.min(1,m3/maxMag));
+      const s=L/m3; // scale the true 3-D vector to that length
+      const tip3=[base3[0]+v3[0]*s, base3[1]+v3[1]*s, base3[2]+v3[2]*s];
+      // project base and tip; the on-screen arrow is their 2-D difference, which
+      // is automatically foreshortened by the out-of-plane component.
+      const b=projectPt(fr,base3[0],base3[1],base3[2]);
+      const t=projectPt(fr,tip3[0],tip3[1],tip3[2]);
+      const dx=t[0]-b[0], dy=t[1]-b[1];
+      const screenLen=Math.hypot(dx,dy);
+      if(screenLen<1e-9) continue; // points straight along the normal → no glyph
+      const col=useColor?ramp((cval-cMin)/cspan):color;
+      // head length scales with the (foreshortened) on-screen length so nearly
+      // edge-on arrows don't become all-head.
+      const a=buildArrow2D(b[0],b[1],dx,dy,col,Math.min(head,screenLen*0.5),thick);
+      if(a) objs.push(a);
+    }
+    return objs;
+  }
+
+  // ── GRAPH mode ──
+  // 1-input → a projected curve.
+  if(inDim===1){
+    const samples=transformerSamples(tp,paramNode,pscope,1);
+    const pts2d=samples.map(inVec=>{const w=place(inVec,evalOut(inVec)); return isFinite(w[0])&&isFinite(w[1])?w:null;});
+    return buildThickLine2D(pts2d, color, px(LINE_PX)/2);
+  }
+
+  // 2-input → a real SURFACE, built as a solid projected quad grid (NOT a cloud
+  // of scatter dots, which was both slow and visually wrong). This is what makes
+  // a ripple surface render cheaply and correctly in the 2-D plane.
+  if(inDim===2 && tp.domainSrc!=="param"){
+    const res=Math.max(2,Math.min(120,Math.round(resolveNum(tp.res,pscope,40))));
+    const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
+    const bMin=resolveNum(tp.bMin,pscope,-5),bMax=resolveNum(tp.bMax,pscope,5);
+    const xs=linspace(aMin,aMax,res), ys=linspace(bMin,bMax,res);
+    const rows2=[];
+    for(const y of ys){ const row=[]; for(const x of xs){ const w=place([x,y,0],evalOut([x,y,0])); row.push(isFinite(w[0])&&isFinite(w[1])?w:null); } rows2.push(row); }
+    return buildFilledGrid2D(rows2, color);
+  }
+
+  // 2-input from a param domain, or 3-input volumes: fall back to a light
+  // projected point sampling (kept sparse so it stays cheap).
+  const samples=transformerSamples(tp,paramNode,pscope,inDim);
+  const objs=[]; const r=px(2.2);
+  for(const inVec of samples){
+    const w=place(inVec,evalOut(inVec));
+    if(isFinite(w[0])&&isFinite(w[1])) objs.push(buildDisk2D(w[0],w[1],r,color));
+  }
+  return objs;
+}
+
+// Sample-point generator shared by the transformer field/graph paths. Mirrors
+// the 3-D sampler but stays modest in 2-D (caps resolution) for performance.
+function transformerSamples(tp,paramNode,pscope,inDim){
+  const samples=[];
   if(tp.domainSrc==="param"&&paramNode){
     const pp=paramNode.props||{};
     const deg=Math.max(1,Math.min(2,Math.round(Number(pp.degree||"1"))));
@@ -257,14 +431,14 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
       const ur=Math.max(2,Math.min(60,resolveNum(pp.uRes,pscope,30))),vr=Math.max(2,Math.min(60,resolveNum(pp.vRes,pscope,20)));
       for(const v of linspace(resolveNum(pp.vMin,pscope,0),resolveNum(pp.vMax,pscope,Math.PI),vr))
         for(const u of linspace(resolveNum(pp.uMin,pscope,0),resolveNum(pp.uMax,pscope,Math.PI*2),ur))
-          samples.push([safeEval(pp.exprXu,{...pscope,u,v})??0,safeEval(pp.exprYu,{...pscope,u,v})??0,0]);
+          samples.push([safeEval(pp.exprXu,{...pscope,u,v})??0,safeEval(pp.exprYu,{...pscope,u,v})??0,safeEval(pp.exprZu,{...pscope,u,v})??0]);
     } else {
       const res=Math.max(2,Math.min(600,resolveNum(pp.res,pscope,200)));
       for(const t of linspace(resolveNum(pp.tMin,pscope,0),resolveNum(pp.tMax,pscope,Math.PI*2),res))
-        samples.push([safeEval(pp.exprX,{...pscope,t})??0,safeEval(pp.exprY,{...pscope,t})??0,0]);
+        samples.push([safeEval(pp.exprX,{...pscope,t})??0,safeEval(pp.exprY,{...pscope,t})??0,safeEval(pp.exprZ,{...pscope,t})??0]);
     }
   } else {
-    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?30:8), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
+    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?40:8), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
     const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
     if(inDim===1){ for(const x of linspace(aMin,aMax,res)) samples.push([x,0,0]); }
     else {
@@ -274,69 +448,35 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
       else { const cMin=resolveNum(tp.cMin,pscope,-3),cMax=resolveNum(tp.cMax,pscope,3); for(const z of linspace(cMin,cMax,Math.min(res,8))) for(const x of xs) for(const y of ys) samples.push([x,y,z]); }
     }
   }
-
-  const place=(inVec,outVec)=>{const w=[0,0]; for(let k=0;k<inDim;k++){if(inAx[k]===0)w[0]=inVec[k]??0; else if(inAx[k]===1)w[1]=inVec[k]??0;} for(let k=0;k<outDim;k++){if(outAx[k]===0)w[0]=outVec[k]??0; else if(outAx[k]===1)w[1]=outVec[k]??0;} return w;};
-
-  const objs=[];
-  if(tp.mode==="field"){
-    let maxMag=0, cMin=Infinity, cMax=-Infinity; const raw=[];
-    for(const inVec of samples){
-      const outVec=evalOut(inVec);
-      const base=[0,0]; for(let k=0;k<inDim;k++){if(inAx[k]===0)base[0]=inVec[k]??0; else if(inAx[k]===1)base[1]=inVec[k]??0;}
-      const vec=[0,0]; for(let k=0;k<outDim;k++){if(outAx[k]===0)vec[0]=outVec[k]??0; else if(outAx[k]===1)vec[1]=outVec[k]??0;}
-      const m=Math.hypot(vec[0],vec[1]); if(m>maxMag)maxMag=m;
-      let cval=0;
-      if(useColor){ cval=outVec[colorIdx]??0; if(!isFinite(cval))cval=0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
-      raw.push({base,vec,m,cval});
-    }
-    maxMag=maxMag||1;
-    const alen=resolveNum(tp.arrowLen,pscope,0.5);
-    if(useColor){ if(tp.colorMin!==""&&tp.colorMin!=null)cMin=resolveNum(tp.colorMin,pscope,cMin); if(tp.colorMax!==""&&tp.colorMax!=null)cMax=resolveNum(tp.colorMax,pscope,cMax); }
-    const cspan=(cMax-cMin)||1;
-    const head=px(11);
-    const thick=px(2.6);
-    for(const {base,vec,m,cval} of raw){
-      if(m<1e-9) continue;
-      const L=alen*(tp.normalize!==false?1:Math.min(1,m/maxMag));
-      const dx=vec[0]/m*L, dy=vec[1]/m*L;
-      const col=useColor?ramp((cval-cMin)/cspan):color;
-      const a=buildArrow2D(base[0],base[1],dx,dy,col,Math.min(head,L*0.5),thick);
-      if(a) objs.push(a);
-    }
-    return objs;
-  }
-  // graph mode
-  if(inDim===1){
-    const pts2d=samples.map(inVec=>{ const w=place(inVec,evalOut(inVec)); return isFinite(w[0])&&isFinite(w[1])?w:null; });
-    return buildThickLine2D(pts2d, color, px(LINE_PX)/2);
-  }
-  // 2+ inputs: scatter dots
-  for(const inVec of samples){
-    const w=place(inVec,evalOut(inVec));
-    if(isFinite(w[0])&&isFinite(w[1])) objs.push(buildDisk2D(w[0],w[1],0.025,color));
-  }
-  return objs;
+  return samples;
 }
 
-function build2DGlyphField(np, pscope, color, px){
+function build2DGlyphField(np, pscope, color, px, fr){
   const pairs=parseGlyphField(np.pairs||np.data, pscope);
   const lenMode=np.lenMode||(np.normalize===false?"scaled":"uniform");
   const alen=resolveNum(np.arrowLen,pscope,0.5);
-  let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1]);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
+  let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1],g.vec[2]||0);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
   const head=px(11);
   const thick=px(2.6);
   const objs=[];
   for(const {pos,vec} of pairs){
-    const m=Math.hypot(vec[0],vec[1]); if(m<1e-9) continue;
+    const m=Math.hypot(vec[0],vec[1],vec[2]||0); if(m<1e-9) continue;
     const L=lenMode==="raw"?m:lenMode==="scaled"?alen*Math.min(1,m/maxMag):alen;
-    const dx=vec[0]/m*L, dy=vec[1]/m*L;
-    const a=buildArrow2D(pos[0],pos[1],dx,dy,color,Math.min(head,L*0.5),thick);
+    const b=projectPt(fr,pos[0],pos[1],pos[2]||0);
+    const tip=projectPt(fr,pos[0]+vec[0]/m*L,pos[1]+vec[1]/m*L,(pos[2]||0)+(vec[2]||0)/m*L);
+    const a=buildArrow2D(b[0],b[1],tip[0]-b[0],tip[1]-b[1],color,Math.min(head,L*0.5),thick);
     if(a) objs.push(a);
   }
   return objs;
 }
 
-function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals){
+// Flow surface in a 2-D viewport. The trajectories are integrated in full 3-D
+// and then orthographically PROJECTED onto the camera plane (`fr`). The surface
+// is built as a SOLID quad grid (buildFilledGrid2D) so it: (a) is a solid color
+// with no alpha, (b) never loses parts on self-intersection (each cell is
+// independent — no boundary-polygon triangulation), and (c) can carry an
+// optional wireframe overlay toggled by `np.showWire`.
+function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals, fr){
   let fnNode=null, seedNode=null;
   for(const depId of (rawNode.attachments||[])){
     const d=nodes[depId]; if(!d)continue;
@@ -355,28 +495,29 @@ function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals){
   const seedInfo=seedNode.type==="points"
     ?{pts:parsePointSeq(seedNode.props.data,seedSc),grid:false}
     :sampleParamSpace(seedNode,seedSc);
-  const trajs=(seedInfo.pts||[]).map(s=>integrateFlow(s,field.exprX,field.exprY,field.exprZ,steps,stepSize,fieldSc));
+  const seeds=seedInfo.pts||[];
   const seedDeg=seedNode.type==="paramSpace"?Math.max(1,Math.min(2,Math.round(Number(seedNode.props.degree||"1")))):0;
-  const fillArea=seedDeg===1&&np.output!=="lines"&&trajs.length>=2;
+  const wantSurface = seedDeg===1 && np.output!=="lines" && seeds.length>=2;
+
   const objs=[];
-  if(fillArea){
-    // filled region between adjacent trajectories
-    for(let i=0;i<trajs.length-1;i++){
-      const a=trajs[i], b=trajs[i+1]; const m=Math.min(a.length,b.length); if(m<2) continue;
-      const pts2=[];
-      for(let s=0;s<m;s++){ const q=a[s]; if(q&&isFinite(q[0])&&isFinite(q[1]))pts2.push(new THREE.Vector2(q[0],q[1])); }
-      for(let s=m-1;s>=0;s--){ const q=b[s]; if(q&&isFinite(q[0])&&isFinite(q[1]))pts2.push(new THREE.Vector2(q[0],q[1])); }
-      if(pts2.length<3) continue;
-      const shape=new THREE.Shape(pts2);
-      const g=new THREE.ShapeGeometry(shape);
-      const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),transparent:true,opacity:0.5,depthTest:false,side:THREE.DoubleSide});
-      objs.push(new THREE.Mesh(g,mat));
+  if(wantSurface){
+    // Build the trajectory grid once (rows[step][seedIndex] = [x,y,z]|null),
+    // project every vertex onto the plane, then fill solid quads.
+    const rows3=advectSeeds(field,seeds,steps,stepSize,fieldSc);
+    if(rows3){
+      const rows2=rows3.map(row=>projectPts(fr,row));
+      objs.push(...buildFilledGrid2D(rows2, color));
+      // Note: 2-D flow surfaces are SOLID only — never a wireframe in 2-D. The
+      // wireframe toggle (np.showWire) applies to the 3-D viewport.
+      return objs;
     }
-  } else {
-    const half=px(LINE_PX)/2;
-    for(const pts of trajs){
-      objs.push(...buildThickLine2D(pts.map(q=>q&&isFinite(q[0])&&isFinite(q[1])?[q[0],q[1]]:null), color, half));
-    }
+    // fall through to streamlines if the sheet couldn't be stitched
+  }
+  // streamlines: one projected polyline per seed
+  const half=px(LINE_PX)/2;
+  for(const s of seeds){
+    const traj=integrateFlow(s,field.exprX,field.exprY,field.exprZ,steps,stepSize,fieldSc);
+    objs.push(...buildThickLine2D(projectPts(fr,traj), color, half));
   }
   return objs;
 }
@@ -387,53 +528,107 @@ function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals){
 // stay crisp and constant-size. `pxPerWorld` is the current pixels-per-world-unit
 // scale; arrow heads and point disks use it so they keep a constant on-screen
 // size as you zoom. Returns { plotObjs }.
-function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMax, theme, pxPerWorld){
+// Cached 2-D scene build. `cache` is a Map(childId → {sig, objs}) the caller
+// persists across frames. A plot is rebuilt only when its signature changes;
+// otherwise the existing GPU objects are reused untouched. This mirrors the 3-D
+// rebuild cache and is what keeps the 2-D viewport cheap while animators play or
+// the user pans/zooms — only the plots that actually changed are regenerated.
+//
+// The signature includes:
+//   • the shared geometry signature (geomSignature, folding wired nodes),
+//   • the plane frame (so re-orienting the camera plane rebuilds projections),
+//   • a zoom bucket (px-per-world) ONLY for types whose on-screen element size
+//     is zoom-dependent (points/arrows/curve thickness): they must re-fit when
+//     zoom changes, but a flow surface or filled graph must NOT,
+//   • the view extents ONLY for view-filling types (fn1d / quiver2d), which
+//     sample across the visible window; everything else ignores pan/zoom.
+//
+// Returns { plotObjs, dirty } — dirty=true if the object SET changed (caller
+// must re-sync the scene graph), false if every plot was a cache hit.
+function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMax, theme, pxPerWorld, cache){
   const ppw = pxPerWorld || 40;
-  // A world-space length that renders as ~targetPx pixels.
   const px = (targetPx)=> targetPx/ppw;
+  const fr = planeFrame(camNode, scope);
+  const frameSig = `${fr.O.join(",")}|${fr.U.join(",")}|${fr.V.join(",")}`;
+  // Quantise zoom so tiny float wiggle doesn't thrash the cache; ~12 buckets per
+  // power of 2 is visually smooth while still reusing geometry across small pans.
+  const zoomBucket = Math.round(Math.log2(ppw)*12);
+  // Coarse view key for view-filling plots (fn1d/quiver) — rounded so a 1px pan
+  // doesn't rebuild, but a real domain shift does.
+  const round=(v)=>{ const s=Math.max(1e-6,(wxMax-wxMin)); return Math.round(v/s*64); };
+  const viewSig = `${round(wxMin)},${round(wxMax)},${round(wyMin)},${round(wyMax)}`;
 
   const plotObjs=[];
+  const live=new Set();
+  let dirty=false;
+
+  const VIEW_FILLING=new Set(["fn1d","quiver2d"]);
+  // Types whose element size is constant-on-screen (so zoom changes geometry).
+  const ZOOM_SIZED=new Set(["fn1d","curve3d","pointSeq","points","point","quiver2d","quiver3d","glyphField","transformer"]);
 
   for(const childId of (camNode.attachments||[])){
     const rawNode=nodes[childId]; if(!rawNode) continue;
     if(catOf(rawNode.type)!=="plot") continue;
     const node=normalizedNode(rawNode);
-    // Per-plot scope: only the variables directly attached to THIS plot.
     const pscope=resolveScope(childId,nodes,animVals||{});
     const dom=plotDomain(childId,nodes);
     const np=dom?applyDomain(node.props,node.type,dom):node.props;
     const color=rawNode.color||"#5b9cf6";
 
+    // Build the per-plot signature: geometry + frame + (zoom?) + (view?).
+    const gsig=plotSignature(node,np,pscope,nodes,animVals||{}) ?? `${node.type}|raw`;
+    const t=rawNode.type==="transformer"||rawNode.type==="flow"?rawNode.type:node.type;
+    const zPart=ZOOM_SIZED.has(t)?`|z${zoomBucket}`:"";
+    const vPart=VIEW_FILLING.has(t)?`|v${viewSig}`:"";
+    const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;
+
+    live.add(childId);
+    const cached=cache.get(childId);
+    if(cached && cached.sig===sig){
+      // cache hit — reuse existing objects untouched
+      for(const o of cached.objs) plotObjs.push(o);
+      continue;
+    }
+    // miss — dispose old objects (if any) and rebuild this one plot
+    if(cached){ for(const o of cached.objs){ o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } }
+    dirty=true;
+
     let built=[];
-    if(node.type==="fn1d") built=build2DFn1d(np,pscope,color,wxMin,wxMax,px);
-    else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color,px);
-    else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px);
-    else if(node.type==="point") built=build2DPoint(np,pscope,color,px);
-    else if(node.type==="quiver2d") built=build2DQuiver(np,pscope,color,wxMin,wxMax,wyMin,wyMax,px);
+    if(node.type==="fn1d") built=build2DFn1d(np,pscope,color,wxMin,wxMax,px,fr);
+    else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color,px,fr);
+    else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px,fr);
+    else if(node.type==="point") built=build2DPoint(np,pscope,color,px,fr);
+    else if(node.type==="quiver2d") built=build2DQuiver(np,pscope,color,wxMin,wxMax,wyMin,wyMax,px,fr);
+    else if(node.type==="quiver3d") built=build2DQuiver3d(np,pscope,color,px,fr);
     else if(rawNode.type==="transformer"){
       let fnNode=null,paramNode=null,eqNode=null;
       for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(!d)continue; if(d.type==="fnMap"&&!fnNode)fnNode=d; else if(d.type==="equation"&&!eqNode)eqNode=d; else if(d.type==="paramSpace"&&!paramNode)paramNode=d; }
-      // fnMap/equation/paramSpace exprs reference scalars wired into THOSE nodes;
-      // layer their own direct scopes over the transformer's (strict scoping).
       const av=animVals||{};
       const tScope={...pscope, ...(paramNode?resolveScope(paramNode.id,nodes,av):{}), ...(eqNode?resolveScope(eqNode.id,nodes,av):{}), ...(fnNode?resolveScope(fnNode.id,nodes,av):{})};
-      if(eqNode) built=build2DImplicit(rawNode,eqNode,tScope,color,px);
-      else built=build2DTransformer(rawNode,fnNode,paramNode,tScope,color,wxMin,wxMax,wyMin,wyMax,px);
+      if(eqNode) built=build2DImplicit(rawNode,eqNode,tScope,color,px,fr);
+      else built=build2DTransformer(rawNode,fnNode,paramNode,tScope,color,wxMin,wxMax,wyMin,wyMax,px,fr);
     }
-    else if(node.type==="glyphField") built=build2DGlyphField(np,pscope,color,px);
-    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color,px,animVals||{});
+    else if(node.type==="glyphField") built=build2DGlyphField(np,pscope,color,px,fr);
+    else if(rawNode.type==="flow") built=build2DFlow(np,rawNode,nodes,pscope,color,px,animVals||{},fr);
     else if(node.type==="plane"){
-      const nx=resolveNum(np.normalX,pscope,0),ny=resolveNum(np.normalY,pscope,1);
-      const cx2=resolveNum(np.centerX,pscope,0),cy2=resolveNum(np.centerY,pscope,0);
-      const y0=cy2-(nx!==0?(wxMin-cx2)*ny/nx:0), y1=cy2-(nx!==0?(wxMax-cx2)*ny/nx:0);
-      built=buildThickLine2D([[wxMin,y0],[wxMax,y1]], color, px(LINE_PX)/2, 0.8);
+      const cx2=resolveNum(np.centerX,pscope,0),cy2=resolveNum(np.centerY,pscope,0),cz2=resolveNum(np.centerZ,pscope,0);
+      const c=projectPt(fr,cx2,cy2,cz2);
+      built=[buildDisk2D(c[0],c[1],px(4),color)];
     }
 
     for(const o of built) o._plotId=childId;
-    plotObjs.push(...built);
+    cache.set(childId,{sig,objs:built});
+    for(const o of built) plotObjs.push(o);
   }
 
-  return {plotObjs};
+  // dispose any cached plots no longer attached
+  for(const [id,entry] of cache){
+    if(live.has(id)) continue;
+    for(const o of entry.objs){ o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); }
+    cache.delete(id); dirty=true;
+  }
+
+  return {plotObjs, dirty};
 }
 
 // ── 2D chrome rendering (split into two layers) ──────────────────────────────

@@ -313,7 +313,12 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
     cam.position.set(0,0,10); cam.lookAt(0,0,0);
 
     let plotObjs=[];
-    const removeGroup=(arr)=>{ for(const o of arr){ scene.remove(o); o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } arr.length=0; };
+    // Persistent per-plot geometry cache (childId → {sig, objs}). build2DScene
+    // reuses unchanged plots so a playing animator / pan / zoom only regenerates
+    // the plots that actually changed, instead of re-integrating every flow and
+    // re-projecting every surface 60×/second.
+    const plotCache=new Map();
+    const inScene=new Set(); // objects currently added to the THREE scene
 
     let W=container.clientWidth||400, H=container.clientHeight||300;
     const dpr=window.devicePixelRatio||1;
@@ -345,12 +350,20 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
       const st=stRef.current;
       const th=st.theme||DEFAULT_THEME;
       const{wxMin,wxMax,wyMin,wyMax}=extents();
-      const{plotObjs:po}=build2DScene(
+      const{plotObjs:po,dirty}=build2DScene(
         st.camNode,st.nodes,st.scope||{},st.animValsRef?.current,
-        wxMin,wxMax,wyMin,wyMax,th,pxPerWorld()
+        wxMin,wxMax,wyMin,wyMax,th,pxPerWorld(),plotCache
       );
-      removeGroup(plotObjs); for(const o of po){scene.add(o);plotObjs.push(o);}
-      scene.background=null; // transparent — grid canvas behind provides the bg
+      plotObjs=po;
+      // Only touch the scene graph when the object SET changed (a cache miss).
+      // On an all-hit frame this is a no-op, so the render is essentially free.
+      if(dirty){
+        const want=new Set(po);
+        for(const o of inScene){ if(!want.has(o)){ scene.remove(o); inScene.delete(o); } }
+        for(const o of po){ if(!inScene.has(o)){ scene.add(o); inScene.add(o); } }
+        scene.background=null;
+      }
+      return dirty;
     };
 
     const redrawChrome=()=>{
@@ -367,23 +380,32 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
     const loop=()=>{
       rafRef.current=requestAnimationFrame(loop);
       const st=stRef.current;
-      // animator-driven plot updates
+      // animator-driven plot updates: only mark dirty if a PLAYING animator
+      // actually feeds this camera or one of its plots (cached plots that don't
+      // depend on it stay hits and cost nothing).
       const ns=st.nodes, cn=st.camNode;
       if(ns&&cn){
         const playing=new Set(); for(const n of Object.values(ns)) if(n.type==="animator"&&n.playing) playing.add(n.id);
         if(playing.size){
           let live=false;
-          const chk=(id)=>{const d=new Set();collectScalarDeps(id,ns,d,new Set());for(const x of d) if(playing.has(x)) live=true;};
-          chk(cn.id); for(const pid of (cn.attachments||[])) if(catOf(ns[pid]?.type)==="plot") chk(pid);
+          const chk=(id)=>{const d=new Set();collectScalarDeps(id,ns,d,new Set());for(const x of d) if(playing.has(x)){live=true;break;}};
+          chk(cn.id); if(!live) for(const pid of (cn.attachments||[])){ if(catOf(ns[pid]?.type)==="plot"){ chk(pid); if(live)break; } }
           if(live) st.plotDirty=true;
         }
       }
       if(!st.plotDirty && !st.viewDirty) return;
+      const viewMoved=st.viewDirty;
       syncCam();
-      if(st.plotDirty){ st.plotDirty=false; rebuildPlots(); }
+      let geomChanged=false;
+      if(st.plotDirty){ st.plotDirty=false; geomChanged=rebuildPlots(); }
       st.viewDirty=false;
-      redrawChrome();
-      renderer.render(scene,cam);
+      // Re-render only when something visible actually changed: geometry was
+      // rebuilt, or the camera/view moved (pan/zoom/resize). An all-cache-hit
+      // animator frame with no view change does no GPU work at all.
+      if(geomChanged || viewMoved){
+        if(viewMoved) redrawChrome();
+        renderer.render(scene,cam);
+      }
     };
     rafRef.current=requestAnimationFrame(loop);
 
@@ -426,7 +448,9 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
       window.removeEventListener("mouseup",onMU);
       window.removeEventListener("mousemove",onMM);
       overlay.removeEventListener("wheel",onWheel);
-      removeGroup(plotObjs);
+      for(const o of inScene) scene.remove(o);
+      for(const [,entry] of plotCache){ for(const o of entry.objs){ o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } }
+      plotCache.clear(); inScene.clear();
       renderer.dispose();
       if(container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
       if(container.contains(gridCv)) container.removeChild(gridCv);

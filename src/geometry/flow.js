@@ -184,10 +184,12 @@ function buildFlowFromSeeds(field, seedInfo, steps, stepSize, scope, color, opts
     for(const s of seeds){ const pts=integrateFlow(s,p.exprX,p.exprY,p.exprZ,steps,stepSize,scope); objs.push(...buildCurve3d(pts.map(q=>q||[NaN,NaN,NaN]),color)); }
     return objs;
   }
+  // wireframe is opt-in (toggle on the flow node); default to a clean solid sheet.
+  const noWire = !opts.showWire;
   if(opts.gradient){
-    return buildSurfFromGridGPU(rows, color, { a:opts.gradA||"#5b9cf6", b:opts.gradB||"#f74fa0", axis:"u" });
+    return buildSurfFromGridGPU(rows, color, { a:opts.gradA||"#5b9cf6", b:opts.gradB||"#f74fa0", axis:"u", noWire });
   }
-  return buildSurfFromGridGPU(rows, color);
+  return buildSurfFromGridGPU(rows, color, { noWire });
 }
 
 // Swept volume from a 2-D seed grid advected through the field.

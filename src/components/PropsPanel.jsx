@@ -887,6 +887,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               {seedIsPoints && <div style={{fontSize:13,color:ui.uiFaint}}>Discrete seeds always render as stream curves.</div>}
               {seedDeg===2 && <PR label="slices"><EI v={node.props.volSlices??"6"} sc={scope} onChange={v=>set("volSlices",v)}/></PR>}
               {(!seedIsPoints && (node.props.output==="surface"||seedDeg===2))&&<>
+                <PR label="wireframe"><Toggle v={!!node.props.showWire} onChange={v=>set("showWire",v)}/></PR>
                 <PR label="gradient"><Toggle v={!!node.props.gradient} onChange={v=>set("gradient",v)}/></PR>
                 {node.props.gradient&&<div style={{display:"flex",gap:6,alignItems:"center",marginTop:3}}>
                   <input type="color" value={node.props.gradA||"#5b9cf6"} onChange={e=>set("gradA",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
@@ -920,32 +921,13 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             </div>
           </Sec>
           {node.props.mode==="2d"&&<Sec title="2D Plane">
-            <PR label="type">
-              <select value={node.props.planeMode||"xy"} onChange={e=>onChange({props:{...node.props,planeMode:e.target.value}})} style={{...S.inp,width:"100%"}}>
-                <option value="xy">XY (default)</option>
-                <option value="plane">Flat plane</option>
-                <option value="paramsurf">Parametric surface ↗</option>
-              </select>
-            </PR>
-            {node.props.planeMode==="plane"&&<>
-              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>Origin</div>
-              {[["ox","planeOx"],["oy","planeOy"],["oz","planeOz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
-              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>U axis</div>
-              {[["ux","planeUx"],["uy","planeUy"],["uz","planeUz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
-              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>V axis</div>
-              {[["vx","planeVx"],["vy","planeVy"],["vz","planeVz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
-              <PR label="thr."><EI v={node.props.planeThreshold||"0.15"} sc={scope} onChange={v=>onChange({props:{...node.props,planeThreshold:v}})}/></PR>
-            </>}
-            {node.props.planeMode==="paramsurf"&&<>
-              <div style={{color:"#7fcf9a",fontSize:14,margin:"4px 0 2px"}}>Surface (axes = u,v param domain)</div>
-              <PR label="x(u,v)"><XF v={node.props.psExprX||"cos(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprX:v}})}/></PR>
-              <PR label="y(u,v)"><XF v={node.props.psExprY||"sin(u)*sin(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprY:v}})}/></PR>
-              <PR label="z(u,v)"><XF v={node.props.psExprZ||"cos(v)"} sc={scope} onChange={v=>onChange({props:{...node.props,psExprZ:v}})}/></PR>
-              <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>Domain</div>
-              {[["u₀","psUMin"],["u₁","psUMax"],["v₀","psVMin"],["v₁","psVMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
-              <PR label="res"><EI v={node.props.psRes||"16"} sc={scope} onChange={v=>onChange({props:{...node.props,psRes:v}})}/></PR>
-              <PR label="dist thr."><EI v={node.props.psDistThreshold||"0.35"} sc={scope} onChange={v=>onChange({props:{...node.props,psDistThreshold:v}})}/></PR>
-            </>}
+            <div style={{color:ui.uiMuted,fontSize:13,marginBottom:6,lineHeight:1.5}}>
+              A flat plane defined by a point and a normal (gradient) vector. 3D plots are projected orthographically onto it — no notion of distance.
+            </div>
+            <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>Origin (point)</div>
+            {[["x","planeOx"],["y","planeOy"],["z","planeOz"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
+            <div style={{color:ui.uiMuted,fontSize:14,margin:"4px 0 2px"}}>Normal (gradient)</div>
+            {[["nx","normalX"],["ny","normalY"],["nz","normalZ"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]||"0"} sc={scope} onChange={v=>onChange({props:{...node.props,[k]:v}})}/></PR>)}
           </Sec>}
           {node.props.mode!=="2d"&&<>
             <Sec title="Target">
