@@ -13,19 +13,24 @@ import { useAnimators } from "./hooks/useAnimators.js";
 import { useHistory } from "./hooks/useHistory.js";
 import { NodeCanvas } from "./components/NodeCanvas.jsx";
 import { PropsPanel } from "./components/PropsPanel.jsx";
-import { ViewportStrip, ViewportSwitch, DetachedWindow } from "./components/Viewport.jsx";
+import { ViewportStrip, ViewportSwitch, DetachedWindow, useIsMobile } from "./components/Viewport.jsx";
 import { PropsPanelWindow } from "./components/primitives.jsx";
 import { Landing } from "./landing/Landing.jsx";
 
 // ── Share page ───────────────────────────────────────────────────────────────
-function SharePage({data}){
+// Renders a single camera from a shared payload. `camIdOverride` lets the mobile
+// project picker reuse this to show any chosen camera; `onBack` (when provided)
+// shows a back affordance to return to that picker.
+function SharePage({data, camIdOverride, onBack}){
+  const isMobile=useIsMobile();
   const animValsRef=useRef({});
   const[liveNodes,setLiveNodes]=useState(()=>migrateModel({...data.nodes}));
   useAnimators(liveNodes,setLiveNodes,animValsRef);
   const[tick,setTick]=useState(0);
+  const camId = camIdOverride || data.camId;
   useEffect(()=>{let raf;const loop=()=>{if(Object.values(liveNodes).some(n=>n.type==="animator"&&n.playing))setTick(t=>t+1);raf=requestAnimationFrame(loop);};raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf);},[liveNodes]);
-  const scope=useMemo(()=>buildScopeForCamera(data.camId,liveNodes,animValsRef.current),[liveNodes,tick]);
-  const camNode=liveNodes[data.camId];
+  const scope=useMemo(()=>buildScopeForCamera(camId,liveNodes,animValsRef.current),[liveNodes,tick,camId]);
+  const camNode=liveNodes[camId];
   const proj=Object.values(liveNodes).find(n=>n.type==="project");
   const theme=buildTheme(proj);
   const ui=useMemo(()=>buildUI(proj),[proj]);
@@ -33,11 +38,9 @@ function SharePage({data}){
   const updateNode=useCallback((id,patch)=>setLiveNodes(ns=>({...ns,[id]:{...ns[id],...patch}})),[]);
   const showLabel = camNode?.props.showCamLabel !== false;
   // A shared/embedded page can offer a button to open the whole scene in the
-  // full editor. The shared payload already carries the camera's entire
-  // dependency subgraph plus the project node, so we just re-serialize it as a
-  // normal project hash and reload into the editor. The viewport itself places
-  // the button (desktop-only, bottom-right corner) and respects the camera's
-  // showOpenBtn prop.
+  // full editor (desktop only — the viewport places it). The shared payload
+  // carries the camera's whole dependency subgraph plus the project node, so we
+  // re-serialize it as a project hash and reload into the editor.
   const openProject=useCallback(()=>{
     try{
       const hash=serializeProject(liveNodes);
@@ -46,19 +49,85 @@ function SharePage({data}){
       window.location.reload();
     }catch{ /* no-op if serialization fails */ }
   },[liveNodes]);
-  return<UICtx.Provider value={uiCtx}><div style={{position:"fixed",inset:0,background:theme.canvasBg,display:"flex",flexDirection:"column"}}>
-    {showLabel&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"5px 14px",background:ui.uiPanelBar,flexShrink:0}}>
+
+  const header = (showLabel||onBack) && (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"5px 14px",background:ui.uiPanelBar,flexShrink:0}}>
+      {onBack&&<button onClick={onBack} style={{...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55",cursor:"pointer"}}>← viewports</button>}
       <span style={{color:ui.uiAccent,fontSize:16,fontFamily:"monospace",fontWeight:"bold"}}>◈ Dedekind</span>
       <span style={{color:ui.uiMuted,fontSize:15,fontFamily:"monospace"}}>{camNode?.label}</span>
-    </div>}
-    <div style={{flex:1,minHeight:0,position:"relative"}}>
-      <ViewportSwitch camNode={camNode} nodes={liveNodes} scope={scope} theme={theme} projectNode={proj}
-        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={updateNode} onOpenProject={openProject}/>
     </div>
+  );
+
+  const viewport = (
+    <ViewportSwitch camNode={camNode} nodes={liveNodes} scope={scope} theme={theme} projectNode={proj}
+      onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={updateNode} onOpenProject={openProject}/>
+  );
+
+  // On mobile the graph sits centered in a fixed box above the controls (the
+  // viewport itself drops the scalar overlay into a bar below the canvas), the
+  // same treatment the landing-page previews get.
+  const body = isMobile ? (
+    <div style={{flex:1,minHeight:0,overflowY:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:"16px 12px"}}>
+      <div style={{width:"100%",maxWidth:380,height:540,position:"relative",border:`1px solid ${ui.uiPanelBorder||"#222747"}`,borderRadius:13,overflow:"hidden",background:theme.canvasBg,boxShadow:"0 24px 60px -38px #000"}}>
+        {viewport}
+      </div>
+    </div>
+  ) : (
+    <div style={{flex:1,minHeight:0,position:"relative"}}>{viewport}</div>
+  );
+
+  return<UICtx.Provider value={uiCtx}><div style={{position:"fixed",inset:0,background:theme.canvasBg,display:"flex",flexDirection:"column"}}>
+    {header}
+    {body}
   </div></UICtx.Provider>;
 }
 
-function Editor({initialHash}){
+// ── Mobile project picker ────────────────────────────────────────────────────
+// A full project URL opened on a phone can't drop into the desktop-only editor,
+// so we list the project's cameras and let the user pick one to view (rendered
+// through SharePage). We synthesize a share-style payload from the full graph.
+function MobileProjectPicker({nodes}){
+  const proj=Object.values(nodes).find(n=>n.type==="project");
+  const ui=useMemo(()=>buildUI(proj),[proj]);
+  const uiCtx=useMemo(()=>({ui,S:makeS(ui)}),[ui]);
+  const cams=useMemo(()=>Object.values(nodes).filter(n=>isCameraType(n.type)&&n.enabled!==false),[nodes]);
+  const [picked,setPicked]=useState(null);
+
+  if(picked){
+    // Reuse the camera-share renderer for the chosen camera.
+    return <SharePage data={{share:true,camId:picked,nodes}} camIdOverride={picked} onBack={()=>setPicked(null)}/>;
+  }
+  return <UICtx.Provider value={uiCtx}>
+    <div style={{position:"fixed",inset:0,background:ui.uiBg||"#0d0f18",color:ui.uiText||"#c8d1e6",display:"flex",flexDirection:"column",fontFamily:"Inter,system-ui,sans-serif",overflowY:"auto"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",background:ui.uiPanelBar,flexShrink:0}}>
+        <span style={{color:ui.uiAccent,fontSize:17,fontFamily:"monospace",fontWeight:"bold"}}>◈ Dedekind</span>
+      </div>
+      <div style={{padding:"20px 18px"}}>
+        <h2 style={{fontSize:20,margin:"0 0 6px"}}>Choose a viewport</h2>
+        <p style={{fontSize:14.5,color:ui.uiMuted,margin:"0 0 18px",lineHeight:1.5}}>
+          The full editor is desktop-only. Pick one of this project's cameras to view it here.
+        </p>
+        {cams.length===0 && <p style={{color:ui.uiMuted}}>This project has no active cameras.</p>}
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {cams.map(c=>(
+            <button key={c.id} onClick={()=>setPicked(c.id)}
+              style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
+                padding:"14px 16px",borderRadius:10,cursor:"pointer",textAlign:"left",
+                background:ui.uiPanel||"#141828",border:`1px solid ${ui.uiPanelBorder||"#222747"}`,
+                color:ui.uiText||"#c8d1e6",fontSize:16}}>
+              <span>{c.label||c.name||"Camera"}</span>
+              <span style={{color:ui.uiMuted,fontFamily:"monospace",fontSize:13}}>
+                {c.props?.mode==="2d"?"2D":"3D"} →
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  </UICtx.Provider>;
+}
+
+function Editor({initialHash, active=true}){
   const initialNodes=useMemo(()=>{if(initialHash){const l=deserializeProject(initialHash);if(l)return l;}return makeInitialScene();},[]);
   const hist=useHistory(initialNodes);
   const nodes=hist.state;
@@ -160,7 +229,16 @@ function Editor({initialHash}){
   },[selectedNode,nodes,panelTick,selectedAnimated]);
 
   const urlTimer=useRef(null);
-  useEffect(()=>{clearTimeout(urlTimer.current);urlTimer.current=setTimeout(()=>{const s=serializeProject(nodes);if(s)window.history.replaceState(null,"","#"+s);},800);return()=>clearTimeout(urlTimer.current);},[nodes]);
+  useEffect(()=>{
+    // Don't touch the URL while the landing overlay is still showing — the
+    // editor is mounted underneath it from the start, but until the user
+    // actually opens it we must leave the address bar untouched (otherwise a
+    // fresh visit rewrites the hash to the default project before any click).
+    if(!active) return;
+    clearTimeout(urlTimer.current);
+    urlTimer.current=setTimeout(()=>{const s=serializeProject(nodes);if(s)window.history.replaceState(null,"","#"+s);},800);
+    return()=>clearTimeout(urlTimer.current);
+  },[nodes,active]);
 
   const copyUrl=useCallback((type,camId)=>{
     const s=type==="project"?serializeProject(nodes):serializeCameraShare(camId,nodes);
@@ -650,14 +728,30 @@ function Root(){
   },[startOnLanding,openEditor,restoreLanding]);
 
   return <>
-    <Editor initialHash={hash}/>
+    <Editor initialHash={hash} active={!showLanding}/>
     {showLanding && <Landing onOpen={()=>openEditor(true)} closing={closing}/>}
   </>;
 }
 
 export default function App(){
   useEffect(()=>{ ComputeWorker.init(); },[]);
+  const isMobile=useIsMobile();
   const hash=window.location.hash.slice(1);
-  if(hash){try{const raw=JSON.parse(decodeURIComponent(atob(hash)));if(raw.share)return<SharePage data={raw}/>;}catch{}}
+  const parsed=useMemo(()=>{
+    if(!hash) return null;
+    try{ return JSON.parse(decodeURIComponent(atob(hash))); }catch{ return null; }
+  },[hash]);
+  const projectNodes=useMemo(()=>{
+    if(!parsed || parsed.share) return null;
+    return deserializeProject(hash);
+  },[parsed,hash]);
+
+  if(parsed){
+    // A camera/viewport share opens straight into that single camera.
+    if(parsed.share) return<SharePage data={parsed}/>;
+    // A full project URL on mobile can't open the desktop editor — show a
+    // picker of the project's cameras instead.
+    if(isMobile && projectNodes) return<MobileProjectPicker nodes={projectNodes}/>;
+  }
   return <Root/>;
 }

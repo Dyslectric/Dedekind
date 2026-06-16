@@ -413,7 +413,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
   return (
     <div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div ref={mountRef} style={{width:"100%",flex:"1 1 0",minHeight:0,cursor:"grab",position:"relative"}}>
-        {camNode.props.showResetBtn!==false&&<button onClick={handleReset} style={{position:"absolute",bottom:8,left:8,...S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"44",zIndex:2,pointerEvents:"auto"}}>⟳ reset view</button>}
+        {/*camNode.props.showResetBtn!==false&&<button onClick={handleReset} style={{position:"absolute",bottom:8,left:8,...S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"44",zIndex:2,pointerEvents:"auto"}}>⟳ reset view</button>*/}
         {camNode.props.showHints&&<div style={{position:"absolute",bottom:8,right:8,color:"#1c2a3a",fontSize:14,fontFamily:"monospace",pointerEvents:"none",lineHeight:1.8,textAlign:"right"}}>
           LMB orbit · RMB pan · scroll zoom<br/>WASD/↑↓←→ pan · QE up/dn<br/>IJKL orbit · R/F zoom
         </div>}
