@@ -32,14 +32,32 @@ function SharePage({data}){
   const uiCtx=useMemo(()=>({ui,S:makeS(ui)}),[ui]);
   const updateNode=useCallback((id,patch)=>setLiveNodes(ns=>({...ns,[id]:{...ns[id],...patch}})),[]);
   const showLabel = camNode?.props.showCamLabel !== false;
+  // A shared/embedded page can offer a button to open the whole scene in the
+  // full editor. The shared payload already carries the camera's entire
+  // dependency subgraph plus the project node, so we just re-serialize it as a
+  // normal project hash and reload into the editor. Gated by the same
+  // showOpenBtn camera prop used by the landing previews (default on).
+  const showOpen = camNode?.props.showOpenBtn !== false;
+  const openProject=useCallback(()=>{
+    try{
+      const hash=serializeProject(liveNodes);
+      if(!hash) return;
+      window.location.hash=hash;
+      window.location.reload();
+    }catch{ /* no-op if serialization fails */ }
+  },[liveNodes]);
   return<UICtx.Provider value={uiCtx}><div style={{position:"fixed",inset:0,background:theme.canvasBg,display:"flex",flexDirection:"column"}}>
     {showLabel&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"5px 14px",background:ui.uiPanelBar,flexShrink:0}}>
       <span style={{color:ui.uiAccent,fontSize:16,fontFamily:"monospace",fontWeight:"bold"}}>◈ Dedekind</span>
       <span style={{color:ui.uiMuted,fontSize:15,fontFamily:"monospace"}}>{camNode?.label}</span>
     </div>}
-    <div style={{flex:1,minHeight:0}}>
+    <div style={{flex:1,minHeight:0,position:"relative"}}>
       <ViewportSwitch camNode={camNode} nodes={liveNodes} scope={scope} theme={theme} projectNode={proj}
         onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={updateNode}/>
+      {showOpen&&<button onClick={openProject}
+        style={{position:"absolute",right:12,bottom:12,zIndex:20,...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55",background:"#0009",cursor:"pointer",pointerEvents:"auto"}}>
+        Open project →
+      </button>}
     </div>
   </div></UICtx.Provider>;
 }

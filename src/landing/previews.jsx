@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { makeNode, makeProjectNode } from "../nodes/model.js";
 import { buildScopeForCamera } from "../core/scope.js";
+import { resolveNum } from "../core/math.js";
 import { buildTheme } from "../theme/presets.js";
 import { ViewportSwitch } from "../components/Viewport.jsx";
 import { serializeProject } from "../core/serialize.js";
@@ -107,9 +108,12 @@ const SCENES = { surface:surfaceScene, field:fieldScene, flow:flowScene, lattice
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Strip the preview-only camera chrome flags so a scene opened in the editor
-// shows its normal HUD, while previews stay clean.
+// shows its normal HUD, while previews stay clean. The scalar overlay (slider /
+// animator controls) is kept ON, though — the front-page demos are meant to be
+// driven, so the sliders and animators need to be visible and interactive.
 function previewCam(cam){
-  cam.props.showCamLabel=false;cam.props.showResetBtn=false;cam.props.showShareBtn=false;cam.props.showScalarOverlay=false;
+  cam.props.showCamLabel=false;cam.props.showResetBtn=false;cam.props.showShareBtn=false;
+  cam.props.showScalarOverlay=true;
   return cam;
 }
 
@@ -342,16 +346,24 @@ function makeDemoProject(kind){
 // exposed in the camera's properties panel inside the editor.
 function LivePreview({ kind="field", onOpen }){
   const built = useMemo(()=>SCENES[kind](), [kind]);
-  const [nodes] = useState(built.scene);
+  const [nodes, setNodes] = useState(built.scene);
   const camId = built.camId;
-  const animated = built.animated!==false &&
-    Object.values(built.scene).some(n=>n.type==="animator" && n.playing);
+  // Recompute "is anything animating" from current state so play/pause from the
+  // overlay starts and stops the clock.
+  const animated = Object.values(nodes).some(n=>n.type==="animator" && n.playing);
   const animValsRef = useRef({});
-  useEffect(()=>{ for(const n of Object.values(nodes)){ if(n.type==="animator") animValsRef.current[n.id]=n.value??0; } },[nodes]);
+  useEffect(()=>{ for(const n of Object.values(built.scene)){ if(n.type==="animator") animValsRef.current[n.id]=n.value??0; } },[built.scene]);
 
   const hostRef = useRef(null);
   const visible = useRef(false);
   const [tick, setTick] = useState(0);
+
+  // Front-page previews are interactive: dragging a slider or toggling an
+  // animator in the scalar overlay updates the live node graph and re-renders.
+  const onUpdateNode = useCallback((id, patch)=>{
+    setNodes(ns=>({ ...ns, [id]: { ...ns[id], ...patch } }));
+    setTick(t=>t+1);
+  },[]);
 
   useEffect(()=>{
     const el = hostRef.current; if(!el) return;
@@ -372,8 +384,8 @@ function LivePreview({ kind="field", onOpen }){
         let moved=false;
         for(const n of Object.values(nodes)){
           if(n.type==="animator" && n.playing){
-            const period=parseFloat(n.props.period)||8, min=parseFloat(n.props.min)||0, max=parseFloat(n.props.max)||1;
-            const span=max-min || 1;
+            const period=resolveNum(n.props.period,{},8)||8, min=resolveNum(n.props.min,{},0), max=resolveNum(n.props.max,{},1);
+            const span=(max-min) || 1;
             let v=animValsRef.current[n.id] ?? min;
             v += (span/period)*dt;
             if(v>max) v=min+((v-min)%span);
@@ -399,7 +411,7 @@ function LivePreview({ kind="field", onOpen }){
   return (
     <div ref={hostRef} style={{position:"absolute",inset:0}}>
       <ViewportSwitch camNode={camNode} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
-        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={()=>{}}/>
+        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>
       {showOpen && (
         <button className="dk-openproj dk-openproj-float" onClick={handleOpen}
           style={{position:"absolute",right:10,bottom:10,zIndex:5}}>

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { LivePreview, makeDemoProject, openDemoProject } from "./previews.jsx";
+import { LivePreview } from "./previews.jsx";
 
 // ── Landing page ─────────────────────────────────────────────────────────────
 // Full-screen marketing overlay shown at root. "Open the editor" triggers a
@@ -176,7 +176,7 @@ function Landing({ onOpen, closing }){
           </div>
         </section>
 
-        {/* ACCELERATION BANNER — two implicit surfaces, different viewports */}
+        {/* ACCELERATION BANNER — one implicit surface + copy (condensed) */}
         <section className="dk-accel">
           <div className="dk-wrap">
             <div className="dk-accel-grid">
@@ -195,24 +195,18 @@ function Landing({ onOpen, closing }){
                   <span className="dk-chip"><i style={{background:"var(--dk-violet)"}}></i> no mesh extraction</span>
                   <span className="dk-chip"><i style={{background:"var(--dk-amber)"}}></i> crisp at any zoom</span>
                 </div>
-                <button className="dk-openproj" onClick={()=>openDemoProject("gyroid")}>Open project →</button>
-              </div>
-              <div className="dk-accel-art dk-accel-art2">
-                <LivePreview kind="chmutov"/>
-                <div className="dk-cap">chmutov quartic · ray-marched</div>
-                <button className="dk-openproj dk-openproj-float" onClick={()=>openDemoProject("chmutov")}>Open project →</button>
               </div>
             </div>
           </div>
         </section>
 
-        {/* SHOWCASE — more demos with open-project buttons */}
+        {/* SHOWCASE — the parametric ribbon (the one demo not shown elsewhere) */}
         <section className="dk-sec">
           <div className="dk-wrap">
             <div className="dk-shead">
               <div className="dk-eyebrow">Showcase</div>
-              <h2>More worked examples, one click into the editor.</h2>
-              <p>Each panel below is the live renderer. Every preview carries its own button to open it as a
+              <h2>One more worked example, one click into the editor.</h2>
+              <p>The panel below is the live renderer. Every preview carries its own button to open it as a
                 full, editable project — wires, sliders, animators and all.</p>
             </div>
 
@@ -221,13 +215,6 @@ function Landing({ onOpen, closing }){
                 width-window animates a lit section of the ribbon around the loop.</>}
               chips={[["var(--dk-violet)","parametric surface"],["var(--dk-pink)","animated section"],["var(--dk-mint)","lissajous knot"]]}
               kind="ribbon" cap="lissajous ribbon · live" />
-
-            <Feat flip num="B — Implicit, ray-marched" title="A gyroid, marched on the GPU"
-              body={<>A triply-periodic level set
-                <span className="dk-mono"> sin x·cos y + sin y·cos z + sin z·cos x = 0</span> ray-marched
-                directly in a fragment shader — no mesh extraction, crisp at any zoom.</>}
-              chips={[["var(--dk-mint)","fragment ray-march"],["var(--dk-violet)","no mesh extraction"],["var(--dk-amber)","crisp at any zoom"]]}
-              kind="gyroid" cap="gyroid · ray-marched" />
           </div>
         </section>
 
@@ -429,7 +416,7 @@ const CSS = `
 .dk-openproj:hover{filter:brightness(1.08);transform:translateY(-1px);}
 .dk-openproj-float{position:absolute;right:12px;bottom:10px;z-index:3;margin-top:0;padding:8px 13px;font-size:12px;}
 .dk-accel{padding:72px 0;border-top:1px solid var(--dk-line);border-bottom:1px solid var(--dk-line);background:radial-gradient(1200px 400px at 50% -10%,rgba(91,156,246,.07),transparent),linear-gradient(180deg,#10131e,#0d0f18);}
-.dk-accel-grid{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:34px;align-items:center;}
+.dk-accel-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:34px;align-items:center;}
 .dk-accel-art{border:1px solid var(--dk-line);border-radius:13px;overflow:hidden;background:linear-gradient(180deg,#10131e,#0d0f18);aspect-ratio:3/4;position:relative;box-shadow:0 24px 60px -38px #000;}
 .dk-accel-art2{aspect-ratio:3/4;}
 .dk-accel-copy{padding:0 6px;}
