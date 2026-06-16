@@ -3,6 +3,21 @@ import { makeNode, makeProjectNode } from "../nodes/model.js";
 import { buildScopeForCamera } from "../core/scope.js";
 import { buildTheme } from "../theme/presets.js";
 import { ViewportSwitch } from "../components/Viewport.jsx";
+import { serializeProject } from "../core/serialize.js";
+
+// Load a demo's editable graph into the full editor: write it to the URL hash
+// (the same channel a working-session save uses) and reload so the editor boots
+// straight into that project. Shared by the landing feature rows and the
+// per-preview "Open project" buttons.
+function openDemoProject(kind){
+  try{
+    const scene = makeDemoProject(kind);
+    const hash = serializeProject(scene);
+    if(!hash) return;
+    window.location.hash = hash;
+    window.location.reload();
+  }catch(e){ /* ignore — button just no-ops if serialization fails */ }
+}
 
 // ── Small self-contained scenes used by the landing previews ────────────────
 // Each returns a node map with a project, one camera, and a plot wired to its
@@ -84,11 +99,248 @@ function latticeScene(){
 
 const SCENES = { surface:surfaceScene, field:fieldScene, flow:flowScene, lattice:latticeScene };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// New showcase demos. Each builds a complete, editable node graph (project +
+// camera(s) + plots). The same builder feeds both the inline LivePreview and the
+// "Open project" button (which loads the graph into the full editor), so what you
+// see on the page is exactly what opens.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Strip the preview-only camera chrome flags so a scene opened in the editor
+// shows its normal HUD, while previews stay clean.
+function previewCam(cam){
+  cam.props.showCamLabel=false;cam.props.showResetBtn=false;cam.props.showShareBtn=false;cam.props.showScalarOverlay=false;
+  return cam;
+}
+
+// 1) Sphere ↔ torus morph. Authored selection: a morph parameter slider `m`
+// feeds an expr `t = m²` (so the blend eases in), which drives a single equation
+// that linearly interpolates between the sphere level set
+// (x²+y²+z²−r² = 0) and the torus level set
+// ((x²+y²+z²+R²−r²)² − 4R²(x²+y²) = 0). Two sliders set the tube radius `r`
+// and major radius `R`. Wired into a graph-mode transformer ("Morph Surface")
+// and a 3D camera. No animation — drag `m`.
+function sphereTorusScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="sphere → torus";
+  cam.props.orbTheta="1.3";cam.props.orbPhi="0.89";cam.props.orbRadius="10.6435";
+  cam.props.fov="50";cam.props.showGrid=false;cam.props.showAxes=false;
+  const m=makeNode("slider",{x:-144,y:451});m.name="m";m.label="m · morph";m.value=0;
+  m.props.min="0";m.props.max="1";m.props.step="0.01";
+  const r=makeNode("slider",{x:15,y:117});r.name="r";r.label="small radius";r.value=1;
+  r.props.min="1";r.props.max="3";r.props.step="0.01";
+  const R=makeNode("slider",{x:19,y:221});R.name="R";R.label="Big Radius";R.value=2.35;
+  R.props.min="2";R.props.max="6";R.props.step="0.01";
+  const t=makeNode("expr",{x:163,y:391});t.name="t";t.label="Expr";t.props.expr="m^2";
+  t.attachments=[m.id];
+  const eq=makeNode("equation",{x:422,y:190});eq.label="sphere↔torus";eq.color="#00aeff";
+  eq.props.dims="3d";
+  eq.props.lhs="(1-t)*(x^2+y^2+z^2-r^2)+t*((x^2+y^2+z^2+R^2-r^2)^2-4*R^2*(x^2+y^2))";
+  eq.props.rhs="1";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  eq.attachments=[r.id,R.id,t.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="Morph Surface";tr.color="#fe7c7c";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.inAxis2="z";
+  tr.props.outAxis0="z";tr.props.outAxis1="y";tr.props.outAxis2="none";
+  tr.props.normalize=true;tr.props.arrowLen="0.5";tr.props.domainSrc="inline";
+  tr.props.aMin="-4.4";tr.props.aMax="4.4";tr.props.bMin="-4.4";tr.props.bMax="4.4";
+  tr.props.cMin="-1.6";tr.props.cMax="1.6";tr.props.res="180";tr.props.colorMode="off";
+  tr.attachments=[eq.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[m.id]:m,[r.id]:r,[R.id]:R,[t.id]:t,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// 2a/2b) Two implicit surfaces for a "acceleration" banner — each its own scene
+// so two viewports can show different shapes. No animation. Both ray-marched.
+function implicitGyroidScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="gyroid";
+  cam.props.orbRadius="12";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="gyroid";eq.color="#a6e3a1";
+  eq.props.dims="3d";
+  eq.props.lhs="sin(1.4*x)*cos(1.4*y) + sin(1.4*y)*cos(1.4*z) + sin(1.4*z)*cos(1.4*x)";eq.props.rhs="0";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="Gyroid";tr.color="#a6e3a1";
+  tr.props.mode="graph";
+  tr.props.aMin="-3.2";tr.props.aMax="3.2";tr.props.bMin="-3.2";tr.props.bMax="3.2";tr.props.cMin="-3.2";tr.props.cMax="3.2";
+  tr.props.res="200";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+function implicitChmutovScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="chmutov";
+  cam.props.orbRadius="10";cam.props.orbTheta="0.6";cam.props.orbPhi="1.05";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="chmutov";eq.color="#f9a8d4";
+  eq.props.dims="3d";
+  // a quartic Chmutov-style surface — bubbly, lots of interior structure.
+  eq.props.lhs="x^4 - x^2 + y^4 - y^2 + z^4 - z^2";eq.props.rhs="-0.4";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="Chmutov";tr.color="#f9a8d4";
+  tr.props.mode="graph";
+  tr.props.aMin="-1.6";tr.props.aMax="1.6";tr.props.bMin="-1.6";tr.props.bMax="1.6";tr.props.cMin="-1.6";tr.props.cMax="1.6";
+  tr.props.res="200";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// 3) Lissajous knot ribbon — a degree-2 parametric surface (a flat ribbon swept
+// along a lissajous knot), with a sequenced reveal animated so a lit section of
+// the ribbon travels around the knot.
+function lissajousRibbonScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="lissajous ribbon";
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  // animator drives the section position around the loop
+  const anim=makeNode("animator",{x:40,y:360});anim.name="s";anim.value=0;anim.props.period="6";anim.props.min="0";anim.props.max="1";anim.props.loop="loop";anim.playing=true;
+  // degree-2 paramSpace: u runs along the lissajous knot, v across the ribbon
+  // width. A travelling lit band is created by modulating the ribbon's WIDTH with
+  // a moving window centered at s (wrapping around the loop): only the arc near s
+  // has full width, the rest pinches to the centerline — so a ribbon "section"
+  // appears to fly around the knot as s animates.
+  const ribbon=makeNode("paramSpace",{x:520,y:160});ribbon.label="ribbon";ribbon.color="#c4b5fd";
+  ribbon.props.degree="2";
+  // width(u) = exp(-((frac(u/2pi - s + .5)-.5)*k)^2): a wrapped Gaussian bump at s.
+  const W="(0.05 + 0.5*exp(-pow((( (u/6.283 - s) - floor(u/6.283 - s) ) - 0.5)*9,2)))";
+  ribbon.props.exprXu=`(2.2)*cos(3*u) + ${W}*v*cos(3*u)`;
+  ribbon.props.exprYu=`(2.2)*sin(2*u) + ${W}*v*sin(2*u)`;
+  ribbon.props.exprZu=`sin(4*u) + ${W}*v*cos(4*u)`;
+  ribbon.props.uMin="0";ribbon.props.uMax="6.283";ribbon.props.vMin="-1";ribbon.props.vMax="1";
+  ribbon.props.uRes="260";ribbon.props.vRes="6";
+  ribbon.attachments=[anim.id];
+  cam.attachments=[ribbon.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[ribbon.id]:ribbon},camId:cam.id,animated:true};
+}
+
+// 4) Flow surface in 3D: a line segment (0,0,0)→(1,0,0) integrated through a 3D
+// vector field whose z-component is constant, with the field ALSO drawn as a
+// quiver on the x-y plane so you can see what the surface is integrating.
+function flowSurface3DScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="flow surface";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";
+  // The vector field: swirl in x-y with a CONSTANT z lift, so trajectories spiral
+  // upward and the seeds sweep out a helicoidal stream surface.
+  const field=makeNode("fnMap",{x:300,y:120});field.props.inDim="3";field.props.outDim="3";
+  field.props.out0="-y";field.props.out1="x";field.props.out2="0.6";   // constant z
+  // seed line segment (0,0,0) → (1,0,0)
+  const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seed line";seeds.props.degree="1";
+  seeds.props.exprX="t";seeds.props.exprY="0";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="24";
+  const flow=makeNode("flow",{x:640,y:200});flow.label="Stream Surface";flow.color="#5be0c0";
+  flow.props.steps="320";flow.props.stepSize="0.03";flow.props.output="surface";
+  flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
+  flow.attachments=[field.id,seeds.id];
+  // the SAME field drawn as a quiver on the x-y plane (z=0 slice) to visualize it.
+  // A 3D→3D fnMap into a field-mode transformer, sampled on a thin z slab.
+  const fieldFn=makeNode("fnMap",{x:300,y:520});fieldFn.props.inDim="3";fieldFn.props.outDim="3";
+  fieldFn.props.out0="-y";fieldFn.props.out1="x";fieldFn.props.out2="0.6";
+  const quiver=makeNode("transformer",{x:640,y:460});quiver.label="Field (x-y plane)";quiver.color="#ffb454";
+  quiver.props.mode="field";
+  quiver.props.inAxis0="x";quiver.props.inAxis1="y";quiver.props.inAxis2="z";
+  quiver.props.outAxis0="x";quiver.props.outAxis1="y";quiver.props.outAxis2="z";
+  quiver.props.aMin="-2.5";quiver.props.aMax="2.5";quiver.props.bMin="-2.5";quiver.props.bMax="2.5";
+  quiver.props.cMin="0";quiver.props.cMax="0";   // single z=0 plane
+  quiver.props.res="9";quiver.props.arrowLen="0.45";quiver.props.normalize=true;
+  quiver.attachments=[fieldFn.id];
+  cam.attachments=[flow.id,quiver.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow,[fieldFn.id]:fieldFn,[quiver.id]:quiver},camId:cam.id,animated:false};
+}
+
+// 5) Recursive glyph sequence. Authored selection: a Points node in glyph mode
+// whose data is a true recurrence — each step rotates/scales the previous point
+// (and its attached vector) by the slider `a`, starting from (4,4) with a fixed
+// first vector. The count comes from an expr `b = 256`, so 256 glyphs sweep out
+// a self-similar logarithmic spiral. A 2D camera with grid + axes. A crest
+// animation runs a highlight along the sequence. Drag `a` to reshape the spiral.
+function recursiveGlyphScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:942,y:265}));cam.label="Cam2D";
+  cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.orbRadius="14";
+  cam.props.showGrid=true;cam.props.showAxes=true;
+  const a=makeNode("slider",{x:86,y:128});a.name="a";a.label="Slider";a.value=0.53;
+  a.props.min="0";a.props.max="1";a.props.step="0.01";
+  const b=makeNode("expr",{x:61,y:344});b.name="b";b.label="Expr";b.props.expr="256";
+  const pts=makeNode("points",{x:414,y:250});pts.label="Points";pts.color="#ff552b";
+  pts.props.space="xy";pts.props.hasVectors=true;
+  pts.props.data=
+    "4, 4 | -8*a, 0\n"+
+    "x[n-1] - (x[n-1] + y[n-1])*a, y[n-1] + (x[n-1] - y[n-1])*a | "+
+    "-(x[n-1] - (x[n-1] + y[n-1])*a + y[n-1] + (x[n-1] - y[n-1])*a)*a, "+
+    "((x[n-1] - (x[n-1] + y[n-1])*a) - (y[n-1] + (x[n-1] - y[n-1])*a))*a\nb";
+  pts.props.radius="4";pts.props.drawLines=true;pts.props.arrowLen="1";pts.props.normalize=true;
+  pts.props.anim="crest";pts.props.speed="1";pts.props.crestColor="#ffffff";
+  pts.props.colorMode="off";pts.props.colorExpr="i";pts.props.colorLo="#3a6aff";pts.props.colorHi="#ff5ea8";
+  pts.props.lenMode="raw";
+  pts.attachments=[a.id,b.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// 6) Wavy torus — an animated implicit surface. The level set
+// (√(x²+y²) − 2)² + z² = 1 + 0.2·sin(8x+p)·sin(8y)·sin(8z) is a torus whose
+// tube is rippled by a 3-axis sine product; an animator `p` (0 → 2π, looping)
+// drifts the ripple phase so the bumps crawl around the surface. Graph-mode
+// transformer + a long-lens 3D camera. Animated.
+function wavyTorusScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:944,y:1185}));cam.label="Camera 3D";
+  cam.props.orbTheta="-0.06";cam.props.orbPhi="0.925";cam.props.orbRadius="36.1935";
+  cam.props.fov="10";cam.props.showGrid=false;cam.props.showAxes=false;
+  const p=makeNode("animator",{x:56,y:1179});p.name="p";p.label="Anim";p.value=0;
+  p.props.min="0";p.props.max="2*pi";p.props.period="4";p.props.loop="loop";p.props.step="";p.playing=true;
+  const eq=makeNode("equation",{x:321,y:1177});eq.label="equation";eq.color="#4ff4ef";
+  eq.props.dims="3d";
+  eq.props.lhs="(sqrt(x^2+y^2)-2)^2+z^2";
+  eq.props.rhs="1+0.2*sin(8*x+p)*sin(8*y)*sin(8*z)";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  eq.attachments=[p.id];
+  const tr=makeNode("transformer",{x:634,y:1185});tr.label="Transformer";tr.color="#8ab9f9";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.inAxis2="z";
+  tr.props.outAxis0="z";tr.props.outAxis1="y";tr.props.outAxis2="none";
+  tr.props.normalize=true;tr.props.arrowLen="0.5";tr.props.domainSrc="inline";
+  tr.props.aMin="-4";tr.props.aMax="4";tr.props.bMin="-4";tr.props.bMax="4";
+  tr.props.cMin="-3";tr.props.cMax="3";tr.props.res="64";tr.props.colorMode="off";
+  tr.attachments=[eq.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[p.id]:p,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+// Register the new scenes alongside the originals.
+Object.assign(SCENES, {
+  spheretorus: sphereTorusScene,
+  gyroid: implicitGyroidScene,
+  chmutov: implicitChmutovScene,
+  ribbon: lissajousRibbonScene,
+  flowsurface: flowSurface3DScene,
+  glyphspiral: recursiveGlyphScene,
+  wavytorus: wavyTorusScene,
+});
+
+// Build the editable node-map for a given demo kind (drops the project's
+// preview-only camera chrome so the editor shows full HUD). Used by the
+// "Open project" buttons on the landing page.
+function makeDemoProject(kind){
+  const built = SCENES[kind] ? SCENES[kind]() : surfaceScene();
+  const scene = built.scene;
+  for(const n of Object.values(scene)){
+    if(n.type==="camera3d"||n.type==="camera2d"){
+      delete n.props.showCamLabel; delete n.props.showResetBtn;
+      delete n.props.showShareBtn; delete n.props.showScalarOverlay;
+    }
+  }
+  return scene;
+}
+
 // ── Embeddable live viewport ────────────────────────────────────────────────
 // Builds one of the scenes above and renders its camera with the real
 // ViewportSwitch, running the animator loop locally. Only ticks while visible
 // (IntersectionObserver) so off-screen previews don't burn frames.
-function LivePreview({ kind="field" }){
+//
+// By default every preview screen carries an "Open project" button (the scene's
+// camera ships with showOpenBtn:true). Pass onOpen to override what it does;
+// it defaults to opening this same `kind` in the full editor. The button hides
+// itself if the camera's showOpenBtn prop is turned off — the same toggle
+// exposed in the camera's properties panel inside the editor.
+function LivePreview({ kind="field", onOpen }){
   const built = useMemo(()=>SCENES[kind](), [kind]);
   const [nodes] = useState(built.scene);
   const camId = built.camId;
@@ -141,12 +393,21 @@ function LivePreview({ kind="field" }){
   const camNode = nodes[camId];
   const scope = useMemo(()=>buildScopeForCamera(camId, nodes, animValsRef.current), [nodes, camId, tick]);
 
+  const showOpen = camNode?.props?.showOpenBtn!==false;
+  const handleOpen = onOpen || (()=>openDemoProject(kind));
+
   return (
     <div ref={hostRef} style={{position:"absolute",inset:0}}>
       <ViewportSwitch camNode={camNode} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
         onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={()=>{}}/>
+      {showOpen && (
+        <button className="dk-openproj dk-openproj-float" onClick={handleOpen}
+          style={{position:"absolute",right:10,bottom:10,zIndex:5}}>
+          Open project →
+        </button>
+      )}
     </div>
   );
 }
 
-export { LivePreview };
+export { LivePreview, makeDemoProject, openDemoProject };

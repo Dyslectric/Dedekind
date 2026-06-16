@@ -109,11 +109,13 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
     uniform mat4 uProj;
     ${uniDecls}
     ${fieldFn}
-    // three-space (x,z,y) → math (x,y,z)
-    vec3 threeToMath(vec3 t){ return vec3(t.x, t.z, t.y); }
-    // sample F at a three-space point
+    // Plotted content lives in a group oriented so WORLD relates to MATH as:
+    //   world = (math.x, math.z, −math.y)  ⇒  math = (world.x, −world.z, world.y)
+    // (math X→right, Z→up, Y→away; right-handed.)
+    vec3 threeToMath(vec3 t){ return vec3(t.x, -t.z, t.y); }
+    // sample F at a world-space point
     float sampleF(vec3 t){ return fieldF(threeToMath(t)); }
-    // central-difference gradient in MATH space, returned in THREE space for shading
+    // central-difference gradient in MATH space, mapped to WORLD for shading
     vec3 normalAt(vec3 t){
       vec3 m = threeToMath(t);
       vec3 e = (uMaxM - uMinM) * 0.002 + 1e-4;
@@ -121,10 +123,10 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
       float fy = fieldF(m+vec3(0.0,e.y,0.0)) - fieldF(m-vec3(0.0,e.y,0.0));
       float fz = fieldF(m+vec3(0.0,0.0,e.z)) - fieldF(m-vec3(0.0,0.0,e.z));
       vec3 gM = vec3(fx,fy,fz);
-      // map math gradient (x,y,z) back to three (x,z,y) for lighting in view space
-      return normalize(vec3(gM.x, gM.z, gM.y) + 1e-6);
+      // math grad (x,y,z) → world (x, z, −y)
+      return normalize(vec3(gM.x, gM.z, -gM.y) + 1e-6);
     }
-    // ray vs axis-aligned box (three-space bounds derived from math bounds)
+    // ray vs axis-aligned box (world bounds derived from the math sampling box)
     bool boxHit(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax, out float t0, out float t1){
       vec3 inv = 1.0/rd;
       vec3 a = (bmin-ro)*inv, b=(bmax-ro)*inv;
@@ -136,9 +138,9 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
     void main(){
       vec3 ro = cameraPosition;
       vec3 rd = normalize(vWorld - cameraPosition);
-      // three-space box bounds: x from math x, y from math z, z from math y
-      vec3 bmin = vec3(uMinM.x, uMinM.z, uMinM.y);
-      vec3 bmax = vec3(uMaxM.x, uMaxM.z, uMaxM.y);
+      // world box bounds: world.x = math.x, world.y = math.z, world.z = −math.y
+      vec3 bmin = vec3(uMinM.x, uMinM.z, -uMaxM.y);
+      vec3 bmax = vec3(uMaxM.x, uMaxM.z, -uMinM.y);
       float t0,t1;
       if(!boxHit(ro,rd,bmin,bmax,t0,t1)) discard;
       t0 = max(t0, 0.0);

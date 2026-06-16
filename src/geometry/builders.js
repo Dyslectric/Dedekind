@@ -158,11 +158,19 @@ function buildCurve3d(pts,color,cols=null){
   return segs.map(s=>{
     const geo=new LineGeometry();
     // LineGeometry expects a flat [x,y,z, x,y,z, ...] array in world order.
-    // buildCurve3d receives math-order [X,Y,Z]; apply the (x,z,y) world swap here.
+    // buildCurve3d receives math-order [X,Y,Z]. Every other 3D builder emits
+    // builder three-space (x,z,y) and relies on the Viewport's `world` group
+    // (scale.z = -1) to land the final on-screen frame (X right, Z up, Y away).
+    // Line2 fat lines, however, expand to width in clip space inside their own
+    // vertex shader and DO NOT survive a negative-determinant model matrix: the
+    // mirror collapses/inverts the screen-space offset and the curve renders at
+    // zero width (invisible). So bake the FINAL world coords here — math
+    // (x,y,z) → world (x, z, −y) — and let Viewport3D parent curves to an
+    // unmirrored group (det +1) where the fat-line shader behaves.
     const pos=new Float32Array(s.length*3);
     for(let k=0;k<s.length;k++){
       const [mx,my,mz]=s[k].v;
-      pos[k*3]=mx; pos[k*3+1]=mz; pos[k*3+2]=my;
+      pos[k*3]=mx; pos[k*3+1]=mz; pos[k*3+2]=-my;
     }
     geo.setPositions(pos);
 
@@ -173,16 +181,27 @@ function buildCurve3d(pts,color,cols=null){
       geo.setColors(ca);
     }
 
+    const _res = (typeof window!=="undefined" && window.innerWidth)
+      ? new THREE.Vector2(window.innerWidth, window.innerHeight)
+      : new THREE.Vector2(1024,768);
     const mat=new LineMaterial({
       color: useCol ? 0xffffff : c3.getHex(),
       vertexColors: useCol,
       linewidth: CURVE_3D_PX,
       worldUnits: false,   // linewidth in CSS pixels, not world units
-      resolution: new THREE.Vector2(800,600), // overwritten by Viewport3D on resize
+      resolution: _res,    // real-ish size up front; Viewport3D refines on resize
     });
     mat._isCurve3d = true; // sentinel for Viewport3D ResizeObserver
     const line=new Line2(geo,mat);
+    // Geometry is already in final world coords (see above): this object must be
+    // added to the UNMIRRORED group, not the scale.z=-1 `world` group, or the
+    // fat-line shader breaks. Viewport3D routes on this flag.
+    line._unmirroredWorld = true;
     line.computeLineDistances();
+    // A 1→1 graph (e.g. y=f(x)) is planar — all points share one coordinate — so
+    // its bounding sphere is a flat disc that Line2's frustum test can wrongly cull,
+    // making the curve vanish at some camera angles. Curves are cheap; skip culling.
+    line.frustumCulled = false;
     return line;
   });
 }

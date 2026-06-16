@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { LivePreview } from "./previews.jsx";
+import { LivePreview, makeDemoProject, openDemoProject } from "./previews.jsx";
 
 // ── Landing page ─────────────────────────────────────────────────────────────
 // Full-screen marketing overlay shown at root. "Open the editor" triggers a
@@ -127,47 +127,107 @@ function Landing({ onOpen, closing }){
           </div>
         </section>
 
-        {/* RENDERING — live previews */}
+        {/* RENDERING — live previews (the new showcase demos) */}
         <section id="dk-render" className="dk-sec">
           <div className="dk-wrap">
             <div className="dk-shead">
               <div className="dk-eyebrow">Rendering</div>
               <h2>Many ways to turn a function into geometry.</h2>
-              <p>The same function can become a graph, a colored surface, a vector field, a flow, or a
-                point cloud, depending on the node you wire it into. These panels are the actual renderer,
-                running live.</p>
+              <p>The same function can become an implicit surface, a slider-driven morph, an animated
+                level set, or a sequence of glyphs, depending on the nodes you wire it into. Every panel
+                below is the actual renderer, running live — and each one opens straight into the editor.</p>
             </div>
 
-            <Feat num="01 — Transformers" title="Graphs with gradient color"
-              body={<>A transformer turns a function into geometry. In graph mode you map inputs and outputs
-                to axes — <span className="dk-mono">z=f(x,y)</span> here — and an optional color expression
-                shades every vertex across a gradient. Curves, surfaces, and solids can all be colored
-                this way.</>}
-              chips={[["var(--dk-amber)","graph mode"],["var(--dk-pink)","gradient color"],["var(--dk-violet)","parametric domain"]]}
-              kind="surface" cap="ripple surface · live" />
+            <Feat num="01 — Implicit morph" title="Sphere ↔ torus on a slider"
+              body={<>A single equation blends two level sets — a sphere
+                <span className="dk-mono"> x²+y²+z²=r²</span> and a torus — as the slider
+                <span className="dk-mono"> m</span> runs 0→1 (eased through <span className="dk-mono">t=m²</span>).
+                Two more sliders set the tube radius <span className="dk-mono">r</span> and major radius
+                <span className="dk-mono"> R</span>. Wire an equation into a graph-mode transformer and it
+                becomes a solid surface you can reshape live.</>}
+              chips={[["var(--dk-amber)","graph transformer"],["var(--dk-violet)","blended level sets"],["var(--dk-mint)","slider-driven"]]}
+              kind="spheretorus" cap="sphere → torus · drag m" />
 
-            <Feat flip num="02 — Vector fields" title="Quivers colored by value"
-              body={<>In field mode a transformer draws the output vector as an arrow at each sample. With a
-                four-output map the first three become the arrow and the last drives a color gradient, so a
-                3D field can be shaded by magnitude — or any expression you choose.</>}
-              chips={[["var(--dk-amber)","field mode"],["var(--dk-mint)","2D→2D · 3D→3D"],["var(--dk-pink)","output → color"]]}
-              kind="field" cap="3D field + color · live" />
+            <Feat flip num="02 — Animated implicit surfaces" title="A wavy torus, phase-drifting"
+              body={<>The level set <span className="dk-mono">(√(x²+y²)−2)²+z² = 1 + 0.2·sin(8x+p)·sin(8y)·sin(8z)</span>
+                is a torus whose tube is rippled by a three-axis sine product. An animator drifts the phase
+                <span className="dk-mono"> p</span> from 0 to 2π on a loop, so the bumps crawl around the
+                surface — geometry that updates every frame with no mesh rebuild.</>}
+              chips={[["var(--dk-mint)","implicit surface"],["var(--dk-amber)","animated phase"],["var(--dk-pink)","sine ripple"]]}
+              kind="wavytorus" cap="wavy torus · animated" />
 
-            <Feat num="03 — Flows" title="Streamlines and stream surfaces"
-              body={<>A flow integrates a vector field from a set of starting points. Seed it with single
-                points for one streamline each, or with a line of seeds for a stream surface built from the
-                trajectories between them. On a 2D camera looking down the plane, the surface fills in
-                solid.</>}
-              chips={[["var(--dk-mint)","RK4 integration"],["var(--dk-mint)","stream surface"],["var(--dk-pink)","point seeds"]]}
-              kind="flow" cap="stream surface · live" />
+            <Feat num="03 — Points, glyphs & recurrence" title="A self-similar glyph sequence"
+              body={<>A Points node in glyph mode can be a true recurrence: each step rotates and scales the
+                previous point and its attached vector by the slider <span className="dk-mono">a</span>,
+                starting from <span className="dk-mono">(4,4)</span>. An expression sets the count
+                (<span className="dk-mono">b=256</span>), so 256 glyphs sweep out a logarithmic spiral, drawn
+                in a single instanced pass with a crest highlight running along the sequence.</>}
+              chips={[["var(--dk-pink)","GPU instanced glyphs"],["var(--dk-pink)","x[n−1] recurrence"],["var(--dk-amber)","slider-driven"]]}
+              kind="glyphspiral" cap="recursive glyphs · drag a" />
 
-            <Feat flip num="04 — Points & glyphs" title="Point clouds with gradients"
-              body={<>Define points directly, by a recurrence (<span className="dk-mono">x[n−1]</span>), by
-                index (<span className="dk-mono">[i]</span>), or on a 2D/3D lattice
-                (<span className="dk-mono">[i,j,k]</span>), and color them by a value expression. Points draw
-                in a single instanced pass, so thousands stay smooth.</>}
-              chips={[["var(--dk-pink)","GPU instanced"],["var(--dk-pink)","recursive · index · matrix"],["var(--dk-amber)","gradient color"]]}
-              kind="lattice" cap="gradient point shell · live" />
+            <Feat flip num="04 — Flows" title="A stream surface over a 3D field"
+              body={<>A flow integrates a vector field from a set of seeds. Here a seed segment from
+                <span className="dk-mono"> (0,0,0)</span> to <span className="dk-mono">(1,0,0)</span> is
+                integrated through a 3D field with constant vertical lift, sweeping out a helical stream
+                surface. The same field is drawn as a quiver on the x-y plane so you can see what's being
+                integrated.</>}
+              chips={[["var(--dk-mint)","RK4 stream surface"],["var(--dk-amber)","field quiver"],["var(--dk-mint)","seed line"]]}
+              kind="flowsurface" cap="stream surface + field · live" />
+          </div>
+        </section>
+
+        {/* ACCELERATION BANNER — two implicit surfaces, different viewports */}
+        <section className="dk-accel">
+          <div className="dk-wrap">
+            <div className="dk-accel-grid">
+              <div className="dk-accel-art">
+                <LivePreview kind="gyroid"/>
+                <div className="dk-cap">gyroid · ray-marched</div>
+              </div>
+              <div className="dk-accel-copy">
+                <div className="dk-eyebrow">Acceleration</div>
+                <h2>Implicit surfaces, marched on the GPU.</h2>
+                <p>Level sets <span className="dk-mono">F(x,y,z)=0</span> render by ray marching the field
+                  directly in a fragment shader — no mesh extraction, no readback. The surface stays crisp at
+                  any zoom, with no triangle budget, so even dense periodic surfaces draw smoothly.</p>
+                <div className="dk-kv">
+                  <span className="dk-chip"><i style={{background:"var(--dk-mint)"}}></i> fragment ray-march</span>
+                  <span className="dk-chip"><i style={{background:"var(--dk-violet)"}}></i> no mesh extraction</span>
+                  <span className="dk-chip"><i style={{background:"var(--dk-amber)"}}></i> crisp at any zoom</span>
+                </div>
+                <button className="dk-openproj" onClick={()=>openDemoProject("gyroid")}>Open project →</button>
+              </div>
+              <div className="dk-accel-art dk-accel-art2">
+                <LivePreview kind="chmutov"/>
+                <div className="dk-cap">chmutov quartic · ray-marched</div>
+                <button className="dk-openproj dk-openproj-float" onClick={()=>openDemoProject("chmutov")}>Open project →</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SHOWCASE — more demos with open-project buttons */}
+        <section className="dk-sec">
+          <div className="dk-wrap">
+            <div className="dk-shead">
+              <div className="dk-eyebrow">Showcase</div>
+              <h2>More worked examples, one click into the editor.</h2>
+              <p>Each panel below is the live renderer. Every preview carries its own button to open it as a
+                full, editable project — wires, sliders, animators and all.</p>
+            </div>
+
+            <Feat num="A — Parametric ribbons" title="A section flying through a lissajous knot"
+              body={<>A degree-2 parametric surface sweeps a ribbon along a lissajous knot. A travelling
+                width-window animates a lit section of the ribbon around the loop.</>}
+              chips={[["var(--dk-violet)","parametric surface"],["var(--dk-pink)","animated section"],["var(--dk-mint)","lissajous knot"]]}
+              kind="ribbon" cap="lissajous ribbon · live" />
+
+            <Feat flip num="B — Implicit, ray-marched" title="A gyroid, marched on the GPU"
+              body={<>A triply-periodic level set
+                <span className="dk-mono"> sin x·cos y + sin y·cos z + sin z·cos x = 0</span> ray-marched
+                directly in a fragment shader — no mesh extraction, crisp at any zoom.</>}
+              chips={[["var(--dk-mint)","fragment ray-march"],["var(--dk-violet)","no mesh extraction"],["var(--dk-amber)","crisp at any zoom"]]}
+              kind="gyroid" cap="gyroid · ray-marched" />
           </div>
         </section>
 
@@ -258,7 +318,9 @@ function Node({x,y,tag,col,name,expr,inp,out,cam}){
   );
 }
 
-// feature row with a live preview panel
+// feature row with a live preview panel. The preview screen carries its own
+// "Open project" button by default (see LivePreview / camera showOpenBtn), so
+// the row no longer renders a separate one.
 function Feat({num,title,body,chips,kind,cap,flip}){
   return (
     <div className={"dk-feat"+(flip?" dk-flip":"")}>
@@ -363,6 +425,17 @@ const CSS = `
 .dk-kv{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px;}
 .dk-art{border:1px solid var(--dk-line);border-radius:13px;overflow:hidden;background:linear-gradient(180deg,#10131e,#0d0f18);aspect-ratio:4/3;position:relative;box-shadow:0 24px 60px -38px #000;}
 .dk-cap{position:absolute;left:12px;bottom:10px;font-family:var(--dk-mono);font-size:10.5px;letter-spacing:.16em;color:var(--dk-faint);text-transform:uppercase;pointer-events:none;z-index:2;}
+.dk-openproj{margin-top:18px;display:inline-flex;align-items:center;gap:8px;font-family:var(--dk-mono);font-size:13px;letter-spacing:.02em;color:var(--dk-ink);background:linear-gradient(180deg,#7fc8ff,#5b9cf6);border:none;border-radius:9px;padding:10px 16px;cursor:pointer;font-weight:600;box-shadow:0 10px 28px -16px #5b9cf6;transition:.16s;}
+.dk-openproj:hover{filter:brightness(1.08);transform:translateY(-1px);}
+.dk-openproj-float{position:absolute;right:12px;bottom:10px;z-index:3;margin-top:0;padding:8px 13px;font-size:12px;}
+.dk-accel{padding:72px 0;border-top:1px solid var(--dk-line);border-bottom:1px solid var(--dk-line);background:radial-gradient(1200px 400px at 50% -10%,rgba(91,156,246,.07),transparent),linear-gradient(180deg,#10131e,#0d0f18);}
+.dk-accel-grid{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:34px;align-items:center;}
+.dk-accel-art{border:1px solid var(--dk-line);border-radius:13px;overflow:hidden;background:linear-gradient(180deg,#10131e,#0d0f18);aspect-ratio:3/4;position:relative;box-shadow:0 24px 60px -38px #000;}
+.dk-accel-art2{aspect-ratio:3/4;}
+.dk-accel-copy{padding:0 6px;}
+.dk-accel-copy h2{font-family:var(--dk-disp);font-weight:600;font-size:clamp(22px,2.6vw,30px);letter-spacing:-.02em;margin:10px 0 0;}
+.dk-accel-copy p{color:var(--dk-muted);margin:13px 0 0;line-height:1.6;}
+.dk-accel-copy .dk-kv{margin-top:18px;}
 .dk-band{border-top:1px solid var(--dk-line);border-bottom:1px solid var(--dk-line);background:linear-gradient(180deg,#10131e,#0d0f18);padding:64px 0;}
 .dk-band-h{font-family:var(--dk-disp);font-weight:600;font-size:clamp(24px,3vw,32px);letter-spacing:-.02em;margin:12px 0 0;}
 .dk-band-p{color:var(--dk-muted);margin:14px 0 0;max-width:42em;line-height:1.6;}
@@ -383,6 +456,8 @@ const CSS = `
 @media (max-width:920px){
   .dk-hero-grid{grid-template-columns:1fr;gap:36px;}
   .dk-feat{grid-template-columns:1fr;gap:26px;}
+  .dk-accel-grid{grid-template-columns:1fr;gap:22px;}
+  .dk-accel-art,.dk-accel-art2{aspect-ratio:4/3;}
   .dk-flip .dk-art{order:0;}
   .dk-cards{grid-template-columns:1fr;}
   .dk-pipe{grid-template-columns:1fr;}

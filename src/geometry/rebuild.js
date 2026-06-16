@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/scope.js";
-import { disposeObjs, updateGpuUniforms } from "./three-helpers.js";
+import { disposeObjs, addPlotObj, updateGpuUniforms } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
   buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d
@@ -127,7 +127,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       }
       if(gpu&&gpu.length){
         disposeObjs(scene,objMap.get(childId)||[]);
-        gpu.forEach(o=>scene.add(o));
+        gpu.forEach(o=>addPlotObj(scene,o));
         gpu._gpu=true; gpu._sig=sig;
         // mark animated glyph sets so the scene keeps redrawing & advancing time
         if(node.type==="glyphField" && gpu[0]?._glyphAnim) gpu._glyphAnim=true;
@@ -242,7 +242,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       }
     }
     if(sig!=null) objs._sig=sig;
-    objs.forEach(o=>scene.add(o));objMap.set(childId,objs);
+    objs.forEach(o=>addPlotObj(scene,o));objMap.set(childId,objs);
 }
 
 // ── Sequenced reveal ─────────────────────────────────────────────────────────

@@ -33,28 +33,44 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     const scene = new THREE.Scene();
     scene.add(new THREE.AmbientLight(0xffffff,0.55));
     const dl=new THREE.DirectionalLight(0xffffff,0.85);dl.position.set(5,10,7);scene.add(dl);
-    // Right-hand-rule axis triad in MATH coordinates (X red, Y green, Z blue,
-    // with Z pointing up). The renderer maps math (x,y,z) → three (x,z,y), so we
-    // place each math axis along its mapped three-space direction: math-X → three +X,
-    // math-Y → three +Z, math-Z → three +Y (up). Drawn with cone arrowheads so the
-    // positive direction of each axis — and thus the right-handed orientation
-    // (X×Y points toward +Z) — is unambiguous. Replaces THREE.AxesHelper, whose
-    // colors track three-space axes and so mislabel the up axis as "Y".
+    // Orientation. Per-builder code maps math (x,y,z) → three (x, z, y). We want
+    // the on-screen frame: math X → RIGHT, math Z → UP, math Y → AWAY from the
+    // viewer, i.e. world (x, z, −y) — the standard right-handed math frame
+    // (X×Y = Z: (1,0,0)×(0,0,−1) = (0,1,0) = up). The group flips three-Z so the
+    // builder output (x, z, y) becomes (x, z, −y). Determinant −1, composed with
+    // the builders' −1 swap → +1 overall (right-handed). three.js auto-corrects
+    // winding for negative-determinant matrices and the shaders light with
+    // abs(dot(n,L)), so culling/shading are unaffected. Grid + lights stay on root.
+    const world = new THREE.Group();
+    world.scale.z = -1;   // builder (x,z,y) → world (x,z,−y): X right, Z up, Y away
+    scene.add(world);
+    // Screen-space fat-line curves (Line2) can't live under a negative-determinant
+    // matrix — the LineMaterial vertex shader expands width in clip space and the
+    // mirror collapses it to nothing (the "1-spaces stopped rendering" bug after
+    // the camera went right-handed). They instead go in this UNMIRRORED sibling
+    // (det +1) and carry final world coords baked into their geometry, so they
+    // share the exact same on-screen frame without the broken mirror.
+    const worldFlat = new THREE.Group();
+    scene.add(worldFlat);
+    world._unmirrored = worldFlat;
+
+    // Axis triad (X red, Y green, Z blue), placed in builder three space (x, z, y)
+    // so the group transform carries each arrow to its world direction:
+    // X→right, Z→up, Y→away.
     const axes=new THREE.Group();
     {
       const L=4, RC=0.045, HC=0.16, HL=0.5;
-      // math-axis → three-space unit direction
+      // math-axis → builder three-space unit direction: math(x,y,z)→three(x,z,y)
       const dirs=[
         {name:"x", col:0xff5a5a, v:new THREE.Vector3(1,0,0)}, // math X → three +X
         {name:"y", col:0x5ad06a, v:new THREE.Vector3(0,0,1)}, // math Y → three +Z
-        {name:"z", col:0x5a9cff, v:new THREE.Vector3(0,1,0)}, // math Z → three +Y (up)
+        {name:"z", col:0x5a9cff, v:new THREE.Vector3(0,1,0)}, // math Z → three +Y
       ];
       for(const {col,v} of dirs){
         const shaftLen=L-HL;
         const shaft=new THREE.Mesh(
           new THREE.CylinderGeometry(RC,RC,shaftLen,12),
           new THREE.MeshBasicMaterial({color:col}));
-        // CylinderGeometry is +Y aligned; orient it onto v and centre at shaftLen/2.
         shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), v);
         shaft.position.copy(v.clone().multiplyScalar(shaftLen/2));
         const head=new THREE.Mesh(
@@ -65,7 +81,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
         axes.add(shaft, head);
       }
     }
-    scene.add(axes);
+    world.add(axes);
 
     let gridObj=null,lastGc1=-1,lastGc2=-1;
     const getGrid=(gc1,gc2)=>{
@@ -233,7 +249,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
         const isOrtho=p.projection==="orthographic";activeCam=isOrtho?ortho:persp;
         if(!isOrtho){persp.fov=resolveNum(p.fov,s,50);persp.near=resolveNum(p.near,s,0.01);persp.far=resolveNum(p.far,s,2000);persp.updateProjectionMatrix();}
         else{const asp=(el.clientWidth||w)/(el.clientHeight||h);const os=orb.orthoSize/2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.near=resolveNum(p.near,s,0.01);ortho.far=resolveNum(p.far,s,2000);ortho.updateProjectionMatrix();}
-        rebuildScene(scene,objMap,cn,ns,s,stRef.current.animValsRef?.current);
+        rebuildScene(world,objMap,cn,ns,s,stRef.current.animValsRef?.current);
         // Seed correct viewport size into any screen-space LineMaterials just built.
         { const w2=el.clientWidth||w, h2=el.clientHeight||h;
           scene.traverse(o=>{if(o.material?._isCurve3d) o.material.resolution.set(w2,h2);}); }

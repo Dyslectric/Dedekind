@@ -475,7 +475,9 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                 <PR label="min"><EI v={node.props.colorMin??""} sc={scope} onChange={v=>set("colorMin",v)} placeholder="required"/></PR>
                 <PR label="max"><EI v={node.props.colorMax??""} sc={scope} onChange={v=>set("colorMax",v)} placeholder="required"/></PR>
                 {needRange&&<div style={{fontSize:12.5,color:ui.uiDanger,marginTop:3,lineHeight:1.5}}>
-                  Set both min and max — color binding needs an explicit range. (Until then a fitted range is used as a fallback.)
+                  Set both min and max — color binding needs an explicit range. {inDim===2
+                    ? "Until then the surface renders in its single flat color (no domain auto-fit)."
+                    : "(Until then a fitted range is used as a fallback.)"}
                 </div>}
               </Sec>;
             })()}
@@ -965,6 +967,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
             <PR label="reset btn"><Toggle v={node.props.showResetBtn!==false} onChange={v=>onChange({props:{...node.props,showResetBtn:v}})}/></PR>
             <PR label="hints"><Toggle v={!!node.props.showHints} onChange={v=>onChange({props:{...node.props,showHints:v}})}/></PR>
             <PR label="share btn"><Toggle v={node.props.showShareBtn!==false} onChange={v=>onChange({props:{...node.props,showShareBtn:v}})}/></PR>
+            <PR label="open-project btn"><Toggle v={node.props.showOpenBtn!==false} onChange={v=>onChange({props:{...node.props,showOpenBtn:v}})}/></PR>
             {(()=>{
               const inScope=new Set();
               collectScalarDeps(node.id,nodes,inScope,new Set());

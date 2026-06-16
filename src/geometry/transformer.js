@@ -45,6 +45,16 @@ function colorOutIndex(tp, outDim){
   return -1;
 }
 function colorOn(tp, outDim){ return colorOutIndex(tp, outDim) >= 0; }
+// True only when BOTH ends of the color range are pinned by the user. An
+// explicitly-defined surface (2-input graph with an output bound to color) must
+// not auto-fit its ramp across the sampling domain — that "auto coloring domain"
+// makes the surface re-tint itself every time the box or a wired scalar moves,
+// which reads as the colors sliding around for no reason. Without an explicit
+// range we fall back to the flat single color instead. Curves, point clouds and
+// fields keep their auto-fit (they're discrete sets, not a swept domain).
+function hasExplicitColorRange(tp){
+  return tp.colorMin!=="" && tp.colorMin!=null && tp.colorMax!=="" && tp.colorMax!=null;
+}
 // Per-sample color scalar: the value of the output bound to the color channel.
 // (Color is a binding target like X/Y/Z; whichever output holds "color" drives
 // the gradient.) Falls back to defaultVal when no output is colorbound.
@@ -254,6 +264,11 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
     return buildCurve3d(pts, color, gradient?rampColors(vals,tp,scope):null);
   }
   if(inDim===2 && dom.grid){
+    // An explicitly-defined surface (z = out bound to an axis) only gradient-
+    // colors when an output is bound to color AND the user pinned the range.
+    // A color-bound output with no range no longer auto-fits across the domain;
+    // it renders in the flat single color instead (see hasExplicitColorRange).
+    const surfGradient = gradient && hasExplicitColorRange(tp);
     // GPU fast path: an inline-grid graph surface is analytic in (a,b) — evaluate
     // the output expressions in a vertex shader instead of CPU-sampling nu×nv
     // points. Only when the domain is the inline grid (a wired paramSpace supplies
@@ -262,41 +277,35 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
     // (the shader can't auto-range without a CPU pre-pass), so an auto-range
     // gradient still falls to CPU.
     if(!paramNode){
-      let colorInfo=null, gpuOk=true;
-      if(gradient){
-        const hasMin = tp.colorMin!=="" && tp.colorMin!=null;
-        const hasMax = tp.colorMax!=="" && tp.colorMax!=null;
-        if(hasMin && hasMax){
-          colorInfo={ lo:new THREE.Color(tp.colorLo||"#3a6aff"), hi:new THREE.Color(tp.colorHi||"#ff5ea8"),
-                      cmin:resolveNum(tp.colorMin,scope,0), cmax:resolveNum(tp.colorMax,scope,1) };
-        } else {
-          // Color binding requires a manual range; without it the shader can't
-          // ramp. Fall back to the CPU path (which auto-fits) so it still draws.
-          gpuOk=false;
-        }
+      let colorInfo=null;
+      if(surfGradient){
+        // surfGradient already implies an explicit [min,max] range, so the shader
+        // can ramp directly — no CPU pre-pass / auto-range needed.
+        colorInfo={ lo:new THREE.Color(tp.colorLo||"#3a6aff"), hi:new THREE.Color(tp.colorHi||"#ff5ea8"),
+                    cmin:resolveNum(tp.colorMin,scope,0), cmax:resolveNum(tp.colorMax,scope,1) };
       }
-      if((!gradient || colorInfo) && gpuOk){
-        const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo);
-        if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
-      }
+      // Either a flat surface (no color binding, or color binding without a
+      // range → flat) or a fully-ranged gradient: both render straight on the GPU.
+      const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo);
+      if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
     }
-    const nu=dom.nu, nv=dom.nv, rows=[], colRows=gradient?[]:null, flatVals=gradient?[]:null;
+    const nu=dom.nu, nv=dom.nv, rows=[], colRows=surfGradient?[]:null, flatVals=surfGradient?[]:null;
     let idx=0;
     for(let j=0;j<nv;j++){
-      const row=[], crow=gradient?[]:null;
+      const row=[], crow=surfGradient?[]:null;
       for(let i=0;i<nu;i++){
         const inVec=dom.pts[idx++];
         const outVec=evalMap(outs,scope,inVec);
         row.push(placeGraph(tp,inVec,outVec,inDim,outDim));
-        if(gradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
+        if(surfGradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
       }
-      rows.push(row); if(gradient) colRows.push(crow);
+      rows.push(row); if(surfGradient) colRows.push(crow);
     }
-    if(gradient){
+    if(surfGradient){
       const flat=rampColors(flatVals,tp,scope);
       let k=0; for(let j=0;j<nv;j++) for(let i=0;i<nu;i++) colRows[j][i]=flat[k++];
     }
-    return buildSurf(rows, color, gradient?colRows:null, tp.showWire!==false);
+    return buildSurf(rows, color, surfGradient?colRows:null, tp.showWire!==false);
   }
   // 3 inputs in graph mode: render as a value-coloured point cloud at the
   // graphed positions (no single surface to draw).

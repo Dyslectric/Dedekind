@@ -1,7 +1,13 @@
 import * as THREE from "three";
 
 // ── THREE helpers ────────────────────────────────────────────────────────────
-function disposeObjs(scene,objs){for(const o of objs){scene.remove(o);if(o.geometry&&!o._sharedGeometry)o.geometry.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else if(o.material)o.material.dispose();}}
+function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(o); if(o.geometry&&!o._sharedGeometry)o.geometry.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else if(o.material)o.material.dispose();}}
+// Add a freshly built plot object to the correct parent. Most geometry lives in
+// the mirrored `world` group (scale.z = -1) that lands the on-screen frame.
+// Screen-space fat-line curves (tagged `_unmirroredWorld`) break under that
+// negative-determinant matrix, so they go to an unmirrored sibling group
+// (world._unmirrored) and carry their own baked-in world coords.
+function addPlotObj(world,o){ (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
 function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
 
 // Build a ShaderMaterial that displaces a grid in the vertex shader. `body`
@@ -118,5 +124,5 @@ function updateGpuUniforms(objs, scope){
 }
 
 export {
-  disposeObjs, hexToThree, makeSurfaceShader, updateGpuUniforms
+  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms
 };
