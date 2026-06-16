@@ -335,6 +335,9 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                   Resolution is the grid divisions per axis; higher is smoother but slower{eq3d?" (cost grows cubically for surfaces — keep it modest)":""}. Updates live as you drag wired sliders.
                 </div>
               </Sec>
+              {eq3d&&<Sec title="Display">
+                <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>
+              </Sec>}
             </>;
           }
           const inDim=fnNode?Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1")))):1;

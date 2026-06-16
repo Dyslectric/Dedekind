@@ -3,6 +3,7 @@ import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
 import { buildCurve3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU } from "./builders.js";
 import { marchingSquares, marchingCubes } from "./implicit.js";
+import { buildImplicitRaymarch } from "./implicit-raymarch.js";
 
 // ── Transformer: render a pure map (fnMap) over a domain ─────────────────────
 // A transformer takes a function ℝ^inDim → ℝ^outDim and turns it into geometry
@@ -152,6 +153,12 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
 
     if(is3d){
       const cMin=resolveNum(tp.cMin,scope,-3), cMax=resolveNum(tp.cMax,scope,3);
+      // Prefer GPU ray marching: it renders the level set directly in a fragment
+      // shader (no mesh extraction, no field readback), crisp at any zoom. Falls
+      // back to the marching-cubes mesh when the expression can't transpile to GLSL.
+      const rm = buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum);
+      if(rm) return rm;
+
       const res=Math.max(2,Math.min(120,Math.round(resolveNum(tp.res,scope,48))));
       const { positions, normals } = marchingCubes(eqNode, scope,
         aMin,aMax, bMin,bMax, cMin,cMax, res);
@@ -169,6 +176,9 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
       const c3=hexToThree(color);
       const mat=new THREE.MeshPhongMaterial({color:c3,side:THREE.DoubleSide,transparent:true,opacity:0.85,shininess:40,flatShading:false});
       const mesh=new THREE.Mesh(g,mat);
+      // Wireframe overlay is toggleable (transformer's showWire prop, default on),
+      // matching analytic surfaces.
+      if(tp.showWire===false) return [mesh];
       const wire=new THREE.LineSegments(new THREE.WireframeGeometry(g),new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.12}));
       return [mesh, wire];
     }

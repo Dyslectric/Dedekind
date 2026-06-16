@@ -261,7 +261,28 @@ function makeDemoScene(){
   knot.props.tMin="0";knot.props.tMax="2*pi";knot.props.res="420";
   knot.attachments=[t.id,spin.id];
 
-  // ── Four cameras, four projections of the SAME three plots ─────────────────
+  // 4) A slider-morphable implicit surface: a gyroid — the triply-periodic minimal
+  //      surface  sin(kx)cos(ky) + sin(ky)cos(kz) + sin(kz)cos(kx) = 0
+  // Ray-marched directly on the GPU. It's riddled with tunnels and holes, so the
+  // surface is obviously see-through — a clear test that the ray marcher resolves
+  // interior structure. The `k` slider sets the frequency (how many cells pack
+  // into the box); slide it to watch the lattice get finer or coarser.
+  const gyK=add(makeNode("slider",{x:40,y:750}));gyK.name="k";gyK.label="k · cell freq";gyK.value=1.6;
+  gyK.props.min="0.6";gyK.props.max="3";gyK.props.step="0.01";
+
+  const gyroidEq=add(makeNode("equation",{x:360,y:680}));gyroidEq.label="Gyroid = 0";gyroidEq.color="#f5a97f";
+  gyroidEq.props.dims="3d";
+  gyroidEq.props.lhs="sin(k*x)*cos(k*y) + sin(k*y)*cos(k*z) + sin(k*z)*cos(k*x)";gyroidEq.props.rhs="0";
+  gyroidEq.props.varA="x";gyroidEq.props.varB="y";gyroidEq.props.varC="z";
+  gyroidEq.attachments=[gyK.id];
+
+  const gyroid=add(makeNode("transformer",{x:680,y:680}));gyroid.label="Implicit Gyroid";gyroid.color="#f5a97f";
+  gyroid.props.mode="graph";
+  gyroid.props.aMin="-3.2";gyroid.props.aMax="3.2";gyroid.props.bMin="-3.2";gyroid.props.bMax="3.2";gyroid.props.cMin="-3.2";gyroid.props.cMax="3.2";
+  gyroid.props.res="200";  // ray-march steps per pixel (cheap — it's a fragment shader, not a mesh)
+  gyroid.attachments=[gyroidEq.id];
+
+  // ── Four cameras, four projections of the SAME plots ───────────────────────
   const persp=add(makeNode("camera3d",{x:1040,y:60}));persp.label="Perspective";
   persp.props.projection="perspective";persp.props.orbTheta="0.7";persp.props.orbPhi="1.05";persp.props.orbRadius="13";
 
@@ -275,11 +296,11 @@ function makeDemoScene(){
   // view the x–z plane: looking along −Y, so the plane normal is +Y.
   side.props.normalX="0";side.props.normalY="1";side.props.normalZ="0";
 
-  // Every 3-D camera sees the surface, the field, and the knot. The 2-D cameras
-  // skip the dense ripple surface (projecting a 56×56 graph every frame was the
-  // main 2-D performance sink) and instead show the field + knot projected onto
-  // their plane, which is light and reads clearly.
-  const plots3d=[surf.id,field.id,knot.id];
+  // Every 3-D camera sees the ripple surface, the implicit torus, the field, and
+  // the knot. The 2-D cameras skip the dense surfaces (projecting them every frame
+  // was the main 2-D performance sink) and instead show the field + knot projected
+  // onto their plane, which is light and reads clearly.
+  const plots3d=[surf.id,gyroid.id,field.id,knot.id];
   const plots2d=[field.id,knot.id];
   persp.attachments=[...plots3d];
   ortho.attachments=[...plots3d];

@@ -33,7 +33,39 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     const scene = new THREE.Scene();
     scene.add(new THREE.AmbientLight(0xffffff,0.55));
     const dl=new THREE.DirectionalLight(0xffffff,0.85);dl.position.set(5,10,7);scene.add(dl);
-    const axes=new THREE.AxesHelper(4);scene.add(axes);
+    // Right-hand-rule axis triad in MATH coordinates (X red, Y green, Z blue,
+    // with Z pointing up). The renderer maps math (x,y,z) → three (x,z,y), so we
+    // place each math axis along its mapped three-space direction: math-X → three +X,
+    // math-Y → three +Z, math-Z → three +Y (up). Drawn with cone arrowheads so the
+    // positive direction of each axis — and thus the right-handed orientation
+    // (X×Y points toward +Z) — is unambiguous. Replaces THREE.AxesHelper, whose
+    // colors track three-space axes and so mislabel the up axis as "Y".
+    const axes=new THREE.Group();
+    {
+      const L=4, RC=0.045, HC=0.16, HL=0.5;
+      // math-axis → three-space unit direction
+      const dirs=[
+        {name:"x", col:0xff5a5a, v:new THREE.Vector3(1,0,0)}, // math X → three +X
+        {name:"y", col:0x5ad06a, v:new THREE.Vector3(0,0,1)}, // math Y → three +Z
+        {name:"z", col:0x5a9cff, v:new THREE.Vector3(0,1,0)}, // math Z → three +Y (up)
+      ];
+      for(const {col,v} of dirs){
+        const shaftLen=L-HL;
+        const shaft=new THREE.Mesh(
+          new THREE.CylinderGeometry(RC,RC,shaftLen,12),
+          new THREE.MeshBasicMaterial({color:col}));
+        // CylinderGeometry is +Y aligned; orient it onto v and centre at shaftLen/2.
+        shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), v);
+        shaft.position.copy(v.clone().multiplyScalar(shaftLen/2));
+        const head=new THREE.Mesh(
+          new THREE.ConeGeometry(HC,HL,14),
+          new THREE.MeshBasicMaterial({color:col}));
+        head.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), v);
+        head.position.copy(v.clone().multiplyScalar(shaftLen+HL/2));
+        axes.add(shaft, head);
+      }
+    }
+    scene.add(axes);
 
     let gridObj=null,lastGc1=-1,lastGc2=-1;
     const getGrid=(gc1,gc2)=>{

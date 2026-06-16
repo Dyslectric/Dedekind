@@ -1,5 +1,21 @@
 import { compileExpr } from "../core/math.js";
 import { EDGE_TABLE, TRI_TABLE } from "./mcTables.js";
+import { evalFieldGPU2D, evalFieldGPU3D, getSharedGL } from "./implicit-gpu.js";
+
+// A GPU field readback is trusted only if it's the right length and not degenerate.
+// A failed/short read (driver quirks, oversized atlas, R32F readback rejection)
+// can come back as all-zero or all-NaN, which would silently erase the surface —
+// so we reject those and let the caller fall back to the CPU sampler.
+function gpuFieldValid(arr, expectedLen){
+  if(!arr || arr.length!==expectedLen) return false;
+  let sawFinite=false, sawNonZero=false;
+  for(let i=0;i<arr.length;i++){
+    const v=arr[i];
+    if(Number.isFinite(v)){ sawFinite=true; if(v!==0) sawNonZero=true; }
+    if(sawFinite && sawNonZero) return true;
+  }
+  return false; // all-zero or all-NaN → treat as failed read
+}
 
 // ── Marching squares: extract the zero contour of f(a,b) over a rect grid ─────
 // Given an equation node (lhs = rhs) and a sampling rectangle in the two free
@@ -26,18 +42,33 @@ function marchingSquares(eqNode, scope, aMin, aMax, bMin, bMax, res){
   const nA = N, nB = N;
   const da = (aMax - aMin) / nA, db = (bMax - bMin) / nB;
 
-  // Pre-evaluate F on the full grid (reuse one scope object per row to limit GC).
-  const grid = new Float64Array((nA + 1) * (nB + 1));
-  const sc = { ...scope };
-  let idx = 0;
-  for (let j = 0; j <= nB; j++) {
-    const b = bMin + j * db;
-    sc[varB] = b;
-    for (let i = 0; i <= nA; i++) {
-      sc[varA] = aMin + i * da;
-      let v;
-      try { v = compiled.evaluate(sc); } catch { v = NaN; }
-      grid[idx++] = (typeof v === "number" && isFinite(v)) ? v : NaN;
+  // Pre-evaluate F on the full grid. Try the GPU first (a single fragment-shader
+  // pass + readPixels evaluates the whole (N+1)² lattice at once); fall back to the
+  // CPU mathjs loop when WebGL2/float isn't available or the expression can't be
+  // transpiled to GLSL. The case-table walk below is identical either way.
+  let grid = null;
+  {
+    const gl = getSharedGL();
+    if (gl){
+      try {
+        const g = evalFieldGPU2D(gl, fExpr, varA, varB, scope, aMin, aMax, bMin, bMax, N);
+        if (gpuFieldValid(g, (nA+1)*(nB+1))) grid = g;
+      } catch { grid = null; }
+    }
+  }
+  if (!grid) {
+    grid = new Float64Array((nA + 1) * (nB + 1));
+    const sc = { ...scope };
+    let idx = 0;
+    for (let j = 0; j <= nB; j++) {
+      const b = bMin + j * db;
+      sc[varB] = b;
+      for (let i = 0; i <= nA; i++) {
+        sc[varA] = aMin + i * da;
+        let v;
+        try { v = compiled.evaluate(sc); } catch { v = NaN; }
+        grid[idx++] = (typeof v === "number" && isFinite(v)) ? v : NaN;
+      }
     }
   }
 
@@ -125,20 +156,33 @@ function marchingCubes(eqNode, scope, xMin, xMax, yMin, yMax, zMin, zMax, res){
   const nx=N, ny=N, nz=N;
   const dx=(xMax-xMin)/nx, dy=(yMax-yMin)/ny, dz=(zMax-zMin)/nz;
 
-  // sample F on the full (N+1)^3 lattice
+  // sample F on the full (N+1)^3 lattice. GPU path renders one z-slice per draw
+  // into a float atlas and reads it back in a single call; CPU path is the mathjs
+  // fallback. Both produce the identical index layout idx3(i,j,k)=(k*sy+j)*sx+i.
   const sc = { ...scope };
   const sx=nx+1, sy=ny+1, sz=nz+1;
-  const F = new Float64Array(sx*sy*sz);
   const idx3=(i,j,k)=> (k*sy + j)*sx + i;
-  let bad=false;
-  for(let k=0;k<sz;k++){
-    sc[vC]=zMin+k*dz;
-    for(let j=0;j<sy;j++){
-      sc[vB]=yMin+j*dy;
-      for(let i=0;i<sx;i++){
-        sc[vA]=xMin+i*dx;
-        let v; try{ v=compiled.evaluate(sc); }catch{ v=NaN; }
-        F[idx3(i,j,k)] = (typeof v==="number"&&isFinite(v)) ? v : NaN;
+  let F = null;
+  {
+    const gl = getSharedGL();
+    if (gl){
+      try {
+        const f = evalFieldGPU3D(gl, fExpr, vA, vB, vC, scope, xMin, xMax, yMin, yMax, zMin, zMax, N);
+        if (gpuFieldValid(f, sx*sy*sz)) F = f;
+      } catch { F = null; }
+    }
+  }
+  if (!F) {
+    F = new Float64Array(sx*sy*sz);
+    for(let k=0;k<sz;k++){
+      sc[vC]=zMin+k*dz;
+      for(let j=0;j<sy;j++){
+        sc[vB]=yMin+j*dy;
+        for(let i=0;i<sx;i++){
+          sc[vA]=xMin+i*dx;
+          let v; try{ v=compiled.evaluate(sc); }catch{ v=NaN; }
+          F[idx3(i,j,k)] = (typeof v==="number"&&isFinite(v)) ? v : NaN;
+        }
       }
     }
   }

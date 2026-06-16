@@ -94,6 +94,8 @@ void main() {
   if (!prog) return null;
 
   const W = N + 1, H = N + 1;
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+  if (maxTex && (W > maxTex || H > maxTex)) return null;
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, W, H, 0, gl.RED, gl.FLOAT, null);
@@ -143,14 +145,13 @@ void main() {
 }
 
 // ── 3D field evaluation ───────────────────────────────────────────────────────
-// Evaluates F on an (N+1)³ grid by rendering (N+1) z-slice passes, each into
-// an S×S viewport at vertical offset k*S within a 2D atlas of size S×(S*(N+1)).
-// Single readPixels at the end.
-//
-// Returns Float32Array in layout F[(k*(N+1) + j)*(N+1) + i] — same index
-// formula as marchingCubes uses: idx3(i,j,k) = (k*sy + j)*sx + i, where sx=sy=N+1.
-// This matches because the atlas row for slice k, row j is at atlas row (k*(N+1)+j),
-// which readPixels writes to atlas[(k*(N+1)+j)*(N+1)+i] — identical layout.
+// Evaluates F on an (N+1)³ grid by rendering one z-slice (S×S, S=N+1) per draw
+// call into a 2D-tiled float atlas, then reading the whole atlas back once and
+// de-tiling into the linear layout marchingCubes expects: F[(k*S + j)*S + i],
+// i.e. idx3(i,j,k) = (k*sy + j)*sx + i with sx=sy=sz=S. Slices are tiled in a
+// near-square grid (cols×rows of S×S tiles) rather than one tall column so the
+// atlas stays within MAX_TEXTURE_SIZE even at high resolution. Returns null
+// (→ CPU fallback) on any capability/transpile/size failure.
 function evalFieldGPU3D(gl, fExpr, varA, varB, varC, scope, xMin, xMax, yMin, yMax, zMin, zMax, N) {
   if (!checkCapabilities(gl)) return null;
 
@@ -178,7 +179,18 @@ void main() {
   if (!prog) return null;
 
   const S = N + 1;
-  const atlasW = S, atlasH = S * S;
+  // Tile the S z-slices into a near-square grid of S×S tiles instead of stacking
+  // them in one tall column. A single column needs height S² (e.g. 65²=4225),
+  // which exceeds the common 4096 MAX_TEXTURE_SIZE and makes the read fail. A
+  // grid of cols×rows tiles keeps both atlas dimensions ≈ S·√S, well within range.
+  const tilesPerRow = Math.max(1, Math.floor(Math.sqrt(S)));
+  const tileRows = Math.ceil(S / tilesPerRow);
+  const atlasW = tilesPerRow * S, atlasH = tileRows * S;
+
+  // R32F atlas must fit the driver's texture limit; an oversized request would
+  // give an incomplete framebuffer (and a silently wrong/empty read). Bail to CPU.
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+  if (maxTex && (atlasW > maxTex || atlasH > maxTex)) return null;
 
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -223,7 +235,9 @@ void main() {
 
   const dz = (zMax - zMin) / N;
   for (let k = 0; k < S; k++) {
-    gl.viewport(0, k * S, S, S);
+    const tx = (k % tilesPerRow) * S;       // tile origin x
+    const ty = Math.floor(k / tilesPerRow) * S; // tile origin y
+    gl.viewport(tx, ty, S, S);
     gl.uniform1f(uZ, zMin + k * dz);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -236,11 +250,55 @@ void main() {
   gl.deleteTexture(tex);
   gl.deleteProgram(prog);
 
-  // Atlas layout: atlas[(k*S + j)*S + i] = F at grid point (i, j, k).
-  // marchingCubes expects: F[idx3(i,j,k)] = F[(k*sy + j)*sx + i] with sx=sy=sz=S.
-  // These are identical, so return the atlas directly.
-  return atlas;
+  // De-tile the atlas into the linear layout marchingCubes expects:
+  // F[(k*S + j)*S + i]. Atlas pixel for slice k, cell (i,j) sits at
+  // ( tileCol*S + i, tileRow*S + j ) where tileCol=k%tilesPerRow, tileRow=k/…
+  const F = new Float32Array(S * S * S);
+  for (let k = 0; k < S; k++) {
+    const tx = (k % tilesPerRow) * S;
+    const ty = Math.floor(k / tilesPerRow) * S;
+    for (let j = 0; j < S; j++) {
+      const atlasRow = (ty + j) * atlasW + tx;
+      const outRow = (k * S + j) * S;
+      for (let i = 0; i < S; i++) F[outRow + i] = atlas[atlasRow + i];
+    }
+  }
+  return F;
 }
 
-export { evalFieldGPU2D, evalFieldGPU3D };
+export { evalFieldGPU2D, evalFieldGPU3D, getSharedGL };
+
+// ── Shared offscreen WebGL2 context ───────────────────────────────────────────
+// Marching squares/cubes are pure compute (no on-screen output), so they evaluate
+// their scalar field into an offscreen float framebuffer. One context is created
+// lazily and reused across all calls; if WebGL2 + float-render isn't available the
+// helpers fall back to CPU. Kept tiny (1×1 canvas) since the real work happens in
+// off-screen textures sized per call.
+let _sharedGL = null, _sharedTried = false;
+function getSharedGL() {
+  if (_sharedTried) return _sharedGL;
+  _sharedTried = true;
+  try {
+    const cv = (typeof OffscreenCanvas !== "undefined")
+      ? new OffscreenCanvas(1, 1)
+      : (typeof document !== "undefined" ? document.createElement("canvas") : null);
+    if (!cv) return (_sharedGL = null);
+    const gl = cv.getContext("webgl2", { antialias:false, depth:false, stencil:false, preserveDrawingBuffer:false });
+    if (!checkCapabilities(gl)) return (_sharedGL = null);
+    // Self-test: evaluate a known field on a small grid and confirm the readback
+    // matches the analytic value at the far corner. Some drivers report float-render
+    // capability but return wrong/empty data from an R32F readPixels; if so we
+    // permanently disable the GPU path so marching falls back to the (correct) CPU
+    // sampler instead of silently dropping surfaces. The 3D probe uses N=8 (S=9 →
+    // tilesPerRow=3) so the multi-column atlas tiling/de-tiling is actually tested,
+    // not just the degenerate single-tile case.
+    const probe2d = evalFieldGPU2D(gl, "x + y", "x", "y", {}, 0, 1, 0, 1, 4);
+    const probe3d = evalFieldGPU3D(gl, "x + 2*y + 4*z", "x", "y", "z", {}, 0, 1, 0, 1, 0, 1, 8);
+    // 2D corner (1,1) → 2 ; 3D corner (1,1,1) → 1+2+4 = 7
+    const ok2 = probe2d && Math.abs(probe2d[probe2d.length-1] - 2) < 1e-3;
+    const ok3 = probe3d && Math.abs(probe3d[probe3d.length-1] - 7) < 1e-3;
+    _sharedGL = (ok2 && ok3) ? gl : null;
+  } catch { _sharedGL = null; }
+  return _sharedGL;
+}
 
