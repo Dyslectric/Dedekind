@@ -145,7 +145,7 @@ function buildArrow2D(bx,by,dx,dy, color, headLen=0.15, thickness=null){
   const nx=-uy, ny=ux;            // unit normal
   const th=(thickness!=null?thickness:headLen*0.34);
   const half=th*0.5;
-  const headW=th*2.2;             // head half-width relative to shaft
+  const headW=th*3.4;             // head half-width relative to shaft (wider head)
   const hw=headW*0.5;
   // shaft runs from base to where the head begins
   const sLen=Math.max(0,len-headLen);
@@ -243,7 +243,7 @@ function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
   if(!maxMag) return [];
   const spacing=Math.min((xMax-xMin)/(gridN-1||1),(yMax-yMin)/(gridN-1||1));
   const L=spacing*0.42;
-  const head=px(11); // constant on-screen arrowhead length
+  const head=px(16); // constant on-screen arrowhead length
   const thick=px(2.6); // constant on-screen shaft thickness
   const objs=[];
   for(const {x,y,vx,vy,mag} of raw){
@@ -278,7 +278,7 @@ function build2DQuiver3d(np, pscope, color, px, fr){
   if(!maxMag) return [];
   const spacing=Math.min((xMax-xMin)/(gridN-1||1),(yMax-yMin)/(gridN-1||1),(zMax-zMin)/(gridN-1||1));
   const L=spacing*0.5;
-  const head=px(11), thick=px(2.6);
+  const head=px(16), thick=px(2.6);
   const objs=[];
   for(const {x,y,z,vx,vy,vz,m} of raw){
     if(m<1e-10) continue;
@@ -364,7 +364,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
     const alen=resolveNum(tp.arrowLen,pscope,0.5);
     if(useColor){ if(tp.colorMin!==""&&tp.colorMin!=null)cMin=resolveNum(tp.colorMin,pscope,cMin); if(tp.colorMax!==""&&tp.colorMax!=null)cMax=resolveNum(tp.colorMax,pscope,cMax); }
     const cspan=(cMax-cMin)||1;
-    const head=px(11), thick=px(2.6);
+    const head=px(16), thick=px(2.6);
     const objs=[];
     for(const {base3,v3,m3,cval} of raw){
       if(m3<1e-9) continue;
@@ -456,7 +456,7 @@ function build2DGlyphField(np, pscope, color, px, fr){
   const lenMode=np.lenMode||(np.normalize===false?"scaled":"uniform");
   const alen=resolveNum(np.arrowLen,pscope,0.5);
   let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1],g.vec[2]||0);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
-  const head=px(11);
+  const head=px(16);
   const thick=px(2.6);
   const objs=[];
   for(const {pos,vec} of pairs){
