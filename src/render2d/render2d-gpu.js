@@ -321,7 +321,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   let colorIdx=-1; for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color"){ colorIdx=k; break; } }
   const useColor=colorIdx>=0;
   const loC=hexRGB(tp.colorLo||"#3a6aff"), hiC=hexRGB(tp.colorHi||"#ff5ea8");
-  const ramp=(t)=>{t=t<0?0:t>1?1:t;return`#${[loC,hiC].reduce((acc,_,i)=>{const c=Math.round(loC[i]*255+(hiC[i]-loC[i])*255*t);return acc+(c<16?"0":"")+c.toString(16);},"")}`;}
+  const ramp=(t)=>{t=t<0?0:t>1?1:t;const h=(v)=>{const x=Math.round(v*255);return(x<16?"0":"")+x.toString(16);};return`#${h(loC[0]+(hiC[0]-loC[0])*t)}${h(loC[1]+(hiC[1]-loC[1])*t)}${h(loC[2]+(hiC[2]-loC[2])*t)}`;}
 
   // Place an input/output pair into a MATH-space [x,y,z] triple using the
   // transformer's axis assignments, then project onto the camera plane. This is
