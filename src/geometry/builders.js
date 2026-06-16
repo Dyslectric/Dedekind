@@ -21,9 +21,10 @@ function buildSurfGPU(kind, p, scope, color){
     umin=resolveNum(p.xMin,scope,-4); umax=resolveNum(p.xMax,scope,4);
     vmin=resolveNum(p.yMin,scope,-4); vmax=resolveNum(p.yMax,scope,4);
     const res=Math.max(2,Math.min(256,resolveNum(p.res,scope,40))); ures=res; vres=res;
-    // d.x∈[0,1]→x, d.y∈[0,1]→y, z=f(x,y)
-    bodyP = `x = ${_glslNum(umin)} + d.x*${_glslNum(umax-umin)};
-             y = ${_glslNum(vmin)} + d.y*${_glslNum(vmax-vmin)};
+    // _gd.x∈[0,1]→x, _gd.y∈[0,1]→y, z=f(x,y). The grid-coord vec2 is named `_gd`
+    // (not `d`) so a user scalar called `d` stays a distinct uniform inside the shader.
+    bodyP = `x = ${_glslNum(umin)} + _gd.x*${_glslNum(umax-umin)};
+             y = ${_glslNum(vmin)} + _gd.y*${_glslNum(vmax-vmin)};
              float zz = ${gx}; vec3 P = vec3(x, y, zz);`;
   } else if(kind==="paramsurf"){
     const sx=exprToGLSL(p.exprX,new Set(["u","v"]),uniforms);
@@ -34,8 +35,8 @@ function buildSurfGPU(kind, p, scope, color){
     vmin=resolveNum(p.vMin,scope,0); vmax=resolveNum(p.vMax,scope,Math.PI);
     ures=Math.max(2,Math.min(256,resolveNum(p.uRes,scope,40)));
     vres=Math.max(2,Math.min(256,resolveNum(p.vRes,scope,30)));
-    bodyP = `float u = ${_glslNum(umin)} + d.x*${_glslNum(umax-umin)};
-             float v = ${_glslNum(vmin)} + d.y*${_glslNum(vmax-vmin)};
+    bodyP = `float u = ${_glslNum(umin)} + _gd.x*${_glslNum(umax-umin)};
+             float v = ${_glslNum(vmin)} + _gd.y*${_glslNum(vmax-vmin)};
              vec3 P = vec3(${sx}, ${sy}, ${sz});`;
   } else return null;
 
@@ -108,9 +109,11 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     const ax=AX[outAx[k]]; if(ax==null) continue;   // skip color/none/unbound
     world[ax]=outGLSL[k];
   }
-  // grid coord setup: d.x∈[0,1]→a (x symbol), d.y∈[0,1]→b (y symbol)
-  const bodyP = `x = ${_glslNum(aMin)} + d.x*${_glslNum(aMax-aMin)};
-                 y = ${_glslNum(bMin)} + d.y*${_glslNum(bMax-bMin)};
+  // grid coord setup: _gd.x∈[0,1]→a (x symbol), _gd.y∈[0,1]→b (y symbol). The
+  // grid vec2 is `_gd` (not `d`) so a user scalar named `d` — e.g. the ripple's
+  // decay slider — is not shadowed by the sampling parameter inside the shader.
+  const bodyP = `x = ${_glslNum(aMin)} + _gd.x*${_glslNum(aMax-aMin)};
+                 y = ${_glslNum(bMin)} + _gd.y*${_glslNum(bMax-bMin)};
                  vec3 P = vec3(${world[0]}, ${world[1]}, ${world[2]});`;
   let colorOpts=null;
   if(colorInfo){

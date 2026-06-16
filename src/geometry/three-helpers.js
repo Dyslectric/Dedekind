@@ -33,14 +33,23 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts){
   // expressions), not the raw [0,1] grid coords — so we run the same coordinate
   // mapping (`body` sets x,y) before evaluating it. mathColor mirrors mathPos's
   // coordinate setup and returns the scalar.
+  // NOTE: the sampling parameter is named `_gd` (grid-domain), NOT `d`. A user
+  // scalar can legitimately be named `d` (e.g. the ripple's decay slider →
+  // uniform float d). If the function parameter were also `d`, that uniform would
+  // be shadowed inside mathPos/mathColor, so `exp(-d*r)` would multiply by the
+  // [0,1] grid vector instead of the decay scalar — silently corrupting the
+  // surface (asymmetric taper along x) and, in the colored 2-output case, turning
+  // the fill expression into a type error that fails to link (only the wireframe,
+  // which has no color body, then renders). A `_`-prefixed name can't collide
+  // with any user symbol.
   const colorFn = colored
-    ? `float mathColor(vec2 d){ float x=d.x; float y=d.y; ${body} return (${opts.colorBody}); }`
+    ? `float mathColor(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return (${opts.colorBody}); }`
     : "";
-  const colorCompute = colored ? "vCval = mathColor(d);" : "";
+  const colorCompute = colored ? "vCval = mathColor(_gd);" : "";
   const vert = wireframe ? `
     ${decls}
     varying float vOk;
-    vec3 mathPos(vec2 d){ float x=d.x; float y=d.y; ${body} return vec3(P.x, P.z, P.y); }
+    vec3 mathPos(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return vec3(P.x, P.z, P.y); }
     void main(){
       vec3 p = mathPos(position.xy);
       vOk = (abs(p.x)<1e6 && abs(p.y)<1e6 && abs(p.z)<1e6) ? 1.0 : 0.0;
@@ -48,15 +57,16 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts){
     }` : `
     ${decls}
     varying vec3 vNormalW; varying float vOk; ${colorVaryV}
-    vec3 mathPos(vec2 d){ float x=d.x; float y=d.y; ${body} return vec3(P.x, P.z, P.y); }
+    vec3 mathPos(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return vec3(P.x, P.z, P.y); }
     ${colorFn}
     void main(){
-      vec2 d = position.xy;
-      vec3 p = mathPos(d);
-      // finite-difference normal for shading
-      float e = 0.01;
-      vec3 pu = mathPos(d+vec2(e,0.0));
-      vec3 pv = mathPos(d+vec2(0.0,e));
+      vec2 _gd = position.xy;
+      vec3 p = mathPos(_gd);
+      // finite-difference normal for shading (epsilon named _fdE so a user
+      // scalar named e is never shadowed here)
+      float _fdE = 0.01;
+      vec3 pu = mathPos(_gd+vec2(_fdE,0.0));
+      vec3 pv = mathPos(_gd+vec2(0.0,_fdE));
       vec3 nrm = normalize(cross(pu-p, pv-p));
       vOk = (abs(p.x)<1e6 && abs(p.y)<1e6 && abs(p.z)<1e6) ? 1.0 : 0.0;
       vNormalW = nrm;

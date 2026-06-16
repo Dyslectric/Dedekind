@@ -226,19 +226,30 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     };
     loop();
 
-    const ro=new ResizeObserver(()=>{
+    // Coalesce resize work into a single rAF: applying renderer.setSize inside the
+    // ResizeObserver callback (which fires mid-layout) leaves the canvas at the old
+    // backing-store size until the loop's next render, producing a visible flash on
+    // drag-resize. Deferring to rAF guarantees the resize and the render that uses it
+    // happen in the same frame, and also sidesteps the "ResizeObserver loop" warning.
+    let resizeRaf=0, lastW=0, lastH=0;
+    const applyResize=()=>{
+      resizeRaf=0;
       const w2=el.clientWidth,h2=el.clientHeight;if(!w2||!h2)return;
+      if(w2===lastW&&h2===lastH)return; // ignore no-op notifications (avoids RO loop)
+      lastW=w2; lastH=h2;
       renderer.setSize(w2,h2,false);persp.aspect=w2/h2;persp.updateProjectionMatrix();
       const cn=stRef.current.camNode,sc=stRef.current.scope||{};
       if(cn?.props.projection==="orthographic"){const os=resolveNum(cn.props.orthoSize,sc,10)/2,asp=w2/h2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.updateProjectionMatrix();}
       // Update screen-space LineMaterial resolution so curve widths stay correct.
       scene.traverse(o=>{if(o.material?._isCurve3d) o.material.resolution.set(w2,h2);});
-    });
+      stRef.current.dirty=true;
+    };
+    const ro=new ResizeObserver(()=>{ if(!resizeRaf) resizeRaf=requestAnimationFrame(applyResize); });
     ro.observe(el);
 
     stRef.current={renderer,scene,axes,persp,ortho,orb,objMap,dirty:true,userMoved:false,camNode,nodes,scope,projectNode,onCameraChange,animValsRef};
     return()=>{
-      clearTimeout(syncTimer);cancelAnimationFrame(rafId);ro.disconnect();
+      clearTimeout(syncTimer);cancelAnimationFrame(rafId);if(resizeRaf)cancelAnimationFrame(resizeRaf);ro.disconnect();
       renderer.domElement.removeEventListener("mousedown",onMD);renderer.domElement.removeEventListener("wheel",onWheel);
       renderer.domElement.removeEventListener("focus",onFocus);renderer.domElement.removeEventListener("blur",onBlur);
       window.removeEventListener("mouseup",onMU);window.removeEventListener("mousemove",onMM);
@@ -322,8 +333,12 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
 
     let W=container.clientWidth||400, H=container.clientHeight||300;
     const dpr=window.devicePixelRatio||1;
-    const resize=()=>{
-      W=container.clientWidth||400; H=container.clientHeight||300;
+    let sizedOnce=false;   // the first doResize() must always size the canvases/renderer
+    const doResize=()=>{
+      const w2=container.clientWidth||400, h2=container.clientHeight||300;
+      if(sizedOnce && w2===W && h2===H) return; // no real change → skip (avoids RO loop + flash)
+      sizedOnce=true;
+      W=w2; H=h2;
       renderer.setSize(W,H,false);
       for(const [cv,cx] of [[gridCv,gctx],[labelCv,lctx]]){
         cv.width=W*dpr; cv.height=H*dpr;
@@ -332,7 +347,9 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
       }
       stRef.current.viewDirty=true; stRef.current.plotDirty=true;
     };
-    const ro=new ResizeObserver(resize); ro.observe(container); resize();
+    let resizeRaf=0;
+    const resize=()=>{ if(!resizeRaf) resizeRaf=requestAnimationFrame(()=>{resizeRaf=0; doResize();}); };
+    const ro=new ResizeObserver(resize); ro.observe(container); doResize();
 
     const extents=()=>{
       const v=viewRef.current;
@@ -443,7 +460,7 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
     overlay.addEventListener("wheel",onWheel,{passive:false});
 
     return()=>{
-      cancelAnimationFrame(rafRef.current); ro.disconnect();
+      cancelAnimationFrame(rafRef.current); if(resizeRaf)cancelAnimationFrame(resizeRaf); ro.disconnect();
       overlay.removeEventListener("mousedown",onMD);
       window.removeEventListener("mouseup",onMU);
       window.removeEventListener("mousemove",onMM);

@@ -170,6 +170,71 @@ function buildArrow2D(bx,by,dx,dy, color, headLen=0.15, thickness=null){
   return new THREE.Mesh(g,mat);
 }
 
+// Batched arrow builder. Quiver / field plots can emit hundreds–thousands of
+// arrows; giving each its own Mesh+BufferGeometry+Material (as buildArrow2D does)
+// means one draw call and one GC-tracked material per arrow, which bogged the 2-D
+// viewport down badly and made a high grid resolution unusable. This accumulates
+// every arrow's triangles into ONE position buffer (plus an optional per-vertex
+// color buffer) and returns a single Mesh — one draw call for the whole field.
+//
+// Usage:
+//   const ab=new ArrowBatch2D();
+//   ab.add(bx,by,dx,dy,headLen,thickness, colorRGBorNull);
+//   const mesh=ab.build(flatColorHex);   // null/empty → returns null
+function ArrowBatch2D(){
+  const pos=[];          // flat x,y,z triples
+  const col=[];          // flat r,g,b triples (only used if any arrow has a color)
+  let anyColor=false;
+  return {
+    add(bx,by,dx,dy, headLen=0.15, thickness=null, rgb=null){
+      const len=Math.hypot(dx,dy);
+      if(len<1e-9) return;
+      const ux=dx/len, uy=dy/len;
+      const nx=-uy, ny=ux;
+      const th=(thickness!=null?thickness:headLen*0.34);
+      const half=th*0.5;
+      const hw=(th*3.4)*0.5;
+      const sLen=Math.max(0,len-headLen);
+      const ex=bx+dx, ey=by+dy;
+      const sx2=bx+ux*sLen, sy2=by+uy*sLen;
+      // 5 triangles' worth of vertices (4 shaft + … actually 2 shaft tris + 1 head)
+      const verts=[];
+      const v=(x,y)=>verts.push(x,y);
+      const b1x=bx+nx*half, b1y=by+ny*half;
+      const b2x=bx-nx*half, b2y=by-ny*half;
+      const e1x=sx2+nx*half, e1y=sy2+ny*half;
+      const e2x=sx2-nx*half, e2y=sy2-ny*half;
+      v(b1x,b1y); v(e1x,e1y); v(e2x,e2y);
+      v(b1x,b1y); v(e2x,e2y); v(b2x,b2y);
+      const h1x=sx2+nx*hw, h1y=sy2+ny*hw;
+      const h2x=sx2-nx*hw, h2y=sy2-ny*hw;
+      v(h1x,h1y); v(ex,ey); v(h2x,h2y);
+      for(let i=0;i<verts.length;i+=2){ pos.push(verts[i],verts[i+1],0); }
+      if(rgb){ anyColor=true; }
+      // always push a color slot per vertex so the color buffer (if used) stays
+      // aligned with positions; defaults to white and is ignored when no material
+      // vertexColors is set.
+      const c=rgb||[1,1,1];
+      for(let i=0;i<verts.length;i+=2){ col.push(c[0],c[1],c[2]); }
+    },
+    isEmpty(){ return pos.length===0; },
+    // flatColor: hex string used when no per-arrow colors were supplied.
+    build(flatColor){
+      if(!pos.length) return null;
+      const g=new THREE.BufferGeometry();
+      g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+      let mat;
+      if(anyColor){
+        g.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
+        mat=new THREE.MeshBasicMaterial({vertexColors:true,depthTest:false,side:THREE.DoubleSide});
+      } else {
+        mat=new THREE.MeshBasicMaterial({color:hexToThree(flatColor),depthTest:false,side:THREE.DoubleSide});
+      }
+      return new THREE.Mesh(g,mat);
+    }
+  };
+}
+
 // Small circle sprite as a triangle-fan disk (good for points).
 function buildDisk2D(cx,cy, r, color, opacity=1){
   const N=12; const pts=[];
@@ -230,7 +295,7 @@ function build2DPoint(np, pscope, color, px, fr){
 }
 
 function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
-  const gridN=Math.max(3,Math.min(30,resolveNum(np.gridN,pscope,12)));
+  const gridN=Math.max(3,Math.min(128,resolveNum(np.gridN,pscope,12)));
   const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
   const yMin=resolveNum(np.yMin,pscope,wyMin), yMax=resolveNum(np.yMax,pscope,wyMax);
   const xs=linspace(xMin,xMax,gridN), ys=linspace(yMin,yMax,gridN);
@@ -245,7 +310,9 @@ function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
   const L=spacing*0.42;
   const head=px(16); // constant on-screen arrowhead length
   const thick=px(2.6); // constant on-screen shaft thickness
-  const objs=[];
+  // Batch every arrow into a single mesh — at high gridN this is the difference
+  // between one draw call and gridN² of them.
+  const ab=ArrowBatch2D();
   for(const {x,y,vx,vy,mag} of raw){
     if(mag<1e-10) continue;
     const scale=np.normalize!==false ? L : L*(mag/maxMag);
@@ -253,10 +320,10 @@ function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
     // project base and tip onto the plane so a tilted view shears arrows correctly
     const b=projectPt(fr,x,y,0);
     const tip=projectPt(fr,x+nx*scale,y+ny*scale,0);
-    const a=buildArrow2D(b[0],b[1], tip[0]-b[0], tip[1]-b[1], color, Math.min(head, scale*0.5), thick);
-    if(a) objs.push(a);
+    ab.add(b[0],b[1], tip[0]-b[0], tip[1]-b[1], Math.min(head, scale*0.5), thick);
   }
-  return objs;
+  const m=ab.build(color);
+  return m?[m]:[];
 }
 
 // 3-D quiver in a 2-D viewport: sample a 3-D grid, size each arrow in true 3-D,
@@ -279,7 +346,7 @@ function build2DQuiver3d(np, pscope, color, px, fr){
   const spacing=Math.min((xMax-xMin)/(gridN-1||1),(yMax-yMin)/(gridN-1||1),(zMax-zMin)/(gridN-1||1));
   const L=spacing*0.5;
   const head=px(16), thick=px(2.6);
-  const objs=[];
+  const ab=ArrowBatch2D();
   for(const {x,y,z,vx,vy,vz,m} of raw){
     if(m<1e-10) continue;
     const len=(np.normalize!==false?L:L*(m/maxMag));
@@ -288,10 +355,10 @@ function build2DQuiver3d(np, pscope, color, px, fr){
     const t=projectPt(fr,x+vx*s,y+vy*s,z+vz*s);
     const dx=t[0]-b[0],dy=t[1]-b[1];
     const sl=Math.hypot(dx,dy); if(sl<1e-9) continue;
-    const a=buildArrow2D(b[0],b[1],dx,dy,color,Math.min(head,sl*0.5),thick);
-    if(a) objs.push(a);
+    ab.add(b[0],b[1],dx,dy,Math.min(head,sl*0.5),thick);
   }
-  return objs;
+  const mesh=ab.build(color);
+  return mesh?[mesh]:[];
 }
 
 
@@ -365,7 +432,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
     if(useColor){ if(tp.colorMin!==""&&tp.colorMin!=null)cMin=resolveNum(tp.colorMin,pscope,cMin); if(tp.colorMax!==""&&tp.colorMax!=null)cMax=resolveNum(tp.colorMax,pscope,cMax); }
     const cspan=(cMax-cMin)||1;
     const head=px(16), thick=px(2.6);
-    const objs=[];
+    const ab=ArrowBatch2D();
     for(const {base3,v3,m3,cval} of raw){
       if(m3<1e-9) continue;
       // length in 3-D world units: normalized → constant |L|; else scaled by |v|.
@@ -379,13 +446,13 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
       const dx=t[0]-b[0], dy=t[1]-b[1];
       const screenLen=Math.hypot(dx,dy);
       if(screenLen<1e-9) continue; // points straight along the normal → no glyph
-      const col=useColor?ramp((cval-cMin)/cspan):color;
       // head length scales with the (foreshortened) on-screen length so nearly
       // edge-on arrows don't become all-head.
-      const a=buildArrow2D(b[0],b[1],dx,dy,col,Math.min(head,screenLen*0.5),thick);
-      if(a) objs.push(a);
+      const rgb=useColor?hexRGB(ramp((cval-cMin)/cspan)):null;
+      ab.add(b[0],b[1],dx,dy,Math.min(head,screenLen*0.5),thick, rgb);
     }
-    return objs;
+    const mesh=ab.build(color);
+    return mesh?[mesh]:[];
   }
 
   // ── GRAPH mode ──
@@ -438,7 +505,7 @@ function transformerSamples(tp,paramNode,pscope,inDim){
         samples.push([safeEval(pp.exprX,{...pscope,t})??0,safeEval(pp.exprY,{...pscope,t})??0,safeEval(pp.exprZ,{...pscope,t})??0]);
     }
   } else {
-    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?40:8), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
+    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?128:8), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
     const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
     if(inDim===1){ for(const x of linspace(aMin,aMax,res)) samples.push([x,0,0]); }
     else {
@@ -458,16 +525,16 @@ function build2DGlyphField(np, pscope, color, px, fr){
   let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1],g.vec[2]||0);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
   const head=px(16);
   const thick=px(2.6);
-  const objs=[];
+  const ab=ArrowBatch2D();
   for(const {pos,vec} of pairs){
     const m=Math.hypot(vec[0],vec[1],vec[2]||0); if(m<1e-9) continue;
     const L=lenMode==="raw"?m:lenMode==="scaled"?alen*Math.min(1,m/maxMag):alen;
     const b=projectPt(fr,pos[0],pos[1],pos[2]||0);
     const tip=projectPt(fr,pos[0]+vec[0]/m*L,pos[1]+vec[1]/m*L,(pos[2]||0)+(vec[2]||0)/m*L);
-    const a=buildArrow2D(b[0],b[1],tip[0]-b[0],tip[1]-b[1],color,Math.min(head,L*0.5),thick);
-    if(a) objs.push(a);
+    ab.add(b[0],b[1],tip[0]-b[0],tip[1]-b[1],Math.min(head,L*0.5),thick);
   }
-  return objs;
+  const mesh=ab.build(color);
+  return mesh?[mesh]:[];
 }
 
 // Flow surface in a 2-D viewport. The trajectories are integrated in full 3-D
