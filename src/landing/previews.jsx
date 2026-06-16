@@ -405,19 +405,12 @@ function LivePreview({ kind="field", onOpen }){
   const camNode = nodes[camId];
   const scope = useMemo(()=>buildScopeForCamera(camId, nodes, animValsRef.current), [nodes, camId, tick]);
 
-  const showOpen = camNode?.props?.showOpenBtn!==false;
   const handleOpen = onOpen || (()=>openDemoProject(kind));
 
   return (
     <div ref={hostRef} style={{position:"absolute",inset:0}}>
       <ViewportSwitch camNode={camNode} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
-        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>
-      {showOpen && (
-        <button className="dk-openproj dk-openproj-float" onClick={handleOpen}
-          style={{position:"absolute",right:10,bottom:10,zIndex:5}}>
-          Open project →
-        </button>
-      )}
+        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={handleOpen}/>
     </div>
   );
 }

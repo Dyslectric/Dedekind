@@ -5,7 +5,7 @@ import { resolveNum } from "../core/math.js";
 import { FnDefRow } from "./FnDefRow.jsx";
 import { useUI } from "../theme/tokens.jsx";
 
-function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
+function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode, mobile }) {
   const [, forceUpdate] = useState(0);
   useEffect(() => {
     let raf;
@@ -39,17 +39,31 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode }) {
     return Number(v.toPrecision(5)).toString();
   };
 
+  // On mobile the overlay is placed UNDER the graph as a full-width bar (it
+  // flows in the column layout the viewport sets up), instead of floating over
+  // the plot where it would cover the geometry and be awkward to drag with a
+  // thumb. On desktop it stays a compact floating panel in the lower-left.
+  const containerStyle = mobile ? {
+    position:"relative", width:"100%", zIndex:10,
+    background:"#06081499", backdropFilter:"blur(6px)",
+    borderTop:"1px solid #1a1e38",
+    padding:"8px 12px", fontFamily:"monospace", fontSize:14,
+    pointerEvents:"auto", lineHeight:1.8, boxSizing:"border-box",
+    userSelect:"none",
+  } : {
+    position:"absolute", bottom:36, left:8, zIndex:10,
+    background:"#06081499", backdropFilter:"blur(6px)",
+    border:"1px solid #1a1e38", borderRadius:6,
+    padding:"6px 10px", fontFamily:"monospace", fontSize:13,
+    pointerEvents:"auto", lineHeight:1.7, maxWidth:240,
+    userSelect:"none",
+  };
   return (
     <div
-      style={{
-        position:"absolute", bottom:36, left:8, zIndex:10,
-        background:"#06081499", backdropFilter:"blur(6px)",
-        border:"1px solid #1a1e38", borderRadius:6,
-        padding:"6px 10px", fontFamily:"monospace", fontSize:13,
-        pointerEvents:"auto", lineHeight:1.7, maxWidth:240,
-        userSelect:"none",
-      }}
+      style={containerStyle}
       onMouseDown={e => e.stopPropagation()}
+      onTouchStart={e => e.stopPropagation()}
+      onTouchMove={e => e.stopPropagation()}
       onWheel={e => e.stopPropagation()}
     >
       {scalars.map(n => {

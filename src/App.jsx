@@ -35,9 +35,9 @@ function SharePage({data}){
   // A shared/embedded page can offer a button to open the whole scene in the
   // full editor. The shared payload already carries the camera's entire
   // dependency subgraph plus the project node, so we just re-serialize it as a
-  // normal project hash and reload into the editor. Gated by the same
-  // showOpenBtn camera prop used by the landing previews (default on).
-  const showOpen = camNode?.props.showOpenBtn !== false;
+  // normal project hash and reload into the editor. The viewport itself places
+  // the button (desktop-only, bottom-right corner) and respects the camera's
+  // showOpenBtn prop.
   const openProject=useCallback(()=>{
     try{
       const hash=serializeProject(liveNodes);
@@ -53,11 +53,7 @@ function SharePage({data}){
     </div>}
     <div style={{flex:1,minHeight:0,position:"relative"}}>
       <ViewportSwitch camNode={camNode} nodes={liveNodes} scope={scope} theme={theme} projectNode={proj}
-        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={updateNode}/>
-      {showOpen&&<button onClick={openProject}
-        style={{position:"absolute",right:12,bottom:12,zIndex:20,...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55",background:"#0009",cursor:"pointer",pointerEvents:"auto"}}>
-        Open project →
-      </button>}
+        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={updateNode} onOpenProject={openProject}/>
     </div>
   </div></UICtx.Provider>;
 }

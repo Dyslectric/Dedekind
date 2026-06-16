@@ -11,9 +11,23 @@ import { ScalarOverlay } from "./ScalarOverlay.jsx";
 import { PropsPanelWindow, WBtn } from "./primitives.jsx";
 import { resolveNum } from "../core/math.js";
 
+// ── Mobile detection ─────────────────────────────────────────────────────────
+// Narrow viewport (phones) → stack the scalar overlay UNDER the graph instead of
+// floating it over the plot. Tracks live so rotating the device re-lays-out.
+function useIsMobile(breakpoint=640){
+  const [mobile,setMobile]=useState(()=> typeof window!=="undefined" && window.innerWidth<=breakpoint);
+  useEffect(()=>{
+    const onR=()=>setMobile(window.innerWidth<=breakpoint);
+    window.addEventListener("resize",onR);
+    return ()=>window.removeEventListener("resize",onR);
+  },[breakpoint]);
+  return mobile;
+}
+
 // ── 3D Viewport ──────────────────────────────────────────────────────────────
-function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animValsRef, onUpdateNode }) {
+function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animValsRef, onUpdateNode, onOpenProject }) {
   const{ui,S}=useUI();
+  const isMobile=useIsMobile();
   const mountRef = useRef(null);
   const stRef = useRef({});
 
@@ -168,10 +182,57 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     const onKD=e=>{keys[e.code]=true;};
     const onKU=e=>{keys[e.code]=false;};
 
+    // ── Touch controls ─────────────────────────────────────────────────────
+    // One finger orbits (like LMB); two fingers pan (like RMB) and pinch to
+    // zoom. Mirrors the mouse math above so touch and pointer feel identical.
+    let touchMode=0, tlx=0, tly=0, tDist=0;   // mode: 1=orbit, 2=pan/pinch
+    const tMid=ts=>({x:(ts[0].clientX+ts[1].clientX)/2, y:(ts[0].clientY+ts[1].clientY)/2});
+    const tSpread=ts=>Math.hypot(ts[0].clientX-ts[1].clientX, ts[0].clientY-ts[1].clientY);
+    const onTS=e=>{
+      e.preventDefault(); onFocus(); stRef.current.userMoved=true;
+      if(e.touches.length===1){ touchMode=1; tlx=e.touches[0].clientX; tly=e.touches[0].clientY; }
+      else if(e.touches.length>=2){ touchMode=2; const m=tMid(e.touches); tlx=m.x; tly=m.y; tDist=tSpread(e.touches); }
+    };
+    const onTM=e=>{
+      e.preventDefault();
+      if(touchMode===1 && e.touches.length>=1){
+        const dx=e.touches[0].clientX-tlx, dy=e.touches[0].clientY-tly;
+        tlx=e.touches[0].clientX; tly=e.touches[0].clientY;
+        orb.theta-=dx*0.005; orb.phi=Math.max(0.05,Math.min(Math.PI-0.05,orb.phi-dy*0.005));
+        updateCam(); syncCamProps();
+      } else if(touchMode===2 && e.touches.length>=2){
+        const m=tMid(e.touches), dx=m.x-tlx, dy=m.y-tly; tlx=m.x; tly=m.y;
+        // pan (mirror RMB)
+        const fwd=new THREE.Vector3(Math.sin(orb.phi)*Math.sin(orb.theta),Math.cos(orb.phi),Math.sin(orb.phi)*Math.cos(orb.theta));
+        const right=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+        const ps=orb.radius*0.001;
+        orb.target.addScaledVector(right,-dx*ps); orb.target.addScaledVector(new THREE.Vector3(0,1,0),dy*ps);
+        // pinch zoom (mirror wheel)
+        const sp=tSpread(e.touches);
+        if(tDist>0 && sp>0){
+          const f=tDist/sp;
+          const cn=stRef.current.camNode;
+          if(cn?.props?.projection==="orthographic") orb.orthoSize=Math.max(0.05,Math.min(1000,orb.orthoSize*f));
+          else orb.radius=Math.max(0.5,Math.min(500,orb.radius*f));
+        }
+        tDist=sp;
+        updateCam(); syncCamProps();
+      }
+    };
+    const onTE=e=>{
+      if(e.touches.length===0) touchMode=0;
+      else if(e.touches.length===1){ touchMode=1; tlx=e.touches[0].clientX; tly=e.touches[0].clientY; }
+    };
+
     renderer.domElement.setAttribute("tabindex","0");
+    renderer.domElement.style.touchAction="none";
     renderer.domElement.addEventListener("mousedown",onMD);
     renderer.domElement.addEventListener("contextmenu",e=>e.preventDefault());
     renderer.domElement.addEventListener("wheel",onWheel,{passive:false});
+    renderer.domElement.addEventListener("touchstart",onTS,{passive:false});
+    renderer.domElement.addEventListener("touchmove",onTM,{passive:false});
+    renderer.domElement.addEventListener("touchend",onTE);
+    renderer.domElement.addEventListener("touchcancel",onTE);
     renderer.domElement.addEventListener("focus",onFocus);
     renderer.domElement.addEventListener("blur",onBlur);
     window.addEventListener("mouseup",onMU);
@@ -319,6 +380,8 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     return()=>{
       clearTimeout(syncTimer);cancelAnimationFrame(rafId);if(resizeRaf)cancelAnimationFrame(resizeRaf);ro.disconnect();
       renderer.domElement.removeEventListener("mousedown",onMD);renderer.domElement.removeEventListener("wheel",onWheel);
+      renderer.domElement.removeEventListener("touchstart",onTS);renderer.domElement.removeEventListener("touchmove",onTM);
+      renderer.domElement.removeEventListener("touchend",onTE);renderer.domElement.removeEventListener("touchcancel",onTE);
       renderer.domElement.removeEventListener("focus",onFocus);renderer.domElement.removeEventListener("blur",onBlur);
       window.removeEventListener("mouseup",onMU);window.removeEventListener("mousemove",onMM);
       window.removeEventListener("keydown",onKD);window.removeEventListener("keyup",onKU);
@@ -339,13 +402,30 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
 
   const handleReset=useCallback(()=>{stRef.current.userMoved=false;stRef.current.refit=true;stRef.current.dirty=true;},[]);
 
-  return(
-    <div ref={mountRef} style={{width:"100%",height:"100%",cursor:"grab",position:"relative"}}>
-      {camNode.props.showResetBtn!==false&&<button onClick={handleReset} style={{position:"absolute",bottom:8,left:8,...S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"44",zIndex:2,pointerEvents:"auto"}}>⟳ reset view</button>}
-      {camNode.props.showHints&&<div style={{position:"absolute",bottom:8,right:8,color:"#1c2a3a",fontSize:14,fontFamily:"monospace",pointerEvents:"none",lineHeight:1.8,textAlign:"right"}}>
-        LMB orbit · RMB pan · scroll zoom<br/>WASD/↑↓←→ pan · QE up/dn<br/>IJKL orbit · R/F zoom
-      </div>}
-      {animValsRef && <ScalarOverlay camNode={camNode} nodes={nodes} scope={scope} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>}
+  const overlayEl = animValsRef && <ScalarOverlay camNode={camNode} nodes={nodes} scope={scope} animValsRef={animValsRef} onUpdateNode={onUpdateNode} mobile={isMobile}/>;
+  // Open-project button is desktop-only: a small control in the bottom-right
+  // corner of the viewport. Mobile shows no editor/open affordances at all.
+  const showOpen = onOpenProject && camNode.props.showOpenBtn!==false && !isMobile;
+  // Stable structure across the breakpoint: an outer column whose first child is
+  // always the canvas host (mountRef). On desktop the overlay floats inside the
+  // host; on mobile it drops below as a full-width bar. The host element never
+  // changes identity, so the WebGL canvas stays attached when the layout flips.
+  return (
+    <div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div ref={mountRef} style={{width:"100%",flex:"1 1 0",minHeight:0,cursor:"grab",position:"relative"}}>
+        {camNode.props.showResetBtn!==false&&<button onClick={handleReset} style={{position:"absolute",bottom:8,left:8,...S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"44",zIndex:2,pointerEvents:"auto"}}>⟳ reset view</button>}
+        {camNode.props.showHints&&<div style={{position:"absolute",bottom:8,right:8,color:"#1c2a3a",fontSize:14,fontFamily:"monospace",pointerEvents:"none",lineHeight:1.8,textAlign:"right"}}>
+          LMB orbit · RMB pan · scroll zoom<br/>WASD/↑↓←→ pan · QE up/dn<br/>IJKL orbit · R/F zoom
+        </div>}
+        {showOpen && (
+          <button onClick={onOpenProject}
+            style={{position:"absolute",right:8,bottom:8,zIndex:3,...S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55",background:"#0009",cursor:"pointer",pointerEvents:"auto"}}>
+            Open project →
+          </button>
+        )}
+        {!isMobile && overlayEl}
+      </div>
+      {isMobile && overlayEl}
     </div>
   );
 }
@@ -356,7 +436,9 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
 // Two dirty flags: `plotDirty` rebuilds the (expensive) GPU plot geometry only
 // when nodes/scope change or an animator advances; `viewDirty` just re-renders
 // and redraws the cheap overlay on pan/zoom/resize.
-function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode }) {
+function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, onOpenProject }) {
+  const{ui,S}=useUI();
+  const isMobile=useIsMobile();
   const mountRef=useRef(null);
   const stRef=useRef({camNode,nodes,scope,theme,animValsRef,plotDirty:true,viewDirty:true});
   const rafRef=useRef(null);
@@ -522,10 +604,59 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
       // zoom changes pxPerWorld → arrows/points must re-size → rebuild plots
       stRef.current.viewDirty=true; stRef.current.plotDirty=true;
     };
+    // ── Touch controls ──────────────────────────────────────────────────────
+    // One finger pans; two fingers pinch to zoom about the pinch midpoint.
+    // Mirrors the mouse pan / wheel-zoom math so touch matches pointer behavior.
+    let tMode2=0, tlx2=0, tly2=0, tDist2=0;
+    const tMid2=ts=>({x:(ts[0].clientX+ts[1].clientX)/2, y:(ts[0].clientY+ts[1].clientY)/2});
+    const tSpread2=ts=>Math.hypot(ts[0].clientX-ts[1].clientX, ts[0].clientY-ts[1].clientY);
+    const onTS=e=>{
+      e.preventDefault();
+      if(e.touches.length===1){ tMode2=1; tlx2=e.touches[0].clientX; tly2=e.touches[0].clientY; }
+      else if(e.touches.length>=2){ tMode2=2; const m=tMid2(e.touches); tlx2=m.x; tly2=m.y; tDist2=tSpread2(e.touches); }
+    };
+    const onTM=e=>{
+      e.preventDefault();
+      const v=viewRef.current; const hw=v.hh*(W/H||1);
+      if(tMode2===1 && e.touches.length>=1){
+        const x=e.touches[0].clientX, y=e.touches[0].clientY;
+        v.cx-=(x-tlx2)/W*hw*2; v.cy+=(y-tly2)/H*v.hh*2;
+        tlx2=x; tly2=y;
+        stRef.current.viewDirty=true; stRef.current.plotDirty=true;
+      } else if(tMode2===2 && e.touches.length>=2){
+        const m=tMid2(e.touches), sp=tSpread2(e.touches);
+        const rect=overlay.getBoundingClientRect();
+        // zoom about the pinch midpoint
+        if(tDist2>0 && sp>0){
+          const f=tDist2/sp;
+          const hw0=v.hh*(W/H||1);
+          const wx=v.cx+((m.x-rect.left)/rect.width-0.5)*hw0*2;
+          const wy=v.cy-((m.y-rect.top)/rect.height-0.5)*v.hh*2;
+          v.hh=Math.max(1e-4,Math.min(1e6,v.hh*f));
+          const nhw=v.hh*(W/H||1);
+          v.cx=wx-((m.x-rect.left)/rect.width-0.5)*nhw*2;
+          v.cy=wy+((m.y-rect.top)/rect.height-0.5)*v.hh*2;
+        }
+        // pan by midpoint movement
+        const hw1=v.hh*(W/H||1);
+        v.cx-=(m.x-tlx2)/W*hw1*2; v.cy+=(m.y-tly2)/H*v.hh*2;
+        tlx2=m.x; tly2=m.y; tDist2=sp;
+        stRef.current.viewDirty=true; stRef.current.plotDirty=true;
+      }
+    };
+    const onTE=e=>{
+      if(e.touches.length===0) tMode2=0;
+      else if(e.touches.length===1){ tMode2=1; tlx2=e.touches[0].clientX; tly2=e.touches[0].clientY; }
+    };
+    overlay.style.touchAction="none";
     overlay.addEventListener("mousedown",onMD);
     window.addEventListener("mouseup",onMU);
     window.addEventListener("mousemove",onMM);
     overlay.addEventListener("wheel",onWheel,{passive:false});
+    overlay.addEventListener("touchstart",onTS,{passive:false});
+    overlay.addEventListener("touchmove",onTM,{passive:false});
+    overlay.addEventListener("touchend",onTE);
+    overlay.addEventListener("touchcancel",onTE);
 
     return()=>{
       cancelAnimationFrame(rafRef.current); if(resizeRaf)cancelAnimationFrame(resizeRaf); ro.disconnect();
@@ -533,6 +664,10 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
       window.removeEventListener("mouseup",onMU);
       window.removeEventListener("mousemove",onMM);
       overlay.removeEventListener("wheel",onWheel);
+      overlay.removeEventListener("touchstart",onTS);
+      overlay.removeEventListener("touchmove",onTM);
+      overlay.removeEventListener("touchend",onTE);
+      overlay.removeEventListener("touchcancel",onTE);
       for(const o of inScene) scene.remove(o);
       for(const [,entry] of plotCache){ for(const o of entry.objs){ o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } }
       plotCache.clear(); inScene.clear();
@@ -545,18 +680,29 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode })
 
   useEffect(()=>{ stRef.current={...stRef.current,camNode,nodes,scope,theme,animValsRef,plotDirty:true,viewDirty:true}; },[camNode,nodes,scope,theme,animValsRef]);
 
+  const overlayEl = animValsRef&&<ScalarOverlay camNode={camNode} nodes={nodes} scope={scope} animValsRef={animValsRef} onUpdateNode={onUpdateNode} mobile={isMobile}/>;
+  const showOpen = onOpenProject && camNode.props.showOpenBtn!==false && !isMobile;
   return(
-    <div ref={mountRef} style={{width:"100%",height:"100%",position:"relative",overflow:"hidden"}}>
-      {animValsRef&&<ScalarOverlay camNode={camNode} nodes={nodes} scope={scope} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>}
+    <div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div ref={mountRef} style={{width:"100%",flex:"1 1 0",minHeight:0,position:"relative",overflow:"hidden"}}>
+        {!isMobile && overlayEl}
+        {showOpen && (
+          <button onClick={onOpenProject}
+            style={{position:"absolute",right:8,bottom:8,zIndex:3,...S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55",background:"#0009",cursor:"pointer",pointerEvents:"auto"}}>
+            Open project →
+          </button>
+        )}
+      </div>
+      {isMobile && overlayEl}
     </div>
   );
 }
 
-function ViewportSwitch({ camNode, nodes, scope, theme, projectNode, onCameraChange, animValsRef, onUpdateNode }) {
+function ViewportSwitch({ camNode, nodes, scope, theme, projectNode, onCameraChange, animValsRef, onUpdateNode, onOpenProject }) {
   if(!camNode)return null;
   return camNode.props.mode==="2d"
-    ?<Viewport2D camNode={camNode} nodes={nodes} scope={scope} theme={theme} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>
-    :<Viewport3D camNode={camNode} nodes={nodes} scope={scope} projectNode={projectNode} onCameraChange={onCameraChange} animValsRef={animValsRef} onUpdateNode={onUpdateNode}/>;
+    ?<Viewport2D camNode={camNode} nodes={nodes} scope={scope} theme={theme} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={onOpenProject}/>
+    :<Viewport3D camNode={camNode} nodes={nodes} scope={scope} projectNode={projectNode} onCameraChange={onCameraChange} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={onOpenProject}/>;
 }
 
 // ── Detached floating window ─────────────────────────────────────────────────
@@ -611,5 +757,5 @@ function ViewportStrip({ nodes, scopeMap, theme, detached, projectNode, onCamera
 }
 
 export {
-  Viewport3D, Viewport2D, ViewportSwitch, DetachedWindow, ViewportStrip
+  Viewport3D, Viewport2D, ViewportSwitch, DetachedWindow, ViewportStrip, useIsMobile
 };

@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 import { LivePreview } from "./previews.jsx";
+import { useIsMobile } from "../components/Viewport.jsx";
 
 // ── Landing page ─────────────────────────────────────────────────────────────
 // Full-screen marketing overlay shown at root. "Open the editor" triggers a
 // fade-slide-down (handled by the parent via the `closing` class) to reveal the
 // editor beneath it. The three feature visuals are real LivePreview viewports.
 function Landing({ onOpen, closing }){
+  const isMobile = useIsMobile();
   const stageRef = useRef(null);
   const svgRef = useRef(null);
 
@@ -58,7 +60,7 @@ function Landing({ onOpen, closing }){
             <a href="#dk-features">Features</a>
             <a href="https://github.com/Dyslectric/Dedekind">Source</a>
           </nav>
-          <button className="dk-btn" onClick={open}>Open the editor →</button>
+          {!isMobile && <button className="dk-btn" onClick={open}>Open the editor →</button>}
         </div>
       </header>
 
@@ -73,7 +75,7 @@ function Landing({ onOpen, closing }){
                 functions, run those through transformers and flows, and point a camera at the result.
                 Edit anything and the view updates right away. Most of the rendering runs on the GPU.</p>
               <div className="dk-cta">
-                <button className="dk-btn dk-btn-lg dk-btn-primary" onClick={open}>Open the editor →</button>
+                {!isMobile && <button className="dk-btn dk-btn-lg dk-btn-primary" onClick={open}>Open the editor →</button>}
                 <a className="dk-btn dk-btn-lg" href="#dk-model">How it works</a>
               </div>
               <div className="dk-meta">
@@ -261,11 +263,22 @@ function Landing({ onOpen, closing }){
         <section className="dk-final">
           <div className="dk-wrap">
             <div className="dk-eyebrow" style={{textAlign:"center"}}>Runs in your browser · nothing to install</div>
-            <h2>Open it and plot something.</h2>
-            <p>Start from a blank 2D canvas, or load the demo project and take it apart to see how it's put together.</p>
-            <div className="dk-cta dk-cta-center">
-              <button className="dk-btn dk-btn-lg dk-btn-primary" onClick={open}>Open the editor →</button>
-            </div>
+            {isMobile ? (
+              <>
+                <h2>Open it on a desktop to plot something.</h2>
+                <p>The full node-graph editor is built for a larger screen and a pointer. Visit Dedekind on a
+                  desktop browser to start from a blank canvas or take the demos apart. The demos above stay
+                  fully interactive here — drag the sliders and pan or pinch the graphs.</p>
+              </>
+            ) : (
+              <>
+                <h2>Open it and plot something.</h2>
+                <p>Start from a blank 2D canvas, or load the demo project and take it apart to see how it's put together.</p>
+                <div className="dk-cta dk-cta-center">
+                  <button className="dk-btn dk-btn-lg dk-btn-primary" onClick={open}>Open the editor →</button>
+                </div>
+              </>
+            )}
           </div>
         </section>
 
@@ -451,6 +464,20 @@ const CSS = `
   .dk-cutcol{height:1px;width:auto;}
   .dk-cutcol span{display:none;}
   .dk-nav{display:none;}
+}
+@media (max-width:640px){
+  /* The scalar overlay drops to a bar UNDER the canvas inside each preview
+     panel on phones. Width is clamped to the column first — using min-height
+     with an aspect-ratio let the browser resolve WIDTH from the height
+     (440 * 3/4 = 330px) and overflow narrow screens. So: full column width up to
+     a cap, a fixed tall HEIGHT (not min-height), and min-width:0 so the grid
+     item is allowed to shrink. box-sizing keeps the border inside the width. */
+  .dk-feat{grid-template-columns:minmax(0,1fr);}
+  .dk-art,.dk-accel-art,.dk-accel-art2{
+    aspect-ratio:auto; min-height:0; height:440px;
+    width:100%; max-width:320px; min-width:0;
+    margin-left:auto; margin-right:auto; box-sizing:border-box;
+  }
 }
 @media (prefers-reduced-motion:reduce){ .dk-land{transition:opacity .3s ease;} .dk-land.dk-closing{transform:none;} }
 `;

@@ -112,7 +112,11 @@ function makeS(ui){
 }
 
 // Context carries the resolved UI palette + matching S styles to all chrome.
-const UICtx = createContext({ ui: UI_DEFAULTS, StyleTokens });
+// The default value must include `S` (not just StyleTokens): components like the
+// viewport read `const {ui,S}=useUI()` and use S.btnSm, and the landing-page
+// LivePreview renders them WITHOUT wrapping in a Provider. Without a default S
+// those reads throw "cannot read properties of undefined (reading 'btnSm')".
+const UICtx = createContext({ ui: UI_DEFAULTS, S: makeS(UI_DEFAULTS), StyleTokens });
 function useUI(){ return useContext(UICtx); }
 
 // ── Math helpers ─────────────────────────────────────────────────────────────
