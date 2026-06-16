@@ -51,6 +51,11 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
       theta: resolveNum(ip.orbTheta,{},0.8),
       phi:   resolveNum(ip.orbPhi,{},1.0),
       radius:resolveNum(ip.orbRadius,{},14),
+      // Live orthographic zoom (half-height of the view box in world units, ×2 =
+      // the camNode's orthoSize prop). The wheel mutates this in ortho mode since
+      // an orthographic camera's on-screen scale comes from its frustum size, not
+      // its distance — changing orb.radius alone does nothing visible.
+      orthoSize:resolveNum(ip.orthoSize,{},10),
       target:new THREE.Vector3(resolveNum(ip.targetX,{},0),resolveNum(ip.targetZ,{},0),resolveNum(ip.targetY,{},0)),
     };
     const updateCam=()=>{
@@ -76,6 +81,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
           orbTheta: orb.theta.toFixed(4),
           orbPhi:   orb.phi.toFixed(4),
           orbRadius:orb.radius.toFixed(4),
+          orthoSize:orb.orthoSize.toFixed(4),
         }});
       },250);
     };
@@ -97,7 +103,19 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
       }
       if(mouseBtn>=0){updateCam();syncCamProps();}
     };
-    const onWheel=e=>{e.preventDefault();orb.radius=Math.max(0.5,Math.min(500,orb.radius*Math.exp(e.deltaY*0.001)));stRef.current.userMoved=true;updateCam();syncCamProps();};
+    const onWheel=e=>{
+      e.preventDefault();
+      const f=Math.exp(e.deltaY*0.001);
+      const cn=stRef.current.camNode;
+      if(cn?.props?.projection==="orthographic"){
+        // Ortho: zoom by scaling the view-box size. Distance (radius) is irrelevant
+        // to an orthographic projection's scale, so we scale orthoSize instead.
+        orb.orthoSize=Math.max(0.05,Math.min(1000,orb.orthoSize*f));
+      } else {
+        orb.radius=Math.max(0.5,Math.min(500,orb.radius*f));
+      }
+      stRef.current.userMoved=true;updateCam();syncCamProps();
+    };
     const keys={};
     const onKD=e=>{keys[e.code]=true;};
     const onKU=e=>{keys[e.code]=false;};
@@ -152,8 +170,9 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
         if(keys["KeyD"]||keys["ArrowRight"]){orb.target.addScaledVector(right,-speed);moved=true;}
         if(keys["KeyQ"]||keys["PageUp"])    {orb.target.y+=speed;moved=true;}
         if(keys["KeyE"]||keys["PageDown"])  {orb.target.y-=speed;moved=true;}
-        if(keys["KeyR"]){orb.radius=Math.max(0.5,orb.radius*0.985);moved=true;}
-        if(keys["KeyF"]){orb.radius=Math.min(500,orb.radius*1.015);moved=true;}
+        const orthoMode=cn?.props?.projection==="orthographic";
+        if(keys["KeyR"]){ if(orthoMode)orb.orthoSize=Math.max(0.05,orb.orthoSize*0.985); else orb.radius=Math.max(0.5,orb.radius*0.985); moved=true;}
+        if(keys["KeyF"]){ if(orthoMode)orb.orthoSize=Math.min(1000,orb.orthoSize*1.015); else orb.radius=Math.min(500,orb.radius*1.015); moved=true;}
         if(keys["KeyI"]){orb.phi=Math.max(0.05,orb.phi-0.018);moved=true;}
         if(keys["KeyK"]){orb.phi=Math.min(Math.PI-0.05,orb.phi+0.018);moved=true;}
         if(keys["KeyJ"]){orb.theta-=0.018;moved=true;}
@@ -176,11 +195,12 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
           orb.theta=resolveNum(p.orbTheta,s,0.8);
           orb.phi=resolveNum(p.orbPhi,s,1.0);
           orb.radius=resolveNum(p.orbRadius,s,14);
+          orb.orthoSize=resolveNum(p.orthoSize,s,10);
           updateCam();
         }
         const isOrtho=p.projection==="orthographic";activeCam=isOrtho?ortho:persp;
         if(!isOrtho){persp.fov=resolveNum(p.fov,s,50);persp.near=resolveNum(p.near,s,0.01);persp.far=resolveNum(p.far,s,2000);persp.updateProjectionMatrix();}
-        else{const asp=(el.clientWidth||w)/(el.clientHeight||h);const os=resolveNum(p.orthoSize,s,10)/2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.near=resolveNum(p.near,s,0.01);ortho.far=resolveNum(p.far,s,2000);ortho.updateProjectionMatrix();}
+        else{const asp=(el.clientWidth||w)/(el.clientHeight||h);const os=orb.orthoSize/2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.near=resolveNum(p.near,s,0.01);ortho.far=resolveNum(p.far,s,2000);ortho.updateProjectionMatrix();}
         rebuildScene(scene,objMap,cn,ns,s,stRef.current.animValsRef?.current);
         // Seed correct viewport size into any screen-space LineMaterials just built.
         { const w2=el.clientWidth||w, h2=el.clientHeight||h;
@@ -238,8 +258,8 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
       if(w2===lastW&&h2===lastH)return; // ignore no-op notifications (avoids RO loop)
       lastW=w2; lastH=h2;
       renderer.setSize(w2,h2,false);persp.aspect=w2/h2;persp.updateProjectionMatrix();
-      const cn=stRef.current.camNode,sc=stRef.current.scope||{};
-      if(cn?.props.projection==="orthographic"){const os=resolveNum(cn.props.orthoSize,sc,10)/2,asp=w2/h2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.updateProjectionMatrix();}
+      const cn=stRef.current.camNode;
+      if(cn?.props.projection==="orthographic"){const os=orb.orthoSize/2,asp=w2/h2;ortho.left=-os*asp;ortho.right=os*asp;ortho.top=os;ortho.bottom=-os;ortho.updateProjectionMatrix();}
       // Update screen-space LineMaterial resolution so curve widths stay correct.
       scene.traverse(o=>{if(o.material?._isCurve3d) o.material.resolution.set(w2,h2);});
       stRef.current.dirty=true;
