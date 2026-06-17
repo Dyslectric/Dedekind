@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain, plotSignature } from "../core/scope.js";
-import { applyDomain } from "../geometry/rebuild.js";
-import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
+import { applyDomain, pointGradientColors, rampColors } from "../geometry/rebuild.js";
+import { parsePointSeq, parseGlyphField, parsePointsExplicit, parseGlyphsExplicit } from "../geometry/parse.js";
 import { integrateFlow } from "../geometry/flow.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
@@ -274,16 +274,30 @@ function build2DCurve3d(np, pscope, color, px, fr){
 }
 
 function build2DPointSeq(np, pscope, color, px, fr){
-  const pts=parsePointSeq(np.points||np.data, pscope);
+  // Parse positions (and the per-point color slot) the same way the 3-D renderer
+  // does: prefer the explicit dropdown-authored parse so the recursible color
+  // slot is honoured; fall back to the legacy text parse for old projects.
+  let pts, cols=null;
+  if(np.__explicit){
+    const r=parsePointsExplicit(np.__explicit, pscope);
+    pts=r.pts;
+    cols = np.__useColor ? rampColors(r.cols, np, pscope) : pointGradientColors(pts, np, pscope);
+  } else {
+    pts=parsePointSeq(np.points||np.data, pscope);
+    cols=pointGradientColors(pts, np, pscope);
+  }
   const rPx=resolveNum(np.radius,pscope,4);
   const r=px(rPx); // constant on-screen radius
   const objs=[];
   const proj=pts.map(([x,y,z])=>projectPt(fr,x,y,z||0));
+  // Per-point colors render as hex; connecting line stays the node color.
+  const rgbHex=(c)=>"#"+[0,1,2].map(k=>Math.round(Math.max(0,Math.min(1,c[k]))*255).toString(16).padStart(2,"0")).join("");
   if(np.drawLines!==false && proj.length>1){
     objs.push(...buildThickLine2D(proj, color, px(LINE_PX)/2));
   }
-  for(const [u,v] of proj){
-    objs.push(buildDisk2D(u,v,r,color));
+  for(let i=0;i<proj.length;i++){
+    const [u,v]=proj[i];
+    objs.push(buildDisk2D(u,v,r, cols&&cols[i]?rgbHex(cols[i]):color));
   }
   return objs;
 }
@@ -519,19 +533,29 @@ function transformerSamples(tp,paramNode,pscope,inDim){
 }
 
 function build2DGlyphField(np, pscope, color, px, fr){
-  const pairs=parseGlyphField(np.pairs||np.data, pscope);
+  // Mirror the 3-D glyph path: explicit parse honours the recursible color slot;
+  // legacy projects fall back to the plain text parse with no per-glyph color.
+  let pairs, gcols=null;
+  if(np.__explicit){
+    const r=parseGlyphsExplicit(np.__explicit, pscope);
+    pairs=r.pairs;
+    if(np.__useColor) gcols=rampColors(r.cols, np, pscope);
+  } else {
+    pairs=parseGlyphField(np.pairs||np.data, pscope);
+  }
   const lenMode=np.lenMode||(np.normalize===false?"scaled":"uniform");
   const alen=resolveNum(np.arrowLen,pscope,0.5);
   let maxMag=0; for(const g of pairs){const m=Math.hypot(g.vec[0],g.vec[1],g.vec[2]||0);if(m>maxMag)maxMag=m;} maxMag=maxMag||1;
   const head=px(16);
   const thick=px(2.6);
   const ab=ArrowBatch2D();
-  for(const {pos,vec} of pairs){
+  for(let gi=0;gi<pairs.length;gi++){
+    const {pos,vec}=pairs[gi];
     const m=Math.hypot(vec[0],vec[1],vec[2]||0); if(m<1e-9) continue;
     const L=lenMode==="raw"?m:lenMode==="scaled"?alen*Math.min(1,m/maxMag):alen;
     const b=projectPt(fr,pos[0],pos[1],pos[2]||0);
     const tip=projectPt(fr,pos[0]+vec[0]/m*L,pos[1]+vec[1]/m*L,(pos[2]||0)+(vec[2]||0)/m*L);
-    ab.add(b[0],b[1],tip[0]-b[0],tip[1]-b[1],Math.min(head,L*0.5),thick);
+    ab.add(b[0],b[1],tip[0]-b[0],tip[1]-b[1],Math.min(head,L*0.5),thick, gcols?gcols[gi]:null);
   }
   const mesh=ab.build(color);
   return mesh?[mesh]:[];
@@ -560,7 +584,7 @@ function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals, fr){
   const stepSize=resolveNum(np.stepSize,pscope,0.02);
   const field={exprX:fnNode.props.out0||"0",exprY:fnNode.props.out1||"0",exprZ:fnNode.props.out2||"0"};
   const seedInfo=seedNode.type==="points"
-    ?{pts:parsePointSeq(seedNode.props.data,seedSc),grid:false}
+    ?{pts:parsePointsExplicit(seedNode.props,seedSc).pts,grid:false}
     :sampleParamSpace(seedNode,seedSc);
   const seeds=seedInfo.pts||[];
   const seedDeg=seedNode.type==="paramSpace"?Math.max(1,Math.min(2,Math.round(Number(seedNode.props.degree||"1")))):0;

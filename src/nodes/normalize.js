@@ -68,18 +68,45 @@ function normalizeNode(node){
       }};
     }
     case "points": {
-      const xy = (p.space||"xy")==="xy";
-      if(p.hasVectors){
-        // glyph field — project pairs to the plane when in xy space
+      // The points node is authored with explicit dropdowns (kind / mode /
+      // color). Assemble the canonical text the legacy parsers consume so every
+      // downstream consumer (2D/3D renderers, flow seeds, signatures) keeps
+      // working unchanged. The recursible color channel is carried through as
+      // structured props (__colMode/__colInit/…) and resolved by rebuild.js.
+      const kind = p.kind || (p.hasVectors ? "glyphs" : "points");  // back-compat
+      const mode = p.mode || "list";
+      const useColor = !!p.useColor;
+      // Legacy unified node: only `data` present, no explicit fields. Use it
+      // verbatim (the auto-detecting parsers downstream still understand it).
+      const legacy = p.data!=null && p.kind==null && p.mode==null
+        && p.listPoints==null && p.idxPoint==null && p.recInit==null
+        && p.listGlyphs==null && p.idxGlyph==null && p.recGlyphInit==null;
+      const colorCarry = {
+        __ptKind:kind, __ptMode:mode, __useColor:useColor,
+        __colExpr:p.colExpr, __colRecInit:p.colRecInit, __colRecStep:p.colRecStep,
+        // raw explicit props so rebuild can re-parse with per-element color:
+        __explicit:{ kind, mode, useColor,
+          listPoints:p.listPoints, idxPoint:p.idxPoint, idxCount:p.idxCount,
+          recInit:p.recInit, recStep:p.recStep, recCount:p.recCount,
+          listGlyphs:p.listGlyphs, idxGlyph:p.idxGlyph, idxGlyphCount:p.idxGlyphCount,
+          recGlyphInit:p.recGlyphInit, recGlyphStep:p.recGlyphStep, recGlyphCount:p.recGlyphCount,
+          colExpr:p.colExpr, colRecInit:p.colRecInit, colRecStep:p.colRecStep },
+      };
+      if(kind==="glyphs"){
         return { type:"glyphField", props:{
-          pairs: xy ? projectGlyphTextToPlane(p.data) : p.data,
+          pairs: legacy ? p.data : assembleGlyphText(p, mode),
           arrowLen:p.arrowLen, lenMode:p.lenMode, normalize:p.normalize, anim:p.anim, speed:p.speed, crestColor:p.crestColor,
+          colorLo:p.colorLo, colorHi:p.colorHi, colorMin:p.colorMin, colorMax:p.colorMax,
+          ...(legacy?{}:colorCarry),
         }};
       }
       return { type:"pointSeq", props:{
-        points:p.data, radius:p.radius, drawLines:p.drawLines,
-        colorMode:p.colorMode, colorExpr:p.colorExpr, colorLo:p.colorLo, colorHi:p.colorHi, colorMin:p.colorMin, colorMax:p.colorMax,
+        points: legacy ? p.data : assemblePointText(p, mode), radius:p.radius, drawLines:p.drawLines,
+        // legacy gradient still available; when useColor we drive it from the slot
+        colorMode: useColor ? "gradient" : (p.colorMode||"off"),
+        colorExpr:p.colorExpr, colorLo:p.colorLo, colorHi:p.colorHi, colorMin:p.colorMin, colorMax:p.colorMax,
         sequenced:p.sequenced, seqFrac:p.seqFrac, seqVar:p.seqVar,
+        ...(legacy?{}:colorCarry),
       }};
     }
     default:
@@ -117,6 +144,69 @@ function projectGlyphTextToPlane(text){
     const v2=[vc[0]??"0", vc[1]??"0"].join(", ");
     return `${p2} | ${v2}`;
   }).join("\n");
+}
+
+// ── Explicit-props → canonical parser text ───────────────────────────────────
+// The legacy parsers (parsePointSeq / parseGlyphField) accept position-only
+// text and auto-detect mode from syntax. We build that text from the explicit
+// dropdown props so positions/flow-seeds/2D all keep working; the recursible
+// color slot is resolved separately by rebuild.js from the carried props.
+//
+// Color slots are STRIPPED here (the trailing comma-slot for list/the colExpr
+// for index/recursive is not part of the position text), because the legacy
+// parsers would otherwise treat the color expression as a coordinate.
+
+// strip a trailing color slot from a "x, y[, z], color" row when useColor.
+function stripRowColor(row, useColor){
+  if(!useColor) return row;
+  // split top-level commas, drop the last if there are >2 coordinate slots.
+  const parts=[]; let depth=0, cur="";
+  for(const ch of row){
+    if(ch==="("||ch==="[") depth++;
+    else if(ch===")"||ch==="]") depth--;
+    if(ch===","&&depth===0){ parts.push(cur); cur=""; } else cur+=ch;
+  }
+  if(cur!=="") parts.push(cur);
+  if(parts.length>=3) parts.pop();      // drop trailing color slot
+  return parts.join(",");
+}
+function stripGlyphRowColor(row, useColor){
+  if(!useColor) return row;
+  const segs=row.split("|").map(s=>s.trim());
+  // a glyph row is "seed | vector [| color]" → keep first two segments
+  if(segs.length>=3) return segs.slice(0,2).join(" | ");
+  return row;
+}
+
+function assemblePointText(p, mode){
+  const useColor=!!p.useColor;
+  if(mode==="index"){
+    const tuple=p.idxPoint||"";
+    const count=p.idxCount||"64";
+    // force index detection: ensure an i reference exists (idxPoint authored in i)
+    return `${tuple}\n${count}`;
+  }
+  if(mode==="recursive"){
+    const init=p.recInit||"0,0";
+    const step=p.recStep||"x[n-1], y[n-1]";
+    const count=p.recCount||"64";
+    return `${init}\n${step}\n${count}`;
+  }
+  // list
+  const rows=(p.listPoints||"").split(/[\n;]/).map(s=>s.trim()).filter(Boolean);
+  return rows.map(r=>stripRowColor(r,useColor)).join("\n");
+}
+
+function assembleGlyphText(p, mode){
+  const useColor=!!p.useColor;
+  if(mode==="index"){
+    return `${p.idxGlyph||""}\n${p.idxGlyphCount||"48"}`;
+  }
+  if(mode==="recursive"){
+    return `${p.recGlyphInit||""}\n${p.recGlyphStep||""}\n${p.recGlyphCount||"48"}`;
+  }
+  const rows=(p.listGlyphs||"").split(/[\n;]/).map(s=>s.trim()).filter(Boolean);
+  return rows.map(r=>stripGlyphRowColor(r,useColor)).join("\n");
 }
 
 // Is this one of the unified authoring kinds?

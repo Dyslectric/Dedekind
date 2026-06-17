@@ -2,7 +2,7 @@ import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain } from "../core/scope.js";
 import { applyDomain } from "../geometry/rebuild.js";
-import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
+import { parsePointSeq, parseGlyphField, parsePointsExplicit } from "../geometry/parse.js";
 import { integrateFlow } from "../geometry/flow.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
@@ -319,7 +319,7 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
         const steps=Math.max(2,Math.min(2000,resolveNum(np.steps,pscope,500)));const stepSize=resolveNum(np.stepSize,pscope,0.02);
         const field={exprX:fnNode.props.out0||"0",exprY:fnNode.props.out1||"0",exprZ:fnNode.props.out2||"0"};
         const seedInfo = seedNode.type==="points"
-          ? { pts: parsePointSeq(seedNode.props.data, seedSc), grid:false }
+          ? { pts: parsePointsExplicit(seedNode.props, seedSc).pts, grid:false }
           : sampleParamSpace(seedNode,seedSc);
         // A degree-1 param-space seed in the XY plane fills as a solid area; all
         // other cases (points, surfaces) draw stream curves.

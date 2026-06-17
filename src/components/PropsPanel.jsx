@@ -5,7 +5,7 @@ import { collectScalarDeps, resolveScope } from "../core/scope.js";
 import { resolveNum, safeEval } from "../core/math.js";
 import { TYPE_META, makeNode } from "../nodes/model.js";
 import { ADDABLE_KINDS, kindEnabled } from "../nodes/kinds.js";
-import { parsePointSeq, parseGlyphField } from "../geometry/parse.js";
+import { parsePointSeq, parseGlyphField, parsePointsExplicit, parseGlyphsExplicit } from "../geometry/parse.js";
 import { EI, MathInput } from "./MathInput.jsx";
 import { XF } from "./MathField.jsx";
 import { Sec, PR, Toggle, ColorRow, Btn2, NodeAddGrid, PanelTopBar } from "./primitives.jsx";
@@ -602,48 +602,135 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Unified: points / glyphs / sequences ── */}
         {node.type==="points"&&(()=>{
           const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
-          const hasVec=!!node.props.hasVectors;
-          const xy=(node.props.space||"xy")==="xy";
-          const normForCount = hasVec
-            ? {type:"glyphField",props:{pairs:node.props.data}}
-            : {type:"pointSeq",props:{points:node.props.data}};
-          const count = hasVec ? parseGlyphField(node.props.data,scope).length : parsePointSeq(node.props.data,scope).length;
+          const kind = node.props.kind || (node.props.hasVectors ? "glyphs" : "points");
+          const mode = node.props.mode || "list";
+          const useColor = !!node.props.useColor;
+          const isGlyph = kind==="glyphs";
+          // live count for the footer
+          let count=0;
+          try{
+            count = isGlyph ? parseGlyphsExplicit(node.props,scope).pairs.length
+                            : parsePointsExplicit(node.props,scope).pts.length;
+          }catch(e){ count=0; }
+          // tuple shape hint
+          const tupleHint = isGlyph
+            ? "(x, y[, z]) | (vx, vy[, vz])"
+            : "(x, y[, z])";
+          const colorSlotHint = useColor
+            ? (isGlyph ? " | color" : ", color")
+            : "";
           return <>
-            <Sec title="Layout">
-              <PR label="space">
-                <select value={node.props.space||"xy"} onChange={e=>set("space",e.target.value)} style={{...S.inp,width:"100%"}}>
-                  <option value="xy">XY plane (2-D)</option>
-                  <option value="xyz">XYZ space (3-D)</option>
+            <Sec title="Kind">
+              <PR label="type">
+                <select value={kind} onChange={e=>set("kind",e.target.value)} style={{...S.inp,width:"100%"}}>
+                  <option value="points">points</option>
+                  <option value="glyphs">glyphs (point + vector)</option>
                 </select>
               </PR>
-              <PR label="vectors"><Toggle v={hasVec} onChange={v=>set("hasVectors",v)}/></PR>
+              <PR label="source">
+                <select value={mode} onChange={e=>set("mode",e.target.value)} style={{...S.inp,width:"100%"}}>
+                  <option value="list">list (explicit entries)</option>
+                  <option value="index">by index (i, j, k, n)</option>
+                  <option value="recursive">recursive (x[n-k]…)</option>
+                </select>
+              </PR>
+              <PR label="color slot"><Toggle v={useColor} onChange={v=>set("useColor",v)}/></PR>
               <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-                {hasVec
-                  ? <>Each entry is <em>position | vector</em>. {xy?"In XY mode the third component is dropped.":""}</>
-                  : <>Each entry is a point. Turn on <em>vectors</em> to attach an arrow to each.</>}
+                Each entry is <em>{tupleHint}{colorSlotHint}</em>.{" "}
+                {useColor && <>The color slot is a scalar mapped onto the ramp below{mode==="recursive"?", and may reference c[n-1]":""}.</>}
               </div>
             </Sec>
-            <Sec title={hasVec?"Data (position | vector)":"Data (points)"}>
-              <div style={{fontSize:13,color:ui.uiFaint,marginBottom:5,lineHeight:1.7}}>
-                <strong style={{color:ui.uiMuted}}>Plain:</strong> one per line —{" "}
-                <span style={{fontFamily:"monospace",fontSize:13}}>{hasVec? (xy?"x, y | vx, vy":"x, y, z | vx, vy, vz") : (xy?"x, y":"x, y, z")}</span><br/>
-                <strong style={{color:ui.uiMuted}}>Recursive:</strong> initial line, then a line using <em>{hasVec?"x[n-1], vx[n-1]…":"x[n-1], y[n-1]…"}</em>, then a count.<br/>
-                <strong style={{color:ui.uiMuted}}>By index:</strong> closed-form in <em>i</em> (also j, k), then a count.<br/>
-                <strong style={{color:ui.uiMuted}}>Matrix:</strong> 2-D/3-D index <em>i, j(, k)</em>, then sizes (e.g. <em>8, 8</em>).
+
+            {/* ── LIST ── */}
+            {mode==="list" && !isGlyph && <Sec title="Points (list)">
+              <div style={{fontSize:13,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
+                One ordered pair or triple per line (commas inside, lines or <em>;</em> between).{" "}
+                {useColor && <>Append a trailing value for color: <span style={{fontFamily:"monospace"}}>x, y, z, c</span>.</>}
               </div>
-              <MathInput v={node.props.data||""} sc={scope} multiline onChange={v=>set("data",v)}
-                placeholder={hasVec
-                  ? "Plain:\n0,0,0 | 1,0,0\n1,1,0 | 0,1,0\n\nBy index:\ncos(i), sin(i), 0 | -sin(i), cos(i), 0\n48\n\nMatrix:\ni, j, 0 | sin(i), cos(j), 0\n8, 8"
-                  : "Plain:\n0, 0\n1, 1\n2, 0\n\nRecursive:\n1, 0\nx[n-1]*0.99, y[n-1]+0.1\n80\n\nBy index:\ncos(i*0.3), sin(i*0.3)\n64\n\nMatrix:\ni, j, sin(i*j)\n8, 8"}/>
-              <div style={{marginTop:5,color:ui.uiFaint,fontSize:14}}>
-                {count} {hasVec?`glyph${count!==1?"s":""}`:`valid point${count!==1?"s":""}`}
+              <MathInput v={node.props.listPoints||""} sc={scope} multiline onChange={v=>set("listPoints",v)}
+                placeholder={useColor?"0, 0, 0\n1, 1, 2\n2, 0, 4":"0, 0\n1, 1\n2, 0\n3, 1"}/>
+            </Sec>}
+            {mode==="list" && isGlyph && <Sec title="Glyphs (list)">
+              <div style={{fontSize:13,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
+                One glyph per line as <em>seed | vector</em>, each an ordered pair or triple.{" "}
+                {useColor && <>Add a third <em>| color</em> segment for the color scalar.</>}
               </div>
-            </Sec>
-            {!hasVec&&<Sec title="Point style">
+              <MathInput v={node.props.listGlyphs||""} sc={scope} multiline onChange={v=>set("listGlyphs",v)}
+                placeholder={useColor?"0, 0 | 1, 0 | 0\n1, 1 | 0, 1 | 1":"0, 0 | 1, 0\n1, 1 | 0, 1\n2, 0 | 1, 0"}/>
+            </Sec>}
+
+            {/* ── INDEX ── */}
+            {mode==="index" && <Sec title={isGlyph?"Glyph by index":"Point by index"}>
+              <div style={{fontSize:13,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
+                A closed form in <em>i</em> (also <em>j, k</em> for a grid, and <em>n</em> = flat index).{" "}
+                {isGlyph?<>Written as <em>seed | vector</em>.</>:null}
+              </div>
+              <PR label={isGlyph?"seed | vector":"tuple"}>
+                <MathInput v={(isGlyph?node.props.idxGlyph:node.props.idxPoint)||""} sc={scope}
+                  onChange={v=>set(isGlyph?"idxGlyph":"idxPoint",v)}
+                  placeholder={isGlyph?"cos(i), sin(i) | -sin(i), cos(i)":"cos(i*0.3), sin(i*0.3)"}/>
+              </PR>
+              {useColor && <PR label="color">
+                <MathInput v={node.props.colExpr??"i"} sc={scope} onChange={v=>set("colExpr",v)} placeholder="i"/>
+              </PR>}
+              <PR label="count">
+                <MathInput v={(isGlyph?node.props.idxGlyphCount:node.props.idxCount)||""} sc={scope}
+                  onChange={v=>set(isGlyph?"idxGlyphCount":"idxCount",v)} placeholder="64"/>
+              </PR>
+              <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                Count applies in all directions: <em>a</em> → a row of a; <em>a, b</em> → an a×b grid (i, j); <em>a, b, c</em> → a×b×c (i, j, k).
+              </div>
+            </Sec>}
+
+            {/* ── RECURSIVE ── */}
+            {mode==="recursive" && <Sec title={isGlyph?"Recursive glyphs":"Recursive points"}>
+              <div style={{fontSize:13,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
+                Each entry depends on the previous via <em>x[n-1], y[n-1]{isGlyph?", vx[n-1], vy[n-1]":""}</em> (any depth k).
+              </div>
+              <PR label="initial">
+                <MathInput v={(isGlyph?node.props.recGlyphInit:node.props.recInit)||""} sc={scope}
+                  onChange={v=>set(isGlyph?"recGlyphInit":"recInit",v)}
+                  placeholder={isGlyph?"4, 4 | 0, 1":"1, 0"}/>
+              </PR>
+              <PR label="next">
+                <MathInput v={(isGlyph?node.props.recGlyphStep:node.props.recStep)||""} sc={scope} multiline
+                  onChange={v=>set(isGlyph?"recGlyphStep":"recStep",v)}
+                  placeholder={isGlyph?"x[n-1]*0.97 - y[n-1]*0.12, y[n-1]*0.97 + x[n-1]*0.12 | vx[n-1], vy[n-1]":"x[n-1]*0.99, y[n-1]+0.1"}/>
+              </PR>
+              {useColor && <>
+                <PR label="color init"><MathInput v={node.props.colRecInit??"0"} sc={scope} onChange={v=>set("colRecInit",v)} placeholder="0"/></PR>
+                <PR label="color next"><MathInput v={node.props.colRecStep??"c[n-1]+1"} sc={scope} onChange={v=>set("colRecStep",v)} placeholder="c[n-1]+1"/></PR>
+              </>}
+              <PR label="count">
+                <MathInput v={(isGlyph?node.props.recGlyphCount:node.props.recCount)||""} sc={scope}
+                  onChange={v=>set(isGlyph?"recGlyphCount":"recCount",v)} placeholder="80"/>
+              </PR>
+            </Sec>}
+
+            <div style={{margin:"4px 0 2px",color:ui.uiFaint,fontSize:14,paddingLeft:2}}>
+              {count} {isGlyph?`glyph${count!==1?"s":""}`:`valid point${count!==1?"s":""}`}
+            </div>
+
+            {!isGlyph&&<Sec title="Point style">
               <PR label="radius"><EI v={node.props.radius||"4"} sc={scope} onChange={v=>set("radius",v)}/></PR>
               <PR label="lines"><Toggle v={node.props.drawLines!==false} onChange={v=>set("drawLines",v)}/></PR>
             </Sec>}
-            {!hasVec&&<Sec title="Coloring">
+
+            {/* Color ramp — endpoints for the color slot (or legacy gradient). */}
+            {useColor ? <Sec title="Color ramp">
+              <PR label="ramp">
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <input type="color" value={node.props.colorLo||"#3a6aff"} onChange={e=>set("colorLo",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
+                  <div style={{flex:1,height:12,borderRadius:3,background:`linear-gradient(90deg, ${node.props.colorLo||"#3a6aff"}, ${node.props.colorHi||"#ff5ea8"})`}}/>
+                  <input type="color" value={node.props.colorHi||"#ff5ea8"} onChange={e=>set("colorHi",e.target.value)} style={{width:28,height:22,border:"none",background:"none",cursor:"pointer",padding:0}}/>
+                </div>
+              </PR>
+              <PR label="min"><EI v={node.props.colorMin??""} sc={scope} onChange={v=>set("colorMin",v)} placeholder="auto"/></PR>
+              <PR label="max"><EI v={node.props.colorMax??""} sc={scope} onChange={v=>set("colorMax",v)} placeholder="auto"/></PR>
+              <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                Each entry's color scalar maps across the range (blank = auto-fit) onto this ramp.
+              </div>
+            </Sec> : (!isGlyph && <Sec title="Coloring">
               <PR label="mode">
                 <select value={node.props.colorMode||"off"} onChange={e=>set("colorMode",e.target.value)} style={{...S.inp,width:"100%"}}>
                   <option value="off">single color</option>
@@ -665,8 +752,9 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
                   Each point's <em>value</em> (vars: <em>i</em> index, <em>n</em> count, <em>x, y, z</em>, wired scalars) maps across the range — leave min/max blank to auto-fit — onto the ramp.
                 </div>
               </>}
-            </Sec>}
-            {hasVec&&(()=>{
+            </Sec>)}
+
+            {isGlyph&&(()=>{
               const lenMode=node.props.lenMode||(node.props.normalize===false?"scaled":"uniform");
               const showLen=lenMode!=="raw";
               return <><Sec title="Glyph style">
@@ -706,7 +794,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
               </>}
             </Sec></>;
             })()}
-            {!hasVec&&<Sec title="Sequencing">
+            {!isGlyph&&<Sec title="Sequencing">
               <div style={{fontSize:14,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
                 Reveal points in order. Drive the fraction (0–1) with a literal or a connected scalar (e.g. an animator).
               </div>
@@ -860,7 +948,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
           const seedNode=deps.find(d=>d.type==="paramSpace"||d.type==="points");
           const seedIsPoints=seedNode?.type==="points";
           const seedDeg=(seedNode&&!seedIsPoints)?Math.max(1,Math.min(2,Math.round(Number(seedNode.props.degree||"1")))):0;
-          const seedCount=seedIsPoints?parsePointSeq(seedNode.props.data,scope).length:0;
+          const seedCount=seedIsPoints?parsePointsExplicit(seedNode.props,scope).pts.length:0;
           return <>
             {(!fnNode||!seedNode)&&<div style={{fontSize:14,color:ui.uiDanger,marginBottom:8,lineHeight:1.5,padding:"6px 8px",background:ui.uiDanger+"15",borderRadius:5,border:`1px solid ${ui.uiDanger}33`}}>
               A flow needs a wired <strong>fnMap</strong> (the vector field) and a seed source — a <strong>Param Space</strong> (continuous) or a <strong>Points</strong> node (discrete seeds).{!fnNode&&<> Missing the field.</>}{!seedNode&&<> Missing the seeds.</>}

@@ -34,6 +34,48 @@ function migrateUnifiedKinds(nodes){
   }
   return out;
 }
+// ── Legacy points `data` → explicit dropdown props ──────────────────────────
+// Older `points` nodes (and their pre-unified pointSeq/glyphField/point sources)
+// stored a single auto-detected `data` text. The node now uses explicit
+// kind/mode/* fields, so map the legacy text into the matching field by
+// re-running the same detection the old parser used (recurrence "[n" → recursive,
+// "[i,j]"/two bare indices → index grid, single index → index, else list).
+function legacyDataToExplicit(data, isGlyph){
+  const text=(data??"").trim();
+  // base defaults for every field (so the node is fully formed post-migration)
+  const base = isGlyph
+    ? { listGlyphs:"0, 0 | 1, 0", idxGlyph:"cos(i), sin(i) | -sin(i), cos(i)", idxGlyphCount:"48",
+        recGlyphInit:"4, 4 | 0, 1", recGlyphStep:"x[n-1], y[n-1] | vx[n-1], vy[n-1]", recGlyphCount:"120" }
+    : { listPoints:"0, 0\n1, 1\n2, 0", idxPoint:"cos(i*0.3), sin(i*0.3)", idxCount:"64",
+        recInit:"1, 0", recStep:"x[n-1]*0.99, y[n-1]+0.1", recCount:"80" };
+  let mode="list";
+  // Recurrence first (back-compat priority), then index forms, else list.
+  const isRec = /\[\s*n/.test(text);
+  const isMatrix = /\[\s*[ijk][^\]]*[,;][^\]]*\]/.test(text) ||
+    ((/(^|[^A-Za-z0-9_])i([^A-Za-z0-9_]|$)/.test(text)?1:0)
+      +(/(^|[^A-Za-z0-9_])j([^A-Za-z0-9_]|$)/.test(text)?1:0)
+      +(/(^|[^A-Za-z0-9_])k([^A-Za-z0-9_]|$)/.test(text)?1:0))>=2;
+  const isIndex = !isMatrix && (/\[\s*[ijk]/.test(text) ||
+    /(^|[^A-Za-z0-9_])i([^A-Za-z0-9_]|$)/.test(text) ||
+    /(^|[^A-Za-z0-9_])j([^A-Za-z0-9_]|$)/.test(text) ||
+    /(^|[^A-Za-z0-9_])k([^A-Za-z0-9_]|$)/.test(text));
+  const lines=text.split("\n").map(s=>s.trim()).filter(Boolean);
+  if(isRec){
+    mode="recursive";
+    if(isGlyph){ base.recGlyphInit=lines[0]||base.recGlyphInit; base.recGlyphStep=lines[1]||base.recGlyphStep; base.recGlyphCount=lines[2]||base.recGlyphCount; }
+    else { base.recInit=lines[0]||base.recInit; base.recStep=lines[1]||base.recStep; base.recCount=lines[2]||base.recCount; }
+  } else if(isIndex || isMatrix){
+    mode="index";
+    if(isGlyph){ base.idxGlyph=lines[0]||base.idxGlyph; base.idxGlyphCount=lines[1]||base.idxGlyphCount; }
+    else { base.idxPoint=lines[0]||base.idxPoint; base.idxCount=lines[1]||base.idxCount; }
+  } else {
+    mode="list";
+    if(isGlyph) base.listGlyphs=text||base.listGlyphs;
+    else base.listPoints=text||base.listPoints;
+  }
+  return { mode, ...base };
+}
+
 function migrateOneToUnified(n){
   const p=n.props||{};
   switch(n.type){
@@ -64,33 +106,42 @@ function migrateOneToUnified(n){
         uMin:p.uMin??"0",uMax:p.uMax??"2*pi",vMin:p.vMin??"0",vMax:p.vMax??"pi",
         uRes:p.uRes??"40",vRes:p.vRes??"30",
       }};
-    case "point":
+    case "point": {
+      const ex=legacyDataToExplicit(`${p.x??"0"}, ${p.y??"0"}, ${p.z??"0"}`, false);
       return {...n,type:"points",props:{
-        space:"xyz",hasVectors:false,
-        data:`${p.x??"0"}, ${p.y??"0"}, ${p.z??"0"}`,
+        kind:"points", useColor:false, ...ex,
         radius:p.radius!=null?String(Math.max(2,Number(p.radius)*50||4)):"4",
         drawLines:false,
-        arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff",
+        arrowLen:"0.5",normalize:true,lenMode:"uniform",anim:"crest",speed:"1",crestColor:"#ffffff",
+        colExpr:"i",colRecInit:"0",colRecStep:"c[n-1]+1",
+        colorMode:"off",colorExpr:"i",colorLo:"#3a6aff",colorHi:"#ff5ea8",colorMin:"",colorMax:"",
         sequenced:false,seqFrac:"1",seqVar:"",
       }};
-    case "pointSeq":
+    }
+    case "pointSeq": {
+      const ex=legacyDataToExplicit(p.points??"0, 0\n1, 1\n2, 0", false);
       return {...n,type:"points",props:{
-        space:"xy",hasVectors:false,
-        data:p.points??"0, 0\n1, 1\n2, 0",
+        kind:"points", useColor:false, ...ex,
         radius:p.radius??"4",drawLines:p.drawLines!==false,
-        arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff",
+        arrowLen:"0.5",normalize:true,lenMode:"uniform",anim:"crest",speed:"1",crestColor:"#ffffff",
+        colExpr:p.colorExpr??"i",colRecInit:"0",colRecStep:"c[n-1]+1",
+        colorMode:p.colorMode??"off",colorExpr:p.colorExpr??"i",colorLo:p.colorLo??"#3a6aff",colorHi:p.colorHi??"#ff5ea8",colorMin:p.colorMin??"",colorMax:p.colorMax??"",
         sequenced:!!p.sequenced,seqFrac:p.seqFrac??"1",seqVar:p.seqVar??"",
       }};
-    case "glyphField":
+    }
+    case "glyphField": {
+      const ex=legacyDataToExplicit(p.pairs??"0,0,0 | 1,0,0", true);
       return {...n,type:"points",props:{
-        space:"xyz",hasVectors:true,
-        data:p.pairs??"0,0,0 | 1,0,0",
+        kind:"glyphs", useColor:false, ...ex,
         radius:"4",drawLines:true,
         arrowLen:p.arrowLen??"0.5",normalize:p.normalize!==false,
         lenMode:p.lenMode||(p.normalize===false?"scaled":"uniform"),
         anim:p.anim??"crest",speed:p.speed??"1",crestColor:p.crestColor??"#ffffff",
+        colExpr:"i",colRecInit:"0",colRecStep:"c[n-1]+1",
+        colorMode:"off",colorExpr:"i",colorLo:"#3a6aff",colorHi:"#ff5ea8",colorMin:"",colorMax:"",
         sequenced:false,seqFrac:"1",seqVar:"",
       }};
+    }
     case "camera":
       // Split the legacy single camera into an explicit 3D or 2D kind by its
       // stored mode. All other props carry over unchanged.

@@ -348,5 +348,207 @@ export {
   parsePointSeq, parseRecursiveSeq, parseIndexSeq, parseMatrixSeq,
   splitRecurrenceParts, substituteRecVars, stripIndexRefs,
   hasIndexRef, hasMatrixIndex,
-  parseGlyphField, parseGlyphSeq, parseGlyphIndex, parseGlyphMatrix, subGlyphVars
+  parseGlyphField, parseGlyphSeq, parseGlyphIndex, parseGlyphMatrix, subGlyphVars,
+  parsePointsExplicit, parseGlyphsExplicit
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Explicit-mode parsers (dropdown-driven authoring)
+//
+// The points node no longer auto-detects its mode from text syntax. The props
+// panel chooses kind (points/glyphs), mode (list/index/recursive) and whether a
+// trailing color slot is present, and supplies a dedicated field per case.
+// These parsers take that structured input directly. Each returns
+//   points: { pts:[[x,y,z]…],            cols:[scalar|null]… or null }
+//   glyphs: { pairs:[{pos,vec}…],        cols:[scalar|null]… or null }
+// where `cols` (when present) is a RAW per-element scalar; rebuild.js maps it
+// through the colorLo→colorHi ramp exactly like the legacy gradient mode. The
+// color channel is recursible in recursive mode via c[n-k] → __cp.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COUNT_MAX = 8192;
+function clampCount(c, dflt){
+  if(c==null || !isFinite(c)) return dflt;
+  return Math.max(1, Math.min(COUNT_MAX, Math.round(c)));
+}
+// c[n-1] / c_prev → __cp  (color recurrence, depth-1 history)
+function subColorRecVar(expr){
+  if(expr==null) return null;
+  return String(expr)
+    .replace(/\bc\s*\[\s*n\s*-\s*\d+\s*\]/g, "__cp")
+    .replace(/\bc_prev\b/g, "__cp");
+}
+
+// ── Points ───────────────────────────────────────────────────────────────────
+function parsePointsExplicit(props, scope){
+  // Legacy fallback: an older unified `points` node stored a single auto-detected
+  // `data` text and no explicit kind/mode fields. Route it through the original
+  // auto-detecting parser so such nodes keep working without re-migration.
+  if(props && props.data!=null && props.kind==null && props.mode==null
+     && props.listPoints==null && props.idxPoint==null && props.recInit==null){
+    return { pts: parsePointSeq(props.data, scope), cols:null };
+  }
+  const mode = props.mode || "list";
+  const useColor = !!props.useColor;
+  if(mode === "index")     return pointsIndex(props, scope, useColor);
+  if(mode === "recursive") return pointsRecursive(props, scope, useColor);
+  return pointsList(props, scope, useColor);
+}
+
+// list: rows of "x, y[, z][, color]" separated by newlines OR by ';'. A single
+// blank/�﹣ row is skipped. The trailing slot is the color scalar when useColor.
+function pointsList(props, scope, useColor){
+  const text = props.listPoints || "";
+  const rows = text.split(/[\n;]/).map(s=>s.trim()).filter(r=>r && !r.startsWith("//"));
+  const pts=[], cols=useColor?[]:null;
+  for(const row of rows){
+    const parts = splitRecurrenceParts(row);
+    if(parts.length < 2) continue;
+    // color is the LAST slot when enabled and there's an extra component beyond
+    // the 2-or-3 coordinate slots.
+    let coordParts = parts, colExpr = null;
+    if(useColor && parts.length >= 3){ colExpr = parts[parts.length-1]; coordParts = parts.slice(0, parts.length-1); }
+    const x = safeEval(coordParts[0], scope);
+    const y = safeEval(coordParts[1], scope);
+    const z = coordParts[2] != null ? (safeEval(coordParts[2], scope) ?? 0) : 0;
+    if(x==null || y==null || !isFinite(x) || !isFinite(y)) continue;
+    pts.push([x, y, z]);
+    if(useColor){ const c = colExpr!=null ? safeEval(colExpr, scope) : null; cols.push(c==null||!isFinite(c)?0:c); }
+  }
+  return { pts, cols };
+}
+
+// index: one tuple in i,j,k,n + a count. Count "in all directions": a count of
+// "a" → a points (i); "a, b" → an a×b grid (i,j); "a, b, c" → a×b×c (i,j,k).
+function pointsIndex(props, scope, useColor){
+  const tuple = splitRecurrenceParts(props.idxPoint || "").map(stripIndexRefs);
+  if(tuple.length < 2) return { pts:[], cols:useColor?[]:null };
+  const xE=tuple[0], yE=tuple[1], zE=tuple[2]!=null?tuple[2]:null;
+  const colE = useColor ? stripIndexRefs(props.colExpr || "i") : null;
+  const counts = (props.idxCount || "").split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+  const a = clampCount(safeEval(counts[0]||"1", scope), 64);
+  const ni=a;
+  const nj = counts[1]!=null ? clampCount(safeEval(counts[1], scope), a) : 1;
+  const nk = counts[2]!=null ? clampCount(safeEval(counts[2], scope), a) : 1;
+  const pts=[], cols=useColor?[]:null;
+  for(let i=0;i<ni;i++) for(let j=0;j<nj;j++) for(let k=0;k<nk;k++){
+    const idx=(i*nj+j)*nk+k;
+    const sc={...scope, i, j, k, n:idx};
+    const x=safeEval(xE,sc), y=safeEval(yE,sc), z=zE?safeEval(zE,sc)??0:0;
+    if(x==null||y==null||!isFinite(x)||!isFinite(y)) continue;
+    pts.push([x,y,z]);
+    if(useColor){ const c=safeEval(colE,{...sc, x, y, z}); cols.push(c==null||!isFinite(c)?0:c); }
+  }
+  return { pts, cols };
+}
+
+// recursive: initial tuple, then a recurrence in x[n-k], y[n-k], z[n-k]
+// (and c[n-k] for color), then a count.
+function pointsRecursive(props, scope, useColor){
+  const init = splitRecurrenceParts(props.recInit || "");
+  const x0=safeEval(init[0], scope), y0=safeEval(init[1]||"0", scope), z0=safeEval(init[2]||"0", scope);
+  if(x0==null||y0==null) return { pts:[], cols:useColor?[]:null };
+  const step = splitRecurrenceParts(props.recStep || "");
+  const xE=substituteRecVars(step[0]||"__xp"), yE=substituteRecVars(step[1]||"__yp"),
+        zE=step[2]!=null?substituteRecVars(step[2]):null;
+  const c0 = useColor ? (safeEval(props.colRecInit||"0", scope) ?? 0) : null;
+  const cE = useColor ? subColorRecVar(props.colRecStep||"__cp") : null;
+  const count = clampCount(safeEval(props.recCount||"64", scope), 64);
+  const pts=[[x0,y0,z0??0]], cols=useColor?[c0]:null;
+  let xp=x0, yp=y0, zp=z0??0, cp=c0;
+  for(let n=1;n<count;n++){
+    const sc={...scope, __xp:xp, __yp:yp, __zp:zp, __cp:cp, n};
+    const nx=safeEval(xE,sc), ny=safeEval(yE,sc), nz=zE?safeEval(zE,sc)??0:0;
+    if(nx==null||ny==null||!isFinite(nx)||!isFinite(ny)) break;
+    pts.push([nx,ny,nz]);
+    if(useColor){ const nc=safeEval(cE,sc); cp=(nc==null||!isFinite(nc))?cp:nc; cols.push(cp); }
+    xp=nx; yp=ny; zp=nz;
+  }
+  return { pts, cols };
+}
+
+// ── Glyphs ───────────────────────────────────────────────────────────────────
+function parseGlyphsExplicit(props, scope){
+  if(props && props.data!=null && props.kind==null && props.mode==null
+     && props.listGlyphs==null && props.idxGlyph==null && props.recGlyphInit==null){
+    return { pairs: parseGlyphField(props.data, scope), cols:null };
+  }
+  const mode = props.mode || "list";
+  const useColor = !!props.useColor;
+  if(mode === "index")     return glyphsIndex(props, scope, useColor);
+  if(mode === "recursive") return glyphsRecursive(props, scope, useColor);
+  return glyphsList(props, scope, useColor);
+}
+
+// Split a glyph row "seed | vector [| color]" into [seedParts, vecParts, colExpr]
+function splitGlyphRow(row, useColor){
+  const segs = row.split("|").map(s=>s.trim());
+  const seed = splitRecurrenceParts(segs[0]||"");
+  const vec  = splitRecurrenceParts(segs[1]||"");
+  const colExpr = (useColor && segs[2]!=null && segs[2]!=="") ? segs[2] : null;
+  return { seed, vec, colExpr };
+}
+
+function glyphsList(props, scope, useColor){
+  const rows = (props.listGlyphs||"").split(/[\n;]/).map(s=>s.trim()).filter(r=>r && !r.startsWith("//"));
+  const pairs=[], cols=useColor?[]:null;
+  for(const row of rows){
+    const { seed, vec, colExpr } = splitGlyphRow(row, useColor);
+    if(seed.length<2 || vec.length<2) continue;
+    const x=safeEval(seed[0],scope), y=safeEval(seed[1],scope), z=seed[2]!=null?safeEval(seed[2],scope)??0:0;
+    const vx=safeEval(vec[0],scope), vy=safeEval(vec[1],scope), vz=vec[2]!=null?safeEval(vec[2],scope)??0:0;
+    if([x,y,z,vx,vy,vz].some(v=>v==null||!isFinite(v))) continue;
+    pairs.push({pos:[x,y,z], vec:[vx,vy,vz]});
+    if(useColor){ const c=colExpr!=null?safeEval(colExpr,scope):null; cols.push(c==null||!isFinite(c)?0:c); }
+  }
+  return { pairs, cols };
+}
+
+function glyphsIndex(props, scope, useColor){
+  const segs = (props.idxGlyph||"").split("|").map(s=>s.trim());
+  const seed = splitRecurrenceParts(segs[0]||"").map(stripIndexRefs);
+  const vec  = splitRecurrenceParts(segs[1]||"").map(stripIndexRefs);
+  if(seed.length<2 || vec.length<2) return { pairs:[], cols:useColor?[]:null };
+  const colE = useColor ? stripIndexRefs(props.colExpr||"i") : null;
+  const counts = (props.idxGlyphCount||"").split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+  const a = clampCount(safeEval(counts[0]||"1", scope), 48);
+  const ni=a, nj=counts[1]!=null?clampCount(safeEval(counts[1],scope),a):1, nk=counts[2]!=null?clampCount(safeEval(counts[2],scope),a):1;
+  const pairs=[], cols=useColor?[]:null;
+  for(let i=0;i<ni;i++) for(let j=0;j<nj;j++) for(let k=0;k<nk;k++){
+    const idx=(i*nj+j)*nk+k;
+    const sc={...scope, i, j, k, n:idx};
+    const x=safeEval(seed[0],sc), y=safeEval(seed[1],sc), z=seed[2]!=null?safeEval(seed[2],sc)??0:0;
+    const vx=safeEval(vec[0],sc), vy=safeEval(vec[1],sc), vz=vec[2]!=null?safeEval(vec[2],sc)??0:0;
+    if([x,y,z,vx,vy,vz].some(v=>v==null||!isFinite(v))) continue;
+    pairs.push({pos:[x,y,z], vec:[vx,vy,vz]});
+    if(useColor){ const c=safeEval(colE,{...sc,x,y,z}); cols.push(c==null||!isFinite(c)?0:c); }
+  }
+  return { pairs, cols };
+}
+
+function glyphsRecursive(props, scope, useColor){
+  const initSegs=(props.recGlyphInit||"").split("|").map(s=>s.trim());
+  const ip=splitRecurrenceParts(initSegs[0]||""), iv=splitRecurrenceParts(initSegs[1]||"");
+  const x0=safeEval(ip[0],scope), y0=safeEval(ip[1]||"0",scope), z0=safeEval(ip[2]||"0",scope);
+  const vx0=safeEval(iv[0],scope), vy0=safeEval(iv[1]||"0",scope), vz0=safeEval(iv[2]||"0",scope);
+  if([x0,y0,z0,vx0,vy0,vz0].some(v=>v==null)) return { pairs:[], cols:useColor?[]:null };
+  const stepSegs=(props.recGlyphStep||"").split("|").map(s=>s.trim());
+  const rp=splitRecurrenceParts(stepSegs[0]||""), rv=splitRecurrenceParts(stepSegs[1]||"");
+  const ex={ x:subGlyphVars(rp[0]||"__xp"), y:subGlyphVars(rp[1]||"__yp"), z:rp[2]!=null?subGlyphVars(rp[2]):null,
+             vx:subGlyphVars(rv[0]||"__vxp"), vy:subGlyphVars(rv[1]||"__vyp"), vz:rv[2]!=null?subGlyphVars(rv[2]):null };
+  const c0 = useColor ? (safeEval(props.colRecInit||"0", scope) ?? 0) : null;
+  const cE = useColor ? subColorRecVar(props.colRecStep||"__cp") : null;
+  const count = clampCount(safeEval(props.recGlyphCount||"64", scope), 48);
+  const pairs=[{pos:[x0,y0,z0],vec:[vx0,vy0,vz0]}], cols=useColor?[c0]:null;
+  let xp=x0,yp=y0,zp=z0,vxp=vx0,vyp=vy0,vzp=vz0,cp=c0;
+  for(let n=1;n<count;n++){
+    const sc={...scope,__xp:xp,__yp:yp,__zp:zp,__vxp:vxp,__vyp:vyp,__vzp:vzp,__cp:cp,n};
+    const nx=safeEval(ex.x,sc), ny=safeEval(ex.y,sc), nz=ex.z?safeEval(ex.z,sc)??0:0;
+    const nvx=ex.vx?safeEval(ex.vx,sc)??0:0, nvy=ex.vy?safeEval(ex.vy,sc)??0:0, nvz=ex.vz?safeEval(ex.vz,sc)??0:0;
+    if([nx,ny,nz,nvx,nvy,nvz].some(v=>v==null||!isFinite(v))) break;
+    pairs.push({pos:[nx,ny,nz],vec:[nvx,nvy,nvz]});
+    if(useColor){ const nc=safeEval(cE,sc); cp=(nc==null||!isFinite(nc))?cp:nc; cols.push(cp); }
+    xp=nx;yp=ny;zp=nz;vxp=nvx;vyp=nvy;vzp=nvz;
+  }
+  return { pairs, cols };
+}

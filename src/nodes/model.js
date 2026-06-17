@@ -106,19 +106,45 @@ function makeNode(type,pos){
       // volume coloring (optional gradient over the cloud):
       volColorMode:"off",volColorExpr:"u",volColorLo:"#3a6aff",volColorHi:"#ff5ea8",volColorMin:"",volColorMax:"",
     },attachments:[]},
-    // points: points / glyphs / sequences. `space` xy|xyz; `hasVectors` adds
-    // per-point arrows (glyph mode). One unified `data` text supports plain,
-    // recursive [n-1], index [i], and matrix [i,j] forms.
+    // points: points / glyphs / sequences.
+    //   kind   "points" | "glyphs"           (top dropdown)
+    //   mode   "list" | "index" | "recursive" (second dropdown)
+    //   useColor  adds a trailing color slot to every tuple (recursible)
+    // Each (kind, mode) pair has its own dedicated input field(s) so the authoring
+    // form is explicit rather than auto-detected from text syntax. normalize.js
+    // assembles these into the canonical text the parsers consume.
     points:{label:"Points",color:nextColor(),props:{
-      space:"xy",
-      hasVectors:false,
-      data:"0, 0\n1, 1\n2, 0\n3, 1\n4, 0",
+      kind:"points",            // points | glyphs
+      mode:"list",              // list | index | recursive
+      useColor:false,           // extra trailing color slot in each tuple
+      // ── points · list ─ comma/newline separated ordered pairs or triples
+      listPoints:"0, 0\n1, 1\n2, 0\n3, 1\n4, 0",
+      // ── points · index ─ one tuple in i,j,k,n + a count
+      idxPoint:"cos(i*0.3), sin(i*0.3)",
+      idxCount:"64",
+      // ── points · recursive ─ initial tuple, recurrence, count
+      recInit:"1, 0",
+      recStep:"x[n-1]*0.99, y[n-1]+0.1",
+      recCount:"80",
+      // ── glyphs · list ─ "seed | vector" pairs of pairs/triples per line
+      listGlyphs:"0, 0 | 1, 0\n1, 1 | 0, 1\n2, 0 | 1, 0",
+      // ── glyphs · index ─ "seed | vector" in i,j,k,n + a count
+      idxGlyph:"cos(i), sin(i) | -sin(i), cos(i)",
+      idxGlyphCount:"48",
+      // ── glyphs · recursive ─ initial, recurrence (x[n-k],vx[n-k]…), count
+      recGlyphInit:"4, 4 | 0, 1",
+      recGlyphStep:"x[n-1]*0.97 - y[n-1]*0.12, y[n-1]*0.97 + x[n-1]*0.12 | vx[n-1], vy[n-1]",
+      recGlyphCount:"120",
+      // ── color slot expressions (only used when useColor) ─ a scalar per tuple,
+      //    mapped onto the colorLo→colorHi ramp. Recursible via c[n-k].
+      colListPoints:"i",   // appended as the trailing slot in list rows (see UI)
+      colExpr:"i",         // index / recursive color expression
+      colRecInit:"0",      // recursive: initial color scalar
+      colRecStep:"c[n-1]+1",
       radius:"4",drawLines:true,
-      // glyph styling (used when hasVectors):
-      arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff",
-      // gradient coloring (used when colorMode==="gradient"): each point gets a
-      // scalar from colorExpr (vars: i, n, x, y, z and any wired scalars), mapped
-      // across [colorMin,colorMax] (auto when blank) onto the colorLo→colorHi ramp.
+      // glyph styling (used for glyphs):
+      arrowLen:"0.5",normalize:true,lenMode:"uniform",anim:"crest",speed:"1",crestColor:"#ffffff",
+      // gradient ramp endpoints + range for the color slot / legacy gradient:
       colorMode:"off", colorExpr:"i", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
       // sequencing reveal:
       sequenced:false,seqFrac:"1",seqVar:"",

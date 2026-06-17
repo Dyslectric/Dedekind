@@ -9,7 +9,7 @@ import {
 } from "./builders.js";
 import { buildFlowFromSeeds } from "./flow.js";
 import { buildTransformer, sampleParamSpace } from "./transformer.js";
-import { parsePointSeq, parseGlyphField } from "./parse.js";
+import { parsePointSeq, parseGlyphField, parsePointsExplicit, parseGlyphsExplicit } from "./parse.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { buildScalarVolume } from "./builders.js";
 
@@ -41,6 +41,19 @@ function pointGradientColors(pts, p, scope){
     out[i]=[c.r,c.g,c.b];
   }
   return out;
+}
+
+// Map an array of raw color scalars (from an explicit color slot) onto the
+// node's colorLo→colorHi ramp, auto-fitting the range when colorMin/Max blank.
+// Returns [[r,g,b]…] in 0..1, or null when there are no usable values.
+function rampColors(vals, p, scope){
+  if(!vals || !vals.length) return null;
+  const lo=new THREE.Color(p.colorLo||"#3a6aff"), hi=new THREE.Color(p.colorHi||"#ff5ea8"), c=new THREE.Color();
+  let mn=(p.colorMin!==""&&p.colorMin!=null)?resolveNum(p.colorMin,scope,0):Math.min(...vals);
+  let mx=(p.colorMax!==""&&p.colorMax!=null)?resolveNum(p.colorMax,scope,1):Math.max(...vals);
+  if(!isFinite(mn)) mn=0; if(!isFinite(mx)) mx=1;
+  const span=(mx-mn)||1;
+  return vals.map(v=>{ let t=((v??0)-mn)/span; t=t<0?0:t>1?1:t; c.copy(lo).lerp(hi,t); return [c.r,c.g,c.b]; });
 }
 
 function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
@@ -118,11 +131,21 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       else if(node.type==="fn1d") gpu=buildFn1dGPU(p,scope,node.color||"#f7cc4f");
       else if(node.type==="quiver3d") gpu=buildQuiver3dGPU(p,scope,node.color||"#5b9cf6");
       else if(node.type==="glyphField"){
-        const pairs=parseGlyphField(p.pairs,scope);
+        // Prefer the explicit (dropdown-authored) parse so the recursible color
+        // slot is honoured; fall back to the legacy text parse for old projects.
+        let pairs, gcols=null;
+        if(p.__explicit){
+          const r=parseGlyphsExplicit(p.__explicit,scope);
+          pairs=r.pairs;
+          if(p.__useColor) gcols=rampColors(r.cols,p,scope);
+        } else {
+          pairs=parseGlyphField(p.pairs,scope);
+        }
         gpu=buildGlyphFieldGPU(pairs,node.color||"#5be0c0",{
           arrowLen:resolveNum(p.arrowLen,scope,0.5),
           lenMode:p.lenMode||(p.normalize===false?"scaled":"uniform"),
           anim:p.anim||"crest", speed:resolveNum(p.speed,scope,1), crestColor:p.crestColor||"#ffffff",
+          cols:gcols,
         });
       }
       if(gpu&&gpu.length){
@@ -197,8 +220,16 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode);
     }
     if(node.type==="pointSeq"){
-      const pts=parsePointSeq(p.points,scope);
-      const cols=pointGradientColors(pts,p,scope);
+      let pts, cols;
+      if(p.__explicit){
+        const r=parsePointsExplicit(p.__explicit,scope);
+        pts=r.pts;
+        // explicit color slot → ramp; else fall back to legacy gradient-by-value
+        cols = p.__useColor ? rampColors(r.cols,p,scope) : pointGradientColors(pts,p,scope);
+      } else {
+        pts=parsePointSeq(p.points,scope);
+        cols=pointGradientColors(pts,p,scope);
+      }
       objs=buildPointSeqGPU(pts,node.color||"#ff70bb",resolveNum(p.radius,scope,0.07),p.drawLines!==false,cols);
       if(!objs.length) objs=buildPointSeq3d(pts,node.color||"#ff70bb",resolveNum(p.radius,scope,0.07),p.drawLines!==false);
       if(p.sequenced){ objs._sequenced=true; applySequence(objs,node,scope); }
@@ -227,7 +258,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         const fieldSc={...scope, ...resolveScope(fnNode.id, nodes, animV)};
         const seedSc ={...scope, ...resolveScope(seedNode.id, nodes, animV)};
         const seedInfo = fromPoints
-          ? { pts: parsePointSeq(seedNode.props.data, seedSc), grid:false }
+          ? { pts: parsePointsExplicit(seedNode.props, seedSc).pts, grid:false }
           : sampleParamSpace(seedNode, seedSc);
         objs=buildFlowFromSeeds(field, seedInfo, steps, stepSize, fieldSc, node.color||"#f7cc4f", {
           // discrete point seeds always render as individual stream curves;
@@ -288,5 +319,5 @@ function applySequence(objs, node, scope){
 }
 
 export {
-  rebuildScene, applyDomain, rebuildOnePlot, applySequence, pointGradientColors
+  rebuildScene, applyDomain, rebuildOnePlot, applySequence, pointGradientColors, rampColors
 };

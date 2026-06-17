@@ -89,9 +89,9 @@ function latticeScene(){
   cam.props.showCamLabel=false;cam.props.showResetBtn=false;cam.props.showShareBtn=false;cam.props.showScalarOverlay=false;
   // a phyllotaxis-style shell of points, colored by height — static, by index i.
   const pts=makeNode("points",{x:620,y:160});pts.color="#f99ab4";
-  pts.props.space="xyz";pts.props.hasVectors=false;
-  pts.props.data=
-    "2.6*sqrt(i/360)*cos(i*2.4), 2.6*sqrt(i/360)*sin(i*2.4), (i/360)*3 - 1.5\n360";
+  pts.props.kind="points";pts.props.mode="index";pts.props.useColor=false;
+  pts.props.idxPoint="2.6*sqrt(i/360)*cos(i*2.4), 2.6*sqrt(i/360)*sin(i*2.4), (i/360)*3 - 1.5";
+  pts.props.idxCount="360";
   pts.props.drawLines=false;pts.props.radius="0.075";
   pts.props.colorMode="gradient";pts.props.colorExpr="z";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
   cam.attachments=[pts.id];
@@ -264,12 +264,13 @@ function recursiveGlyphScene(){
   a.props.min="0";a.props.max="1";a.props.step="0.01";
   const b=makeNode("expr",{x:61,y:344});b.name="b";b.label="Expr";b.props.expr="256";
   const pts=makeNode("points",{x:414,y:250});pts.label="Points";pts.color="#ff552b";
-  pts.props.space="xy";pts.props.hasVectors=true;
-  pts.props.data=
-    "4, 4 | -8*a, 0\n"+
+  pts.props.kind="glyphs";pts.props.mode="recursive";pts.props.useColor=false;
+  pts.props.recGlyphInit="4, 4 | -8*a, 0";
+  pts.props.recGlyphStep=
     "x[n-1] - (x[n-1] + y[n-1])*a, y[n-1] + (x[n-1] - y[n-1])*a | "+
     "-(x[n-1] - (x[n-1] + y[n-1])*a + y[n-1] + (x[n-1] - y[n-1])*a)*a, "+
-    "((x[n-1] - (x[n-1] + y[n-1])*a) - (y[n-1] + (x[n-1] - y[n-1])*a))*a\nb";
+    "((x[n-1] - (x[n-1] + y[n-1])*a) - (y[n-1] + (x[n-1] - y[n-1])*a))*a";
+  pts.props.recGlyphCount="b";
   pts.props.radius="4";pts.props.drawLines=true;pts.props.arrowLen="1";pts.props.normalize=true;
   pts.props.anim="crest";pts.props.speed="1";pts.props.crestColor="#ffffff";
   pts.props.colorMode="off";pts.props.colorExpr="i";pts.props.colorLo="#3a6aff";pts.props.colorHi="#ff5ea8";
@@ -429,7 +430,7 @@ function LivePreview({ kind="field", onOpen }){
   return (
     <div ref={hostRef} style={{position:"absolute",inset:0}}>
       <ViewportSwitch camNode={camNode} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
-        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={handleOpen} maxPixelRatio={isMobile?1.15:undefined}/>
+        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={handleOpen} maxPixelRatio={isMobile?1.1:undefined}/>
     </div>
   );
 }
