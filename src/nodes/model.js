@@ -212,8 +212,9 @@ function makeProjectNode(name){
 // This is what a fresh session opens with — a clean slate.
 function makeBlankScene(){
   const project=makeProjectNode("Untitled");
-  const cam2d=makeNode("camera2d",{x:180,y:160});cam2d.label="Cam2D";
-  return {[project.id]:project,[cam2d.id]:cam2d};
+  //const cam2d=makeNode("camera2d",{x:180,y:160});cam2d.label="Cam2D";
+  //return {[project.id]:project,[cam2d.id]:cam2d};
+  return {[project.id]:project};
 }
 
 // makeInitialScene is the app's default — kept as the blank scene so new
