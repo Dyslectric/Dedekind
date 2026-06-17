@@ -3,7 +3,7 @@ import { makeNode, makeProjectNode } from "../nodes/model.js";
 import { buildScopeForCamera } from "../core/scope.js";
 import { resolveNum } from "../core/math.js";
 import { buildTheme } from "../theme/presets.js";
-import { ViewportSwitch } from "../components/Viewport.jsx";
+import { ViewportSwitch, useIsMobile } from "../components/Viewport.jsx";
 import { serializeProject } from "../core/serialize.js";
 
 // Load a demo's editable graph into the full editor: write it to the URL hash
@@ -345,8 +345,26 @@ function makeDemoProject(kind){
 // itself if the camera's showOpenBtn prop is turned off — the same toggle
 // exposed in the camera's properties panel inside the editor.
 function LivePreview({ kind="field", onOpen }){
+  const isMobile = useIsMobile();
   const built = useMemo(()=>SCENES[kind](), [kind]);
-  const [nodes, setNodes] = useState(built.scene);
+  // On phones the front-page previews start paused: auto-playing every timer on
+  // load is the main source of jank (each playing animator drives a continuous
+  // render loop). Mobile users opt in by tapping play in the scalar overlay; the
+  // scenes are otherwise identical. Desktop keeps the auto-playing showcase.
+  const initialScene = useMemo(()=>{
+    if(!isMobile) return built.scene;
+    const s={};
+    for(const [id,n] of Object.entries(built.scene)){
+      s[id] = (n.type==="animator" && n.playing) ? {...n, playing:false} : n;
+    }
+    return s;
+  },[built.scene,isMobile]);
+  const [nodes, setNodes] = useState(initialScene);
+  // Re-seed when the mobile/desktop split flips (e.g. orientation/resize across
+  // the breakpoint) so the paused-vs-playing default matches the current layout,
+  // unless the user has already interacted.
+  const touched = useRef(false);
+  useEffect(()=>{ if(!touched.current) setNodes(initialScene); },[initialScene]);
   const camId = built.camId;
   // Recompute "is anything animating" from current state so play/pause from the
   // overlay starts and stops the clock.
@@ -361,6 +379,7 @@ function LivePreview({ kind="field", onOpen }){
   // Front-page previews are interactive: dragging a slider or toggling an
   // animator in the scalar overlay updates the live node graph and re-renders.
   const onUpdateNode = useCallback((id, patch)=>{
+    touched.current = true;
     setNodes(ns=>({ ...ns, [id]: { ...ns[id], ...patch } }));
     setTick(t=>t+1);
   },[]);
@@ -410,7 +429,7 @@ function LivePreview({ kind="field", onOpen }){
   return (
     <div ref={hostRef} style={{position:"absolute",inset:0}}>
       <ViewportSwitch camNode={camNode} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
-        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={handleOpen}/>
+        onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={handleOpen} maxPixelRatio={isMobile?1.15:undefined}/>
     </div>
   );
 }

@@ -25,7 +25,7 @@ function useIsMobile(breakpoint=640){
 }
 
 // ── 3D Viewport ──────────────────────────────────────────────────────────────
-function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animValsRef, onUpdateNode, onOpenProject }) {
+function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animValsRef, onUpdateNode, onOpenProject, maxPixelRatio }) {
   const{ui,S}=useUI();
   const isMobile=useIsMobile();
   const mountRef = useRef(null);
@@ -34,7 +34,11 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
   useEffect(() => {
     const el = mountRef.current; if(!el) return;
     const renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // Cap the device pixel ratio when a ceiling is supplied (mobile previews pass
+    // a low cap). A full-DPR drawing buffer on a phone is the single biggest cost
+    // in these GPU previews; clamping it renders fewer fragments per frame for a
+    // large win with little visible difference at preview size.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio||window.devicePixelRatio));
     const w=el.clientWidth||400,h=el.clientHeight||300;
     renderer.setSize(w,h,false);
     // setSize(...,false) leaves the canvas CSS size unmanaged; with a HiDPI
@@ -176,7 +180,12 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
       } else {
         orb.radius=Math.max(0.5,Math.min(500,orb.radius*f));
       }
-      stRef.current.userMoved=true;updateCam();syncCamProps();
+      // Ortho scale lives in the camera frustum (left/right/top/bottom), which is
+      // only recomputed inside the dirty-gated block of the render loop. Position
+      // updates render every frame, but the frustum does not — so without marking
+      // the scene dirty the new orthoSize wouldn't take effect until the next
+      // unrelated rebuild, making ortho zoom feel unresponsive on the first turn.
+      stRef.current.userMoved=true;stRef.current.dirty=true;updateCam();syncCamProps();
     };
     const keys={};
     const onKD=e=>{keys[e.code]=true;};
@@ -216,6 +225,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
           else orb.radius=Math.max(0.5,Math.min(500,orb.radius*f));
         }
         tDist=sp;
+        stRef.current.dirty=true;
         updateCam(); syncCamProps();
       }
     };
@@ -286,7 +296,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
         if(keys["KeyK"]){orb.phi=Math.min(Math.PI-0.05,orb.phi+0.018);moved=true;}
         if(keys["KeyJ"]){orb.theta-=0.018;moved=true;}
         if(keys["KeyL"]){orb.theta+=0.018;moved=true;}
-        if(moved){stRef.current.userMoved=true;updateCam();syncCamProps();}
+        if(moved){stRef.current.userMoved=true;stRef.current.dirty=true;updateCam();syncCamProps();}
       }
 
       if(stRef.current.dirty){
@@ -436,7 +446,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
 // Two dirty flags: `plotDirty` rebuilds the (expensive) GPU plot geometry only
 // when nodes/scope change or an animator advances; `viewDirty` just re-renders
 // and redraws the cheap overlay on pan/zoom/resize.
-function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, onOpenProject }) {
+function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, onOpenProject, maxPixelRatio }) {
   const{ui,S}=useUI();
   const isMobile=useIsMobile();
   const mountRef=useRef(null);
@@ -458,7 +468,7 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
     const gctx=gridCv.getContext("2d");
 
     const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,premultipliedAlpha:false});
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio||window.devicePixelRatio));
     renderer.setClearColor(0x000000,0); // transparent so the grid shows through
     renderer.domElement.style.cssText="position:absolute;top:0;left:0;width:100%;height:100%;display:block;pointer-events:none";
     container.appendChild(renderer.domElement);
@@ -482,7 +492,7 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
     const inScene=new Set(); // objects currently added to the THREE scene
 
     let W=container.clientWidth||400, H=container.clientHeight||300;
-    const dpr=window.devicePixelRatio||1;
+    const dpr=Math.min(window.devicePixelRatio||1, maxPixelRatio||(window.devicePixelRatio||1));
     let sizedOnce=false;   // the first doResize() must always size the canvases/renderer
     const doResize=()=>{
       const w2=container.clientWidth||400, h2=container.clientHeight||300;
@@ -698,11 +708,11 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
   );
 }
 
-function ViewportSwitch({ camNode, nodes, scope, theme, projectNode, onCameraChange, animValsRef, onUpdateNode, onOpenProject }) {
+function ViewportSwitch({ camNode, nodes, scope, theme, projectNode, onCameraChange, animValsRef, onUpdateNode, onOpenProject, maxPixelRatio }) {
   if(!camNode)return null;
   return camNode.props.mode==="2d"
-    ?<Viewport2D camNode={camNode} nodes={nodes} scope={scope} theme={theme} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={onOpenProject}/>
-    :<Viewport3D camNode={camNode} nodes={nodes} scope={scope} projectNode={projectNode} onCameraChange={onCameraChange} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={onOpenProject}/>;
+    ?<Viewport2D camNode={camNode} nodes={nodes} scope={scope} theme={theme} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={onOpenProject} maxPixelRatio={maxPixelRatio}/>
+    :<Viewport3D camNode={camNode} nodes={nodes} scope={scope} projectNode={projectNode} onCameraChange={onCameraChange} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={onOpenProject} maxPixelRatio={maxPixelRatio}/>;
 }
 
 // ── Detached floating window ─────────────────────────────────────────────────
