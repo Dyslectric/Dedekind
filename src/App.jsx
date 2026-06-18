@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ComputeWorker } from "./core/worker.js";
 import { catOf, canAttach, SCALAR_TYPES, isCameraType } from "./core/taxonomy.js";
 import { buildScopeForCamera, resolveScope, collectScalarDeps } from "./core/scope.js";
-import { serializeProject, deserializeProject, serializeCameraShare, migrateModel } from "./core/serialize.js";
+import { serializeProject, deserializeProject, serializeCameraShare, deserializeCameraShare, isShareHash, migrateModel } from "./core/serialize.js";
 import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from "./nodes/model.js";
 import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
 import { uid, makeFn, resolveNum } from "./core/math.js";
@@ -727,7 +727,7 @@ function Editor({initialHash, active=true}){
 function Root(){
   const hash=window.location.hash.slice(1);
   // a fresh visit (no hash / not a share) starts on the landing overlay
-  const isShare=(()=>{ if(!hash) return false; try{const raw=JSON.parse(decodeURIComponent(atob(hash)));return !!raw.share;}catch{return false;} })();
+  const isShare = hash ? isShareHash(hash) : false;
   const startOnLanding=!isShare && !hash;
   const [showLanding,setShowLanding]=useState(startOnLanding);
   const [closing,setClosing]=useState(false);
@@ -775,16 +775,16 @@ export default function App(){
   const hash=window.location.hash.slice(1);
   const parsed=useMemo(()=>{
     if(!hash) return null;
-    try{ return JSON.parse(decodeURIComponent(atob(hash))); }catch{ return null; }
+    return deserializeCameraShare(hash);
   },[hash]);
   const projectNodes=useMemo(()=>{
-    if(!parsed || parsed.share) return null;
+    if(!hash || parsed) return null;   // parsed truthy means it WAS a share; skip
     return deserializeProject(hash);
   },[parsed,hash]);
 
-  if(parsed){
+  if(hash){
     // A camera/viewport share opens straight into that single camera.
-    if(parsed.share) return<SharePage data={parsed}/>;
+    if(parsed) return<SharePage data={parsed}/>;
     // A full project URL on mobile can't open the desktop editor — show a
     // picker of the project's cameras instead.
     if(isMobile && projectNodes) return<MobileProjectPicker nodes={projectNodes}/>;

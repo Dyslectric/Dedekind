@@ -1,18 +1,127 @@
+import { deflateSync, inflateSync, strToU8, strFromU8 } from "fflate";
 import { uid } from "./math.js";
 import { catOf, isScalarType } from "./taxonomy.js";
 import { DEFAULT_GEOM_COLOR } from "../nodes/colors.js";
+import { makeNode, makeProjectNode } from "../nodes/model.js";
+
+// ── Compact base64url ───────────────────────────────────────────────────────
+// Plain base64url over the raw UTF-8 bytes — no encodeURIComponent detour.
+// The old scheme (btoa(encodeURIComponent(json))) percent-encodes almost every
+// punctuation character in JSON before base64 ever runs, which alone costs
+// ~1.8x; stacked with base64's own 4/3 expansion that's a ~2.4x tax for no
+// reason. Going straight from bytes to base64url removes the percent-encoding
+// step entirely (-_  instead of +/, no padding, so it's hash-safe as-is).
+const B64URL_CHARS="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+function b64urlEncode(bytes){
+  let out="";
+  for(let i=0;i<bytes.length;i+=3){
+    const b0=bytes[i], b1=bytes[i+1], b2=bytes[i+2];
+    const has1=b1!==undefined, has2=b2!==undefined;
+    const n=(b0<<16)|((has1?b1:0)<<8)|(has2?b2:0);
+    out+=B64URL_CHARS[(n>>18)&63];
+    out+=B64URL_CHARS[(n>>12)&63];
+    out+=has1?B64URL_CHARS[(n>>6)&63]:"";
+    out+=has2?B64URL_CHARS[n&63]:"";
+  }
+  return out;
+}
+function b64urlDecode(str){
+  const rev=new Uint8Array(128);
+  for(let i=0;i<B64URL_CHARS.length;i++) rev[B64URL_CHARS.charCodeAt(i)]=i;
+  const clean=str.replace(/[^A-Za-z0-9\-_]/g,"");
+  const bytes=[];
+  for(let i=0;i<clean.length;i+=4){
+    const c0=rev[clean.charCodeAt(i)]||0;
+    const c1=i+1<clean.length?rev[clean.charCodeAt(i+1)]||0:0;
+    const c2=i+2<clean.length?rev[clean.charCodeAt(i+2)]:undefined;
+    const c3=i+3<clean.length?rev[clean.charCodeAt(i+3)]:undefined;
+    const n=(c0<<18)|(c1<<12)|((c2||0)<<6)|(c3||0);
+    bytes.push((n>>16)&255);
+    if(c2!==undefined) bytes.push((n>>8)&255);
+    if(c3!==undefined) bytes.push(n&255);
+  }
+  return new Uint8Array(bytes);
+}
+
+// ── Default-prop debloating ─────────────────────────────────────────────────
+// Most nodes carry a lot of untouched defaults (camera lens/display settings,
+// the full project theme palette, unused glyph/recursive fields on a `points`
+// node, etc). Stripping any prop whose value exactly matches its type's fresh
+// default — and restoring those defaults on load — roughly halves the JSON on
+// its own, on top of (and largely independent from) compression. Defaults are
+// derived from the real factories (makeNode/makeProjectNode) so this never
+// drifts out of sync with the node model.
+const _defaultPropsCache=new Map();
+function defaultPropsFor(type){
+  if(_defaultPropsCache.has(type)) return _defaultPropsCache.get(type);
+  let props;
+  try{
+    props = type==="project" ? makeProjectNode().props : (makeNode(type,{x:0,y:0}).props||{});
+  }catch{ props={}; }
+  _defaultPropsCache.set(type,props);
+  return props;
+}
+function debloatNodes(nodes){
+  const out={};
+  for(const[id,n]of Object.entries(nodes)){
+    const defaults=defaultPropsFor(n.type);
+    const props={};
+    for(const[k,v]of Object.entries(n.props||{})){
+      // JSON-stringify compare: cheap deep-equal for the plain values (strings/
+      // numbers/booleans) every node prop actually holds.
+      if(JSON.stringify(defaults[k])!==JSON.stringify(v)) props[k]=v;
+    }
+    const copy={...n};
+    if(Object.keys(props).length) copy.props=props; else delete copy.props;
+    out[id]=copy;
+  }
+  return out;
+}
+function inflateNodeDefaults(nodes){
+  const out={};
+  for(const[id,n]of Object.entries(nodes)){
+    const defaults=defaultPropsFor(n.type);
+    out[id]={...n,props:{...defaults,...(n.props||{})}};
+  }
+  return out;
+}
+
+// ── Compressed payload envelope ─────────────────────────────────────────────
+// New links are written as `~1~<base64url(deflate(JSON))>` — the leading `~`
+// is outside the base64url alphabet, so it doubles as a format marker: any
+// hash that does NOT start with `~` is the old plain
+// btoa(encodeURIComponent(...)) scheme and is decoded that way for backward
+// compatibility with links saved before this format existed.
+const FORMAT_TAG="~1~";
+function encodePayload(value){
+  try{
+    const json=JSON.stringify(value);
+    const compressed=deflateSync(strToU8(json),{level:9});
+    return FORMAT_TAG+b64urlEncode(compressed);
+  }catch{ return null; }
+}
+function decodePayload(str){
+  if(str.startsWith(FORMAT_TAG)){
+    const body=str.slice(FORMAT_TAG.length);
+    const json=strFromU8(inflateSync(b64urlDecode(body)));
+    return JSON.parse(json);
+  }
+  // Legacy uncompressed format.
+  return JSON.parse(decodeURIComponent(atob(str)));
+}
 
 // ── Serialization ────────────────────────────────────────────────────────────
 function serializeProject(nodes) {
   // Working-session save (URL hash). Preserve `playing` so reloading restores a
   // running animation. (The *share* serializer strips playing so shared links
-  // don't autoplay.)
-  try { return btoa(encodeURIComponent(JSON.stringify(nodes))); } catch{return null;}
+  // don't autoplay.) Debloat first (strip default-valued props), then compress
+  // + base64url the result — see encodePayload above for the format.
+  try { return encodePayload(debloatNodes(nodes)); } catch{return null;}
 }
 function deserializeProject(str) {
   try {
     const raw=str.startsWith("#")?str.slice(1):str;
-    const data=JSON.parse(decodeURIComponent(atob(raw)));
+    const data=inflateNodeDefaults(decodePayload(raw));
     const out={},o2n={};
     const oi=Object.keys(data),ni=oi.map(()=>uid());
     oi.forEach((o,i)=>{o2n[o]=ni[i];});
@@ -185,6 +294,26 @@ function migrateModel(nodes){
   }
   return out;
 }
+// Decode a camera-share hash (the {share, camId, nodes} envelope produced by
+// serializeCameraShare above) — same compressed/legacy format handling, with
+// node defaults re-inflated. Returns null on any failure so callers can fall
+// back cleanly (e.g. treat the hash as "not a share").
+function deserializeCameraShare(str){
+  try{
+    const raw=str.startsWith("#")?str.slice(1):str;
+    const parsed=decodePayload(raw);
+    if(!parsed||!parsed.share) return null;
+    return {...parsed, nodes:inflateNodeDefaults(parsed.nodes||{})};
+  }catch{ return null; }
+}
+// Quick, cheap check for whether a hash is a camera-share link (used to decide
+// the initial route before doing the fuller deserialize). Never throws.
+function isShareHash(str){
+  try{
+    const raw=str.startsWith("#")?str.slice(1):str;
+    return !!decodePayload(raw)?.share;
+  }catch{ return false; }
+}
 function serializeCameraShare(camId,nodes) {
   try {
     const cam=nodes[camId]; const rel={};
@@ -204,10 +333,11 @@ function serializeCameraShare(camId,nodes) {
     for(const dep of (cam.attachments||[])) if(isScalarType(nodes[dep]?.type)) visit(dep,guard);
     const proj=Object.values(nodes).find(n=>n.type==="project");
     if(proj) rel[proj.id]={...proj};
-    return btoa(encodeURIComponent(JSON.stringify({share:true,camId,nodes:rel})));
+    return encodePayload({share:true,camId,nodes:debloatNodes(rel)});
   } catch{return null;}
 }
 
 export {
-  serializeProject, deserializeProject, migrateModel, serializeCameraShare
+  serializeProject, deserializeProject, migrateModel, serializeCameraShare,
+  deserializeCameraShare, isShareHash
 };
