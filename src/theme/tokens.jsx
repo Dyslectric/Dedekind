@@ -124,5 +124,5 @@ function useUI(){ return useContext(UICtx); }
 // expression on every call — catastrophic inside the tight sampling loops used
 
 export {
-  StyleTokens, UI_TOKENS, UI_KEYS, UI_DEFAULTS, buildUI, NODE_DARK, NODE_LIGHT, NODE_KEYS, buildNodePalette, makeS, UICtx, useUI, darken, relLum
+  StyleTokens, UI_TOKENS, UI_KEYS, UI_DEFAULTS, buildUI, NODE_DARK, NODE_LIGHT, NODE_KEYS, buildNodePalette, makeS, UICtx, useUI, darken, relLum, mix
 };

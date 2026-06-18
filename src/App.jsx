@@ -618,7 +618,7 @@ function Editor({initialHash, active=true}){
   const panelResizeHandle=(
     <div onMouseDown={()=>{panelDrag.current=true;document.body.style.userSelect="none";}}
       title="Drag to resize"
-      style={{width:5,flexShrink:0,cursor:"col-resize",background:"#0c0e1e",
+      style={{width:5,flexShrink:0,cursor:"col-resize",background:ui.uiPanelBar,
         borderLeft:`1px solid ${ui.uiInputBorder}`,borderRight:`1px solid ${ui.uiInputBorder}`}}/>
   );
   // The docked properties panel (resize handle + panel), ordered for its side.
@@ -683,10 +683,10 @@ function Editor({initialHash, active=true}){
           </div>
 
           {/* Resize handle (only when the dock is expanded) */}
-          {!dockCollapsed&&<div onMouseDown={()=>{vpDrag.current=true;}} style={{height:5,flexShrink:0,cursor:"row-resize",background:"#0c0e1e",borderTop:"1px solid #151728"}}/>}
+          {!dockCollapsed&&<div onMouseDown={()=>{vpDrag.current=true;}} style={{height:5,flexShrink:0,cursor:"row-resize",background:ui.uiPanelBar,borderTop:`1px solid ${ui.uiInputBorder}`}}/>}
 
           {/* Dock bar — always visible; toggles the embedded viewports */}
-          <div style={{display:"flex",alignItems:"center",gap:10,height:26,flexShrink:0,padding:"0 12px",background:ui.uiPanelBar,borderTop:"1px solid #151728",cursor:"pointer",userSelect:"none"}}
+          <div style={{display:"flex",alignItems:"center",gap:10,height:26,flexShrink:0,padding:"0 12px",background:ui.uiPanelBar,borderTop:`1px solid ${ui.uiInputBorder}`,cursor:"pointer",userSelect:"none"}}
             onClick={()=>setDockCollapsed(c=>!c)}>
             <span style={{color:ui.uiMuted,fontFamily:"monospace",fontSize:12.5}}>{dockCollapsed?"▸":"▾"} viewports</span>
             <span style={{color:ui.uiFaint,fontFamily:"monospace",fontSize:11.5}}>

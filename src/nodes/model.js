@@ -1,6 +1,7 @@
 import { uid, nextColor } from "../core/math.js";
 import { catOf, SCALAR_TYPES } from "../core/taxonomy.js";
 import { UI_KEYS, UI_DEFAULTS } from "../theme/tokens.jsx";
+import { THEME_PRESETS } from "../theme/presets.js";
 
 // ── Node Canvas (SVG) ────────────────────────────────────────────────────────
 const NW=200;
@@ -198,13 +199,12 @@ function makeNode(type,pos){
 
 // Project node with default theme/palette — shared by blank and demo scenes.
 function makeProjectNode(name){
-  // Default theme: Catppuccin Macchiato (view colors + UI chrome).
+  // Default theme: Midnight. Spread the real preset (rather than duplicating
+  // its values here) so this stays in sync if Midnight's definition changes,
+  // and so a fresh project is the theme actually labeled "Midnight" in the
+  // theme picker — not just visually similar to some other preset.
   return {id:PROJECT_ID,type:"project",pos:{x:20,y:20},label:"Project",props:{name:name||"Untitled",author:"",
-    canvasBg:"#24273a",nodeBg:"#1e2030",bg2d:"#181926",grid2d:"#363a4f",axes2d:"#8087a2",label2d:"#a5adcb",
-    bg3d:"#181926",grid3d:"#363a4f",grid3d2:"#1e2030",overlayBg:"#1e2030cc",overlayBorder:"#363a4f",overlayText:"#a5adcb",
-    uiHeading:"#dce0f7",uiText:"#cad3f5",uiMuted:"#b5bdd8",uiFaint:"#9aa1c0",uiAccent:"#8aadf4",
-    uiInputText:"#dce0f7",uiInputBg:"#1e2030",uiInputBorder:"#494d64",uiBtnText:"#c6cdec",
-    uiBtnBg:"#181926",uiBtnBorder:"#494d64",uiPanelBar:"#1e2030",uiDanger:"#ed8796",uiGood:"#a6da95",
+    ...THEME_PRESETS["Midnight"],
     },attachments:[]};
 }
 
