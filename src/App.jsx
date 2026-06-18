@@ -571,6 +571,7 @@ function Editor({initialHash, active=true}){
       animValsRef={animValsRef}
       onConnectScalar={panelOnConnectScalar}
       onDisconnectScalar={panelOnDisconnectScalar}
+      onDisconnect={disconnect}
       onPopOut={panelOnPopOut} popped={panelPopped}
       selectionSet={selectionSet}
       onCopySelection={copySelection}
