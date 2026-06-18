@@ -1,6 +1,6 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { TYPE_META } from "../../nodes/model.js";
-import { EI, XF } from "../MathInput.jsx";
+import { EI, XF, NameField } from "../MathInput.jsx";
 import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
 
 // fnMap — a pure map real^m → real^n. Does not plot on its own; it is wired
@@ -68,9 +68,9 @@ export function EquationEditor({ node, scope, onChange }){
       <PR label="rhs"><XF v={node.props.rhs||""} sc={scope} onChange={v=>set("rhs",v)}/></PR>
     </Sec>
     <Sec title="Variables">
-      <PR label="a (→X)"><input value={node.props.varA||"x"} onChange={e=>set("varA",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>
-      <PR label="b (→Y)"><input value={node.props.varB||"y"} onChange={e=>set("varB",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>
-      {is3d&&<PR label="c (→Z)"><input value={node.props.varC||"z"} onChange={e=>set("varC",e.target.value.replace(/[^a-zA-Z0-9_]/g,""))} style={{...S.inp,width:"100%"}}/></PR>}
+      <PR label="a (→X)"><NameField v={node.props.varA||"x"} onChange={val=>set("varA",val)}/></PR>
+      <PR label="b (→Y)"><NameField v={node.props.varB||"y"} onChange={val=>set("varB",val)}/></PR>
+      {is3d&&<PR label="c (→Z)"><NameField v={node.props.varC||"z"} onChange={val=>set("varC",val)}/></PR>}
       <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
         Plotting <em>{node.props.lhs||"lhs"} = {node.props.rhs||"rhs"}</em> over the {is3d?<><em>{varA}</em>,<em>{varB}</em>,<em>{varC}</em> space</>:<><em>{varA}</em>–<em>{varB}</em> plane</>}.
       </div>

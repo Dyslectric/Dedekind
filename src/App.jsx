@@ -10,6 +10,7 @@ import { kindEnabled, ADDABLE_KINDS, ALL_KINDS } from "./nodes/kinds.js";
 import { UICtx, UI_DEFAULTS, buildUI, makeS, darken, relLum } from "./theme/tokens.jsx";
 import { buildTheme } from "./theme/presets.js";
 import { useAnimators } from "./hooks/useAnimators.js";
+import { setUISetting } from "./core/uisettings.js";
 import { useHistory } from "./hooks/useHistory.js";
 import { NodeCanvas } from "./components/NodeCanvas.jsx";
 import { PropsPanel } from "./components/PropsPanel.jsx";
@@ -190,6 +191,10 @@ function Editor({initialHash, active=true}){
   const theme=useMemo(()=>buildTheme(projectNode),[projectNode]);
   const ui=useMemo(()=>buildUI(projectNode),[projectNode]);
   const uiCtx=useMemo(()=>({ui,S:makeS(ui)}),[ui]);
+  // Mirror the project's math-input-mode preference into the shared UI-settings
+  // holder that the EI/XF input wrappers subscribe to (they're too far down the
+  // tree to thread the project node to).
+  useEffect(()=>{ setUISetting("mathInputMode", projectNode?.props?.mathInputMode || "plain"); },[projectNode]);
   const selectedNode=selected?nodes[selected]:null;
 
   // Does the selected node depend (transitively) on a playing animator? If not,
@@ -552,6 +557,10 @@ function Editor({initialHash, active=true}){
     const isEditing=()=>{
       const el=document.activeElement;if(!el)return false;
       const tag=el.tagName;
+      // LiveMathInput's host is a focusable <div> (we manage its caret), not a
+      // native input/contentEditable — it flags itself with data-math-input so
+      // global shortcuts (select-all, copy) defer to it while it has focus.
+      if(el.getAttribute && el.getAttribute("data-math-input")!=null) return true;
       return tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||el.isContentEditable;
     };
     const onKey=e=>{

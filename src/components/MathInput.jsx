@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useUI, relLum, darken } from "../theme/tokens.jsx";
 import { MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, tokenizeMath, classifyIdent, tokenColor } from "../core/identClass.js";
+import { LiveMathInput } from "./LiveMathInput.jsx";
+import { useUISetting } from "../core/uisettings.js";
 
 // ── Math expression tokenizer ────────────────────────────────────────────────
 // (tokenizeMath, identifier classification, and the MATH_* vocab live in
@@ -161,14 +163,38 @@ function MathInput({v,sc,onChange,placeholder,multiline}){
 }
 // EI — scalar/bound field (min/max/res/domain numbers, etc).
 // XF — free-expression field (curve/surface formulas, fn outputs, color exprs).
-// Both are the same plain highlighted contentEditable input; the two names are
-// kept only so call sites read intentionally. Sums/integrals/products are typed
-// as ordinary text (summation(...)/integrate(...)/product(...)) and, being
-// included built-ins, render like sin/cos rather than highlighted scope refs.
-function EI({v,sc,onChange,placeholder}){ return <MathInput v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
-function XF({v,sc,onChange,placeholder}){ return <MathInput v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
+// Both render the same input; they differ only in name so call sites read
+// intentionally. The active input is chosen by the project-level "math input
+// mode" setting: "plain" → the contentEditable highlighter (MathInput), "live"
+// → the from-scratch typeset editor (LiveMathInput). Switching is non-destructive
+// since both edit the same plain mathjs text string. Sums/integrals/products are
+// typed as ordinary text (summation/integrate/product) in either mode.
+function MathField2(props){
+  const mode = useUISetting("mathInputMode");
+  return mode==="live" ? <LiveMathInput {...props}/> : <MathInput {...props}/>;
+}
+function EI({v,sc,onChange,placeholder}){ return <MathField2 v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
+function XF({v,sc,onChange,placeholder}){ return <MathField2 v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
+
+// NameField — a single-identifier input (variable / axis-variable / scalar names).
+// In live mode it's the typeset LiveMathInput in nameMode (italic KaTeX, greek
+// \name→glyph, subscript display, identifier-only). In plain mode it's a plain
+// text input filtered to identifier characters. Both enforce the mathjs rule
+// that a name can't begin with a digit/underscore. `width` sizes the field.
+function NameField({v,onChange,placeholder,width}){
+  const mode = useUISetting("mathInputMode");
+  const clean = s => (s||"").replace(/^[0-9_]+/, "");   // valid identifier start
+  if(mode==="live"){
+    return <div style={{width:width||"100%"}}><LiveMathInput
+      v={v||""} sc={null} nameMode placeholder={placeholder}
+      onChange={val=>onChange(clean(val))}
+      hostStyle={{minHeight:"1.9em",padding:"2px 6px"}}/></div>;
+  }
+  return <MathInput v={v||""} sc={null} placeholder={placeholder}
+    onChange={val=>onChange(clean((val||"").replace(/[^A-Za-z0-9_\u0370-\u03ff\u03d0-\u03f6]/g,"")))}/>;
+}
 
 export {
   MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, tokenizeMath, classifyIdent, tokenColor,
-  GREEK, SUP, prettyPreview, caretOffset, setCaret, MathInput, EI, XF
+  GREEK, SUP, prettyPreview, caretOffset, setCaret, MathInput, EI, XF, NameField
 };

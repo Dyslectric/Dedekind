@@ -1,7 +1,7 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { resolveNum } from "../../core/math.js";
 import { parsePointSeq, parseGlyphField } from "../../geometry/parse.js";
-import { EI, XF, MathInput } from "../MathInput.jsx";
+import { EI, XF, MathInput, NameField } from "../MathInput.jsx";
 import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
 
 // Legacy geometry nodes — kept so projects saved before the unified
@@ -57,7 +57,7 @@ export function PointSeqEditor({ node, scope, onChange }){
       <PR label="reveal"><Toggle v={!!node.props.sequenced} onChange={v=>onChange({props:{...node.props,sequenced:v}})}/></PR>
       {node.props.sequenced&&<>
         <PR label="frac"><EI v={node.props.seqFrac??"1"} sc={scope} onChange={v=>onChange({props:{...node.props,seqFrac:v}})}/></PR>
-        <PR label="var"><input value={node.props.seqVar||""} placeholder="(scalar name, optional)" onChange={e=>onChange({props:{...node.props,seqVar:e.target.value}})} style={{...S.inp,width:"100%"}}/></PR>
+        <PR label="var"><NameField v={node.props.seqVar||""} placeholder="scalar name (optional)" onChange={val=>onChange({props:{...node.props,seqVar:val}})}/></PR>
       </>}
     </Sec>
   </>;

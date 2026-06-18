@@ -1,3 +1,17 @@
+// LaTeX-style greek names → the actual unicode glyph. Typing "\alpha" in a math
+// input converts to "α" in the stored text (Model A: the char IS the canonical
+// identifier — mathjs accepts unicode greek as a symbol name, so nothing else in
+// the evaluate/scope/serialize pipeline needs to know about the backslash form).
+// No name here is a prefix of another, so each is unambiguous the moment it is
+// fully typed.
+const GREEK_NAMES={
+  alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",zeta:"ζ",eta:"η",theta:"θ",
+  iota:"ι",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",xi:"ξ",omicron:"ο",pi:"π",rho:"ρ",
+  sigma:"σ",tau:"τ",upsilon:"υ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",
+  Gamma:"Γ",Delta:"Δ",Theta:"Θ",Lambda:"Λ",Xi:"Ξ",Pi:"Π",Sigma:"Σ",Phi:"Φ",Psi:"Ψ",Omega:"Ω",
+  varphi:"ϕ",varepsilon:"ϵ",vartheta:"ϑ",varsigma:"ς",varrho:"ϱ",varpi:"ϖ",
+};
+
 // ── Identifier classification for expression highlighting ──────────────────
 // Used by MathInput (the contentEditable highlighter). Lives in core/ rather
 // than a component file because it's pure domain logic — it has nothing to do
@@ -8,9 +22,15 @@ const MATH_BOUND=new Set(["x","y","z","u","v","s","r","t","n","i","j","k"]); // 
 
 // Tokenize a raw mathjs-style expression string into {t,v} tokens (ws, ident,
 // num, index, op, other). Used for highlighting/painting and the pretty-preview
-// renderer in MathInput.
+// renderer in MathInput. Identifiers may include greek unicode letters (U+0370–
+// U+03FF) so that converted "\alpha" → "α" names classify and lay out as proper
+// identifiers, not as stray "other" glyphs.
+const IDENT_START="A-Za-z_\\u0370-\\u03ff\\u03d0-\\u03f6";
+const IDENT_CONT ="A-Za-z0-9_\\u0370-\\u03ff\\u03d0-\\u03f6";
+const MATH_TOKEN_RE=new RegExp(
+  `(\\s+)|([${IDENT_START}][${IDENT_CONT}]*)|(\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)|(\\[[^\\]]*\\])|([+\\-*/^%(),.|])|(.)`,"g");
 function tokenizeMath(str){
-  const toks=[]; const re=/(\s+)|([A-Za-z_]\w*)|(\d+\.?\d*(?:[eE][+-]?\d+)?)|(\[[^\]]*\])|([+\-*/^%(),.|])|(.)/g;
+  const toks=[]; const re=new RegExp(MATH_TOKEN_RE.source,"g");
   let mm;
   while((mm=re.exec(str))){
     if(mm[1]!=null) toks.push({t:"ws",v:mm[1]});
@@ -45,5 +65,5 @@ function tokenColor(cls, ui){
 }
 
 export {
-  MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, tokenizeMath, classifyIdent, tokenColor
+  MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, GREEK_NAMES, tokenizeMath, classifyIdent, tokenColor
 };

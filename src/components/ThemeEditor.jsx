@@ -49,6 +49,19 @@ function ThemeEditor({node,onChange}){
   },[p]);
 
   return<>
+    <Sec title="Math input">
+      <div style={{display:"flex",gap:5}}>
+        {[["plain","Plain"],["live","Live typeset"]].map(([v2,l])=>{
+          const on=(p.mathInputMode||"plain")===v2;
+          return <button key={v2} onClick={()=>setProp("mathInputMode",v2)}
+            style={{...S.btn,flex:1,fontSize:13,color:on?ui.uiAccent:ui.uiMuted,
+              borderColor:on?ui.uiAccent:ui.uiInputBorder,background:on?ui.uiAccent+"18":ui.uiBtnBg}}>{l}</button>;
+        })}
+      </div>
+      <div style={{fontSize:11.5,color:ui.uiFaint,marginTop:5,lineHeight:1.4}}>
+        Live mode typesets expressions as you edit (fractions, exponents, ∑/∫/∏). Both edit the same text.
+      </div>
+    </Sec>
     <Sec title="Theme presets">
       <ThemePreview props={p}/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>

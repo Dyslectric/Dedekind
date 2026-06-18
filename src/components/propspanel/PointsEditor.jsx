@@ -1,7 +1,7 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { resolveNum } from "../../core/math.js";
 import { parsePointsExplicit, parseGlyphsExplicit } from "../../geometry/parse.js";
-import { EI, XF, MathInput } from "../MathInput.jsx";
+import { EI, XF, MathInput, NameField } from "../MathInput.jsx";
 import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
 
 // points — unified points / glyphs / sequences node. Three source modes (list,
@@ -74,15 +74,15 @@ export function PointsEditor({ node, scope, onChange, meta }){
         {isGlyph?<>Written as <em>seed | vector</em>.</>:null}
       </div>
       <PR label={isGlyph?"seed | vector":"tuple"}>
-        <MathInput v={(isGlyph?node.props.idxGlyph:node.props.idxPoint)||""} sc={scope}
+        <EI v={(isGlyph?node.props.idxGlyph:node.props.idxPoint)||""} sc={scope}
           onChange={v=>set(isGlyph?"idxGlyph":"idxPoint",v)}
           placeholder={isGlyph?"cos(i), sin(i) | -sin(i), cos(i)":"cos(i*0.3), sin(i*0.3)"}/>
       </PR>
       {useColor && <PR label="color">
-        <MathInput v={node.props.colExpr??"i"} sc={scope} onChange={v=>set("colExpr",v)} placeholder="i"/>
+        <EI v={node.props.colExpr??"i"} sc={scope} onChange={v=>set("colExpr",v)} placeholder="i"/>
       </PR>}
       <PR label="count">
-        <MathInput v={(isGlyph?node.props.idxGlyphCount:node.props.idxCount)||""} sc={scope}
+        <EI v={(isGlyph?node.props.idxGlyphCount:node.props.idxCount)||""} sc={scope}
           onChange={v=>set(isGlyph?"idxGlyphCount":"idxCount",v)} placeholder="64"/>
       </PR>
       <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
@@ -96,7 +96,7 @@ export function PointsEditor({ node, scope, onChange, meta }){
         Each entry depends on the previous via <em>x[n-1], y[n-1]{isGlyph?", vx[n-1], vy[n-1]":""}</em> (any depth k).
       </div>
       <PR label="initial">
-        <MathInput v={(isGlyph?node.props.recGlyphInit:node.props.recInit)||""} sc={scope}
+        <EI v={(isGlyph?node.props.recGlyphInit:node.props.recInit)||""} sc={scope}
           onChange={v=>set(isGlyph?"recGlyphInit":"recInit",v)}
           placeholder={isGlyph?"4, 4 | 0, 1":"1, 0"}/>
       </PR>
@@ -106,11 +106,11 @@ export function PointsEditor({ node, scope, onChange, meta }){
           placeholder={isGlyph?"x[n-1]*0.97 - y[n-1]*0.12, y[n-1]*0.97 + x[n-1]*0.12 | vx[n-1], vy[n-1]":"x[n-1]*0.99, y[n-1]+0.1"}/>
       </PR>
       {useColor && <>
-        <PR label="color init"><MathInput v={node.props.colRecInit??"0"} sc={scope} onChange={v=>set("colRecInit",v)} placeholder="0"/></PR>
-        <PR label="color next"><MathInput v={node.props.colRecStep??"c[n-1]+1"} sc={scope} onChange={v=>set("colRecStep",v)} placeholder="c[n-1]+1"/></PR>
+        <PR label="color init"><EI v={node.props.colRecInit??"0"} sc={scope} onChange={v=>set("colRecInit",v)} placeholder="0"/></PR>
+        <PR label="color next"><EI v={node.props.colRecStep??"c[n-1]+1"} sc={scope} onChange={v=>set("colRecStep",v)} placeholder="c[n-1]+1"/></PR>
       </>}
       <PR label="count">
-        <MathInput v={(isGlyph?node.props.recGlyphCount:node.props.recCount)||""} sc={scope}
+        <EI v={(isGlyph?node.props.recGlyphCount:node.props.recCount)||""} sc={scope}
           onChange={v=>set(isGlyph?"recGlyphCount":"recCount",v)} placeholder="80"/>
       </PR>
     </Sec>}
@@ -209,7 +209,7 @@ export function PointsEditor({ node, scope, onChange, meta }){
       <PR label="reveal"><Toggle v={!!node.props.sequenced} onChange={v=>set("sequenced",v)}/></PR>
       {node.props.sequenced&&<>
         <PR label="frac"><EI v={node.props.seqFrac??"1"} sc={scope} onChange={v=>set("seqFrac",v)}/></PR>
-        <PR label="var"><input value={node.props.seqVar||""} placeholder="(scalar name, optional)" onChange={e=>set("seqVar",e.target.value)} style={{...S.inp,width:"100%"}}/></PR>
+        <PR label="var"><NameField v={node.props.seqVar||""} placeholder="scalar name (optional)" onChange={val=>set("seqVar",val)}/></PR>
       </>}
     </Sec>}
   </>;

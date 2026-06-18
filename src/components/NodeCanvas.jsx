@@ -550,7 +550,15 @@ function CanvasNode({ node, selected, inSelection, zoom, nodes, pal, onMouseDown
       <rect width={NW} height={h} rx={8} fill="transparent" onMouseDown={onMouseDown} style={{cursor:"grab"}}/>
       <rect x={9} y={6} width={32} height={14} rx={3} fill={tint} opacity={0.16}/>
       <text x={25} y={16.5} textAnchor="middle" fontSize={13} fill={tint} fontFamily="monospace" fontWeight="bold" style={{pointerEvents:"none"}}>{meta.tag}</text>
-      <text x={47} y={17} fontSize={14.5} fill={pal.nodeLabel} fontFamily="monospace" fontWeight="bold" style={{pointerEvents:"none"}}>{node.label}{node.name?` (${node.name})`:""}</text>
+      <text x={47} y={17} fontSize={14.5} fill={pal.nodeLabel} fontFamily="monospace" fontWeight="bold" style={{pointerEvents:"none"}}>{node.label}{node.name?(()=>{
+        // show the var name with an underscore rendered as a typeset subscript
+        // (x_0 → x₀); greek chars already display literally.
+        const us=node.name.indexOf("_");
+        if(us>0&&us<node.name.length-1){
+          return <>{` (${node.name.slice(0,us)}`}<tspan fontSize={10.5} dy={3}>{node.name.slice(us+1)}</tspan><tspan dy={-3}>{")"}</tspan></>;
+        }
+        return ` (${node.name})`;
+      })():""}</text>
       {node.color&&<circle cx={NW-14} cy={13} r={5} fill={node.color} stroke={pal.nodeBorder} strokeWidth={0.5} style={{pointerEvents:"none"}}/>}
       {isCamera&&<>
         {(()=>{const en=pal.chip("#43d088"),off=pal.chip("#e06a6a");const c=node.enabled?en:off;return(
