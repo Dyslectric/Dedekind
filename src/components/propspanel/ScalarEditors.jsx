@@ -1,7 +1,6 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { resolveNum } from "../../core/math.js";
-import { EI } from "../MathInput.jsx";
-import { XF } from "../MathField.jsx";
+import { EI, XF } from "../MathInput.jsx";
 import { Sec, PR } from "../primitives.jsx";
 
 // Scalar-family editors: constant, expr, slider, animator, and the function

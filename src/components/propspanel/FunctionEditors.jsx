@@ -1,7 +1,6 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { TYPE_META } from "../../nodes/model.js";
-import { EI } from "../MathInput.jsx";
-import { XF } from "../MathField.jsx";
+import { EI, XF } from "../MathInput.jsx";
 import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
 
 // fnMap — a pure map real^m → real^n. Does not plot on its own; it is wired

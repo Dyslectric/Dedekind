@@ -1,42 +1,23 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useUI } from "../theme/tokens.jsx";
+import { useUI, relLum, darken } from "../theme/tokens.jsx";
+import { MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, tokenizeMath, classifyIdent, tokenColor } from "../core/identClass.js";
 
-// ── Math expression tokenizer + highlighting ─────────────────────────────────
-const MATH_CONSTANTS=new Set(["pi","e","tau","phi","Inf","Infinity"]);
-const MATH_FUNCS=new Set(["sin","cos","tan","asin","acos","atan","atan2","sinh","cosh","tanh","exp","log","ln","log10","log2","sqrt","cbrt","abs","sign","floor","ceil","round","fract","mod","pow","min","max","gamma","factorial","hypot","norm","dot","cross"]);
-const MATH_BOUND=new Set(["x","y","z","u","v","s","r","t","n","i","j","k"]); // loop/param/index vars
-function tokenizeMath(str){
-  const toks=[]; const re=/(\s+)|([A-Za-z_]\w*)|(\d+\.?\d*(?:[eE][+-]?\d+)?)|(\[[^\]]*\])|([+\-*/^%(),.|])|(.)/g;
-  let mm;
-  while((mm=re.exec(str))){
-    if(mm[1]!=null) toks.push({t:"ws",v:mm[1]});
-    else if(mm[2]!=null) toks.push({t:"ident",v:mm[2]});
-    else if(mm[3]!=null) toks.push({t:"num",v:mm[3]});
-    else if(mm[4]!=null) toks.push({t:"index",v:mm[4]});       // [n-1] style
-    else if(mm[5]!=null) toks.push({t:"op",v:mm[5]});
-    else toks.push({t:"other",v:mm[6]});
-  }
-  return toks;
-}
-// classify an identifier given the live scope: is it an evaluated (in-scope)
-// value/function, a known constant/builtin, a bound loop var, or unknown?
-function classifyIdent(name, sc){
-  if(sc && typeof sc[name]==="number") return "scopeVal";    // a wired scalar — evaluated
-  if(sc && typeof sc[name]==="function") return "scopeFn";   // a wired function — evaluated
-  if(MATH_FUNCS.has(name)) return "fn";
-  if(MATH_CONSTANTS.has(name)) return "const";
-  if(MATH_BOUND.has(name)) return "bound";
-  return "unknown";
-}
-function tokenColor(cls, ui){
-  switch(cls){
-    case "scopeVal": return {c:ui.uiAccent, w:"bold", bg:ui.uiAccent+"22"};   // highlighted: evaluated token
-    case "scopeFn":  return {c:ui.uiGood,   w:"bold", bg:ui.uiGood+"1e"};
-    case "fn":       return {c:"#7fb0ff", w:"normal"};
-    case "const":    return {c:"#e0a0ff", w:"normal"};
-    case "bound":    return {c:ui.uiText, w:"normal"};
-    default:         return {c:ui.uiMuted, w:"normal"};
-  }
+// ── Math expression tokenizer ────────────────────────────────────────────────
+// (tokenizeMath, identifier classification, and the MATH_* vocab live in
+// core/identClass.js.)
+
+// Number literals get a warm orange. The base tone reads well on the default
+// dark input background but is nearly invisible on a light/cream one, so darken
+// it toward a deeper amber as the input background gets lighter. Keyed off the
+// background's relative luminance so it adapts to any theme, not just two cases.
+const NUM_BASE = "#d6a86a";
+function numberColor(inputBg){
+  const lum = relLum(inputBg || "#070918");
+  if(lum < 0.4) return NUM_BASE;            // dark bg: original orange reads fine
+  // Light bg: darken progressively (more for lighter backgrounds) so the orange
+  // keeps contrast without losing its identity.
+  const amt = Math.min(0.62, 0.28 + (lum - 0.4) * 0.7);
+  return darken(NUM_BASE, amt);
 }
 // Prettify a token stream for the preview line (× · superscripts · Greek).
 const GREEK={pi:"π",tau:"τ",phi:"φ",theta:"θ",alpha:"α",beta:"β",gamma:"γ",lambda:"λ",mu:"μ",omega:"ω",sigma:"σ",delta:"δ",rho:"ρ",epsilon:"ε"};
@@ -110,7 +91,7 @@ function MathInput({v,sc,onChange,placeholder,multiline}){
       if(tk.t==="ident"){const cl=classifyIdent(tk.v,sc);const col=tokenColor(cl,ui);
         span.style.color=col.c; if(col.w==="bold")span.style.fontWeight="700";
         if(col.bg){span.style.background=col.bg;span.style.borderRadius="3px";}
-      } else if(tk.t==="num"){ span.style.color="#d6a86a"; }
+      } else if(tk.t==="num"){ span.style.color=numberColor(ui.uiInputBg); }
       else if(tk.t==="index"){ span.style.color=ui.uiAccent; span.style.fontStyle="italic"; }
       else if(tk.t==="op"){ span.style.color=ui.uiMuted; }
       else { span.style.color=ui.uiInputText; }
@@ -178,9 +159,16 @@ function MathInput({v,sc,onChange,placeholder,multiline}){
     {(()=>{const toks=tokenizeMath(valRef.current);const ev=toks.filter(tk=>tk.t==="ident"&&(classifyIdent(tk.v,sc)==="scopeVal"||classifyIdent(tk.v,sc)==="scopeFn"));return ev.length?<div style={{fontSize:12,color:ui.uiAccent,opacity:0.75,padding:"1px 7px 0"}}>● uses evaluated value{ev.length>1?"s":""}</div>:null;})()}
   </div>;
 }
+// EI — scalar/bound field (min/max/res/domain numbers, etc).
+// XF — free-expression field (curve/surface formulas, fn outputs, color exprs).
+// Both are the same plain highlighted contentEditable input; the two names are
+// kept only so call sites read intentionally. Sums/integrals/products are typed
+// as ordinary text (summation(...)/integrate(...)/product(...)) and, being
+// included built-ins, render like sin/cos rather than highlighted scope refs.
 function EI({v,sc,onChange,placeholder}){ return <MathInput v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
+function XF({v,sc,onChange,placeholder}){ return <MathInput v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
 
 export {
   MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, tokenizeMath, classifyIdent, tokenColor,
-  GREEK, SUP, prettyPreview, caretOffset, setCaret, MathInput, EI
+  GREEK, SUP, prettyPreview, caretOffset, setCaret, MathInput, EI, XF
 };

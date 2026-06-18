@@ -1,8 +1,7 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { resolveNum } from "../../core/math.js";
 import { parsePointSeq, parseGlyphField } from "../../geometry/parse.js";
-import { EI, MathInput } from "../MathInput.jsx";
-import { XF } from "../MathField.jsx";
+import { EI, XF, MathInput } from "../MathInput.jsx";
 import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
 
 // Legacy geometry nodes — kept so projects saved before the unified
