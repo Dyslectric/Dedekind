@@ -322,7 +322,41 @@ function Editor({initialHash, active=true}){
     setSelectionSet(new Set([node.id]));
   },[setNodes,beginStep]);
 
-  // ── Selection ──────────────────────────────────────────────────────────────
+  // Add a node at a specific world position, optionally auto-wiring it to a set
+  // of existing nodes. Used by the node-editor canvas letter-key shortcuts:
+  //  - plain (no wiring): drop a fresh node under the cursor.
+  //  - wireFrom: the new node should CONSUME each listed node (they are
+  //    dependencies whose output drives the new node's input).
+  //  - wireInto: the new node should DRIVE each listed node (the new node is a
+  //    dependency feeding each listed consumer's input).
+  // Only links permitted by canAttach are made; the rest are silently skipped.
+  // Everything happens in a single history step so it's one undo.
+  const addNodeAt=useCallback((type,pos,opts={})=>{
+    const wireFrom=(opts.wireFrom||[]).filter(id=>id&&id!==undefined);
+    const wireInto=(opts.wireInto||[]).filter(id=>id&&id!==undefined);
+    const node=makeNode(type,pos);
+    beginStep();
+    setNodes(ns=>{
+      const next={...ns,[node.id]:node};
+      // new node consumes each wireFrom dep (dep → new)
+      for(const depId of wireFrom){
+        const dep=next[depId]; if(!dep) continue;
+        if(!canAttach(dep.type,node.type)) continue;
+        if((next[node.id].attachments||[]).includes(depId)) continue;
+        next[node.id]={...next[node.id],attachments:[...(next[node.id].attachments||[]),depId]};
+      }
+      // new node drives each wireInto consumer (new → consumer)
+      for(const consId of wireInto){
+        const cons=next[consId]; if(!cons) continue;
+        if(!canAttach(node.type,cons.type)) continue;
+        if((cons.attachments||[]).includes(node.id)) continue;
+        next[consId]={...cons,attachments:[...(cons.attachments||[]),node.id]};
+      }
+      return next;
+    });
+    setSelected(node.id);
+    setSelectionSet(new Set([node.id]));
+  },[setNodes,beginStep]);
   // Plain click: select exactly one (or clear when id is null). Shift+click:
   // toggle the clicked node in/out of the set; the clicked node becomes primary
   // when added, and when the primary is removed we hand primary to any remaining
@@ -642,7 +676,8 @@ function Editor({initialHash, active=true}){
               <NodeCanvas nodes={nodes} selected={selected} selectionSet={selectionSet} onSelect={selectNode} onMove={moveNode} onMoveMany={moveNodes}
                 onConnect={connect} onDisconnect={disconnect} onDelete={deleteNode}
                 onMarqueeSelect={marqueeSelect} onPasteAtWorld={pasteAtWorld}
-                onToggleEnabled={toggleEnabled} onDetach={detachCamera} onUpdateNode={updateNode} animValsRef={animValsRef} theme={theme} projectNode={projectNode}/>
+                onToggleEnabled={toggleEnabled} onDetach={detachCamera} onUpdateNode={updateNode} animValsRef={animValsRef} theme={theme} projectNode={projectNode}
+                onAddNodeAt={addNodeAt}/>
             </div>
             {panelSpan==="main" && panelSide==="right" && panelDock}
           </div>

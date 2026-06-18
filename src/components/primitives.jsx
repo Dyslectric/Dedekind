@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useUI, darken, relLum } from "../theme/tokens.jsx";
 import { TYPE_META } from "../nodes/model.js";
-import { ADDABLE_KINDS, ALL_KINDS, KIND_GROUP_LABELS, kindEnabled } from "../nodes/kinds.js";
+import { ADDABLE_KINDS, ALL_KINDS, KIND_GROUP_LABELS, kindEnabled, HOTKEY_FOR_KIND } from "../nodes/kinds.js";
 
 // ── Small UI helpers ─────────────────────────────────────────────────────────
 function ColorRow({v,onChange}){const{S}=useUI();return<div style={{display:"flex",gap:5,alignItems:"center"}}><input type="color" value={v||"#000000"} onChange={e=>onChange(e.target.value)} style={{width:22,height:20,border:"none",background:"none",cursor:"pointer",padding:0,flexShrink:0}}/><input value={v||""} onChange={e=>onChange(e.target.value)} style={{...S.inp,flex:1}}/></div>;}
@@ -34,7 +34,7 @@ function NodeAddGrid({onAddNode, projectNode}){
     <div style={{color:ui.uiFaint,fontSize:14,letterSpacing:1,marginBottom:6,fontWeight:"bold"}}>ADD NODE</div>
     {rows.map((row,i)=>(
       <div key={i} style={{display:"flex",gap:3,marginBottom:3,flexWrap:"wrap"}}>
-        {row.map(t=>{const m=TYPE_META[t]||{tc:ui.uiAccent};const bl=relLum(ui.uiBtnBg||"#0c0e20");const amt=bl>0.6?0.7:bl>0.3?0.64:bl>0.12?0.42:0;const tcol=amt>0?darken(m.tc,amt):m.tc;return<button key={t} onClick={()=>onAddNode(t)} style={{...S.btnSm,flex:"1 1 22%",color:tcol,borderColor:tcol+"33",textAlign:"center"}}>{labelOf[t]||t}</button>;})}
+        {row.map(t=>{const m=TYPE_META[t]||{tc:ui.uiAccent};const bl=relLum(ui.uiBtnBg||"#0c0e20");const amt=bl>0.6?0.7:bl>0.3?0.64:bl>0.12?0.42:0;const tcol=amt>0?darken(m.tc,amt):m.tc;const hk=HOTKEY_FOR_KIND[t];return<button key={t} onClick={()=>onAddNode(t)} title={hk?`Shortcut: ${hk} (in the node canvas)`:undefined} style={{...S.btnSm,flex:"1 1 22%",color:tcol,borderColor:tcol+"33",textAlign:"center",position:"relative"}}>{labelOf[t]||t}{hk&&<span style={{marginLeft:5,opacity:0.55,fontSize:11,textTransform:"uppercase"}}>{hk}</span>}</button>;})}
       </div>
     ))}
   </div>;

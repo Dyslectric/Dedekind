@@ -4,6 +4,12 @@ import { NW, getOutPort, getInPort, TYPE_META } from "../nodes/model.js";
 import { buildNodePalette, NODE_DARK } from "../theme/tokens.jsx";
 import { resolveNum } from "../core/math.js";
 import { resolveScope } from "../core/scope.js";
+import { KIND_HOTKEYS, kindEnabled } from "../nodes/kinds.js";
+
+// Hotkeys that arm a wire from / into the current selection (see keydown
+// handler). Kept distinct from the node-add letters in KIND_HOTKEYS.
+const WIRE_FROM_KEY = "f"; // wire OUT of selected node(s): they drive a target you then click
+const WIRE_INTO_KEY = "i"; // wire INTO selected node(s): a source you then click drives them
 
 // Card height for a node, matching CanvasNode's own calc. Cameras grow with the
 // number of plots they show; sliders/animators are taller to fit an interactive
@@ -17,7 +23,7 @@ function nodeHeight(node, nodes){
   return node.type==="expr"?58:40;
 }
 
-function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMany, onConnect, onDisconnect, onDelete, onMarqueeSelect, onPasteAtWorld, onToggleEnabled, onDetach, onUpdateNode, animValsRef, theme, projectNode }) {
+function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMany, onConnect, onDisconnect, onDelete, onMarqueeSelect, onPasteAtWorld, onToggleEnabled, onDetach, onUpdateNode, animValsRef, theme, projectNode, onAddNodeAt }) {
   const selSet = selectionSet || (selected?new Set([selected]):new Set());
   const svgRef=useRef(null),gRef=useRef(null),edgesRef=useRef(null);
   const viewRef=useRef({panX:50,panY:50,zoom:1});
@@ -29,6 +35,10 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
   const[marquee,setMarquee]=useState(null);
   // Live cursor position in SVG-client coords, kept for paste-under-cursor.
   const mouseRef=useRef({x:0,y:0,inside:false});
+  // True after the most recent mousedown landed inside the canvas (and not in a
+  // text field elsewhere). Gates the single-letter node-add hotkeys so they only
+  // fire when the user is "working in" the canvas, per the feature spec.
+  const canvasFocusedRef=useRef(false);
   const[tick,setTick]=useState(0);
   useEffect(()=>{let raf;const loop=()=>{if(Object.values(nodes).some(n=>n.type==="animator"&&n.playing))setTick(t=>t+1);raf=requestAnimationFrame(loop);};raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf);},[nodes,theme]);
 
@@ -52,6 +62,41 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
       if(mt){mt.setAttribute("x",(op.x+ip.x)/2);mt.setAttribute("y",(op.y+ip.y)/2+4/viewRef.current.zoom);}
     });
   },[nodes]);
+
+  // ── Wire helpers (shared by drag-drop, click-to-connect, and hotkeys) ────────
+  // Complete an armed/in-progress wire by attaching all of its sources to a
+  // clicked target node, honoring direction and canAttach. Returns true if any
+  // connection was made.
+  const completeWireToNode=useCallback((targetId)=>{
+    const w=wireRef.current; if(!w) return false;
+    const sources=w.sources||(w.fromId?[w.fromId]:[]);
+    if(sources.includes(targetId)){ return false; }
+    const tgt=nodes[targetId]; if(!tgt) return false;
+    let made=false;
+    if(w.portType==="out"){
+      // sources drive the target's input
+      for(const sid of sources){ const s=nodes[sid]; if(s&&canAttach(s.type,tgt.type)){ onConnect("dep",sid,targetId); made=true; } }
+    } else {
+      // target drives the sources' inputs
+      for(const sid of sources){ const s=nodes[sid]; if(s&&canAttach(tgt.type,s.type)){ onConnect("dep",targetId,sid); made=true; } }
+    }
+    wireRef.current=null; setWireKey(k=>k+1);
+    return made;
+  },[nodes,onConnect]);
+
+  // Arm a wire from a set of source ids in a given direction, without a held
+  // mouse button. The wire follows the cursor until the user clicks a target
+  // port/body (completeWireToNode) or cancels (Esc / empty click).
+  const armWire=useCallback((sourceIds,portType)=>{
+    const ids=[...sourceIds].filter(id=>nodes[id]);
+    if(!ids.length) return;
+    const anchor=nodes[ids[0]];
+    const fp=portType==="out"?getOutPort(anchor):getInPort(anchor);
+    wireRef.current={ sources:ids, portType, armed:true, curX:fp.x, curY:fp.y, downX:null, downY:null };
+    setWireKey(k=>k+1);
+  },[nodes]);
+
+  const cancelWire=useCallback(()=>{ if(wireRef.current){ wireRef.current=null; setWireKey(k=>k+1); } },[]);
 
   useEffect(()=>{
     const svg=svgRef.current;if(!svg)return;
@@ -102,7 +147,7 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
       if(wireRef.current){
         const r=svg.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;
         wireRef.current.curX=(e.clientX-r.left-panX)/zoom;wireRef.current.curY=(e.clientY-r.top-panY)/zoom;
-        const wl=svg.querySelector("#wire-line");if(wl){const w=wireRef.current;const fn=nodes[w.fromId];if(fn){const fp=w.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+w.curX)/2;wl.setAttribute("d",`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${w.curY} ${w.curX},${w.curY}`);}}
+        const wl=svg.querySelector("#wire-line");if(wl){const w=wireRef.current;const anchorId=(w.sources&&w.sources[0])||w.fromId;const fn=nodes[anchorId];if(fn){const fp=w.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+w.curX)/2;wl.setAttribute("d",`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${w.curY} ${w.curX},${w.curY}`);}}
       }
     };
     const onMU=e=>{
@@ -149,9 +194,25 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
       }
       dragRef.current=null;
       if(wireRef.current){
+        const w=wireRef.current;
+        // A real drag (button held + moved) commits on drop and clears the wire.
+        // A bare click on a port (no drag) instead ARMS the wire: it stays live
+        // and follows the cursor until the user clicks a target port/body (or
+        // presses a node-add hotkey, or hits Esc / clicks empty space).
+        const movedFar = w.downX!=null && (Math.abs(e.clientX-w.downX)+Math.abs(e.clientY-w.downY))>4;
+        if(w.armed && !movedFar){
+          // Was already armed (e.g. via keyboard) — ignore this mouseup; the
+          // completion happens on the next explicit click (handled elsewhere).
+          return;
+        }
+        if(!movedFar){
+          // Click, not drag → promote to an armed wire and wait for a target.
+          w.armed=true; w.downX=null; w.downY=null;
+          setWireKey(k=>k+1);
+          return;
+        }
         const r=svg.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;
-        const wx=(e.clientX-r.left-panX)/zoom,wy=(e.clientY-r.top-panY)/zoom;const w=wireRef.current;
-        const fn=nodes[w.fromId];
+        const wx=(e.clientX-r.left-panX)/zoom,wy=(e.clientY-r.top-panY)/zoom;
         // Hit-test: a drop counts if it lands near the target's port OR anywhere
         // over the target node's body. The body test makes wiring forgiving —
         // you don't have to land precisely on the small port dot.
@@ -159,21 +220,24 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
           const x=node.pos.x, y=node.pos.y;
           return wx>=x-10 && wx<=x+NW+10 && wy>=y-6 && wy<=y+64;
         };
+        const sources=w.sources||(w.fromId?[w.fromId]:[]);
         for(const node of Object.values(nodes)){
-          if(node.id===w.fromId)continue;
-          // A wire goes dependency(out) → consumer(in). Depending on which port
-          // the user grabbed, fn is either the dependency or the consumer.
+          if(sources.includes(node.id))continue;
           if(w.portType==="out"){
-            // fn is a dependency; drop on a consumer's input port (or its body)
-            if(canAttach(fn.type,node.type)){
-              const ip=getInPort(node);
-              if(Math.hypot(ip.x-wx,ip.y-wy)<16 || overBody(node)){ onConnect("dep",fn.id,node.id); break; }
+            // sources are dependencies; drop on a consumer's input port (or body)
+            const ip=getInPort(node);
+            const near = Math.hypot(ip.x-wx,ip.y-wy)<16 || overBody(node);
+            if(near && sources.some(sid=>nodes[sid]&&canAttach(nodes[sid].type,node.type))){
+              for(const sid of sources){ if(nodes[sid]&&canAttach(nodes[sid].type,node.type)) onConnect("dep",sid,node.id); }
+              break;
             }
           } else {
-            // fn is a consumer (grabbed its input port); drop on a dependency's output port (or its body)
-            if(canAttach(node.type,fn.type)){
-              const op=getOutPort(node);
-              if(Math.hypot(op.x-wx,op.y-wy)<16 || overBody(node)){ onConnect("dep",node.id,fn.id); break; }
+            // sources are consumers; drop on a dependency's output port (or body)
+            const op=getOutPort(node);
+            const near = Math.hypot(op.x-wx,op.y-wy)<16 || overBody(node);
+            if(near && sources.some(sid=>nodes[sid]&&canAttach(node.type,nodes[sid].type))){
+              for(const sid of sources){ if(nodes[sid]&&canAttach(node.type,nodes[sid].type)) onConnect("dep",node.id,sid); }
+              break;
             }
           }
         }
@@ -216,8 +280,88 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
   },[onPasteAtWorld]);
   useEffect(()=>{redrawEdges(nodes);},[nodes,redrawEdges]);
 
+  // Track whether the canvas is the user's current focus target: true when the
+  // last mousedown landed inside the svg, false otherwise. Used to gate hotkeys.
+  useEffect(()=>{
+    const onDown=(e)=>{ const svg=svgRef.current; canvasFocusedRef.current = !!(svg && svg.contains(e.target)); };
+    window.addEventListener("mousedown",onDown,true);
+    return()=>window.removeEventListener("mousedown",onDown,true);
+  },[]);
+
+  // ── Canvas keyboard shortcuts ────────────────────────────────────────────────
+  // Single letters add a node of a given kind (KIND_HOTKEYS), and two reserved
+  // letters arm a wire from / into the current selection. Behaviour by context:
+  //   • a wire is in progress (dragging or armed): the letter adds a node at the
+  //     cursor and auto-wires it — it receives every source's output (out-drag)
+  //     or drives every source's input (in-drag);
+  //   • otherwise, with NOTHING selected: the letter just drops a node at the
+  //     cursor;
+  //   • WIRE_FROM_KEY / WIRE_INTO_KEY arm a wire out of / into the selection,
+  //     which the user then completes by clicking a port or node body.
+  // Esc cancels an in-progress/armed wire. All gated so they never fire while a
+  // text field is focused or the canvas isn't the active surface.
+  useEffect(()=>{
+    const isEditing=()=>{const el=document.activeElement;if(!el)return false;const t=el.tagName;return t==="INPUT"||t==="TEXTAREA"||t==="SELECT"||el.isContentEditable;};
+    const worldUnderCursor=()=>{
+      const m=mouseRef.current;const{panX,panY,zoom}=viewRef.current;
+      if(!m.inside){const r=svgRef.current?.getBoundingClientRect();const cx=(r?.width||800)/2,cy=(r?.height||600)/2;return{x:(cx-panX)/zoom,y:(cy-panY)/zoom};}
+      return{x:(m.x-panX)/zoom, y:(m.y-panY)/zoom};
+    };
+    const onKey=e=>{
+      if(e.ctrlKey||e.metaKey||e.altKey) return;     // leave modified combos alone
+      if(isEditing()) return;
+      const key=(e.key||"").toLowerCase();
+      // Esc clears any in-progress wire.
+      if(e.key==="Escape"){ if(wireRef.current){ e.preventDefault(); cancelWire(); } return; }
+      if(!canvasFocusedRef.current) return;
+
+      const wire=wireRef.current;
+      const addType=KIND_HOTKEYS[key];
+
+      // 1) Node-add letter while a wire is live → add at cursor + auto-wire.
+      if(addType && wire && kindEnabled(projectNode,addType)){
+        e.preventDefault();
+        const sources=wire.sources||(wire.fromId?[wire.fromId]:[]);
+        // out-drag: sources are deps → the new node consumes them (wireFrom);
+        // in-drag: sources are consumers → the new node drives them (wireInto).
+        const opts = wire.portType==="out" ? {wireFrom:sources} : {wireInto:sources};
+        onAddNodeAt(addType, worldUnderCursor(), opts);
+        wireRef.current=null; setWireKey(k=>k+1);
+        return;
+      }
+
+      // 2) Plain node-add letter (no wire). Spec: only when nothing is selected.
+      if(addType && !wire && selSet.size===0 && kindEnabled(projectNode,addType)){
+        e.preventDefault();
+        onAddNodeAt(addType, worldUnderCursor(), {});
+        return;
+      }
+
+      // 3) Arm a wire out of / into the current selection.
+      if(key===WIRE_FROM_KEY && selSet.size>0){
+        e.preventDefault();
+        // sources drive a target the user clicks → they are dependencies (out).
+        armWire([...selSet].filter(id=>canBeDependency(nodes[id]?.type)), "out");
+        return;
+      }
+      if(key===WIRE_INTO_KEY && selSet.size>0){
+        e.preventDefault();
+        // a source the user clicks drives the selection → selection are consumers (in).
+        armWire([...selSet].filter(id=>canConsume(nodes[id]?.type)), "in");
+        return;
+      }
+    };
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[selSet,nodes,projectNode,onAddNodeAt,armWire,cancelWire]);
+
   const onBgDown=useCallback(e=>{
     if(e.button!==0)return;
+    // An armed wire is cancelled by clicking empty canvas (don't also pan/clear).
+    if(wireRef.current && wireRef.current.armed){
+      cancelWire();
+      return;
+    }
     const ctrl=e.ctrlKey||e.metaKey;
     if(ctrl){
       // Ctrl-drag = rectangular select (add); Ctrl+Alt-drag = rectangular
@@ -230,9 +374,15 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
     }
     dragRef.current={type:"pan",sx:e.clientX,sy:e.clientY,spx:viewRef.current.panX,spy:viewRef.current.panY};
     if(!e.shiftKey)onSelect(null);
-  },[onSelect]);
+  },[onSelect,cancelWire]);
   const onNodeDown=useCallback((e,id)=>{
     if(e.button!==0)return;e.stopPropagation();
+    // If a wire is armed, clicking a node's body completes it to that node
+    // (the body is a forgiving target, same as on drop).
+    if(wireRef.current && wireRef.current.armed){
+      completeWireToNode(id);
+      return;
+    }
     if(e.shiftKey){
       // Shift+click toggles membership; don't begin a drag so the toggle reads
       // cleanly (a tiny accidental drag would otherwise move the node).
@@ -250,8 +400,21 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
     const groupIds = alreadyGrouped ? [...selSet].filter(g=>nodes[g]) : [id];
     const group = groupIds.map(g=>({id:g, spx:nodes[g].pos.x, spy:nodes[g].pos.y}));
     dragRef.current={type:"node",id,sx:e.clientX,sy:e.clientY,spx:nodes[id].pos.x,spy:nodes[id].pos.y,group,moved:false,collapseTo:alreadyGrouped?id:null};
-  },[nodes,onSelect,selSet]);
-  const onPortDown=useCallback((e,id,pt)=>{e.stopPropagation();const r=svgRef.current.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;wireRef.current={fromId:id,portType:pt,curX:(e.clientX-r.left-panX)/zoom,curY:(e.clientY-r.top-panY)/zoom};setWireKey(k=>k+1);},[]);
+  },[nodes,onSelect,selSet,completeWireToNode]);
+  const onPortDown=useCallback((e,id,pt)=>{
+    e.stopPropagation();
+    // If a wire is already armed (click-to-connect or selection wiring), this
+    // click on a port completes it against this node instead of starting anew.
+    if(wireRef.current && wireRef.current.armed){
+      completeWireToNode(id);
+      return;
+    }
+    const r=svgRef.current.getBoundingClientRect();const{panX,panY,zoom}=viewRef.current;
+    wireRef.current={fromId:id,sources:[id],portType:pt,armed:false,
+      downX:e.clientX,downY:e.clientY,
+      curX:(e.clientX-r.left-panX)/zoom,curY:(e.clientY-r.top-panY)/zoom};
+    setWireKey(k=>k+1);
+  },[completeWireToNode]);
 
   // Begin dragging a slider card's thumb. trackLocalX0 / trackLocalW are the
   // track's geometry in card-local (world) units; we precompute the world-space
@@ -330,7 +493,7 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
             </g>
           ))}
         </g>
-        {wireNow&&(()=>{const fn=nodes[wireNow.fromId];if(!fn)return null;const fp=wireNow.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+wireNow.curX)/2;return<path id="wire-line" d={`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${wireNow.curY} ${wireNow.curX},${wireNow.curY}`} fill="none" stroke={nodePal.nodeSel} strokeWidth={2/zoom} strokeDasharray={`${6/zoom},${4/zoom}`} opacity={0.8}/>;})()}
+        {wireNow&&(()=>{const anchorId=(wireNow.sources&&wireNow.sources[0])||wireNow.fromId;const fn=nodes[anchorId];if(!fn)return null;const fp=wireNow.portType==="out"?getOutPort(fn):getInPort(fn);const cpx=(fp.x+wireNow.curX)/2;return<path id="wire-line" d={`M${fp.x},${fp.y} C${cpx},${fp.y} ${cpx},${wireNow.curY} ${wireNow.curX},${wireNow.curY}`} fill="none" stroke={nodePal.nodeSel} strokeWidth={2/zoom} strokeDasharray={`${6/zoom},${4/zoom}`} opacity={0.8}/>;})()}
         {Object.values(nodes).map(n=>(
           <CanvasNode key={n.id} node={n} selected={selected===n.id} inSelection={selSet.has(n.id)} zoom={zoom} nodes={nodes} pal={nodePal}
             onMouseDown={e=>onNodeDown(e,n.id)} onPortDown={onPortDown}
