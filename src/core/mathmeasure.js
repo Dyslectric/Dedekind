@@ -44,6 +44,7 @@ const M = {
   fracAxis: 0.30,     // height of the fraction bar above baseline (math axis)
   derivOpScale: 0.8,  // the d/d{var} operator fraction is smaller than the body
   derivBracketScale: 1.15, // medium brackets around the differentiated body
+  derivBracketInset: 0.08, // padding between bracket and body (stops body spill)
   derivParenScale: 1.0,    // parens around the evaluation point
   derivGap: 0.12,     // gap between operator, brackets, and point
   bigGlyphScale: 1.05, // ∑ ∏ vertical metric-box (reserves room; hugs the glyph)
@@ -72,8 +73,11 @@ const M = {
 function atomWidth(node, wf){
   if(node.t==="ws") return M.gapW * node.v.length;
   if(node.t==="op"){
-    // operators that are truly binary get side gaps; parens/commas don't
-    const base = wf ? wf(node.v, "main") : (node.v==="," ? M.charW*0.6 : (node.v==="("||node.v===")") ? M.parenW : M.charW);
+    // operators that are truly binary get side gaps; parens/commas don't. The
+    // multiplication "*" renders as "·", so measure the dot's width (not the
+    // asterisk's) to keep caret/layout aligned with what's drawn.
+    const glyph = node.v==="*" ? "·" : node.v;
+    const base = wf ? wf(glyph, "main") : (node.v==="," ? M.charW*0.6 : (node.v==="("||node.v===")") ? M.parenW : M.charW);
     if("+-*=<>".includes(node.v)) return base + M.opGap*2;
     if(node.v===",") return base + M.opGap;
     return base;
@@ -141,11 +145,43 @@ function measure(node, scale, wf){
       const d = base.d;
       return { node, scale, base, exp, shift, w: base.w + exp.w, a, d };
     }
-    case "deriv": {
-      // d/d{var} [ body ] ( point )
+    case "pderiv": {
+      // ∂/∂{dvar} [freelist] [expr] (values)
+      const dchar = "∂";
       const dscale = scale * M.derivOpScale;
       const dvar = measure(node.dvar, dscale, wf);
-      const dW = (wf ? wf("d","var") : M.charW) * dscale;
+      const dW = (wf ? wf(dchar,"var") : M.charW) * dscale;
+      const numW = dW;
+      const denW = dW + dvar.w;
+      const pad = M.fracPad*dscale;
+      const opW = Math.max(numW, denW) + pad*2;
+      const bar = M.fracBar*dscale;
+      const gap = M.fracGap*dscale;
+      const axis = M.fracAxis*scale;
+      const opA = axis + bar/2 + gap + (M.ascent*dscale + M.descent*dscale);
+      const opD = (M.ascent*dscale + M.descent*dscale) + gap + bar/2 - axis;
+      const brW = (wf ? wf("[","main") : M.parenW) * scale * M.derivBracketScale;
+      const brInset = M.derivBracketInset*scale;
+      const pw = (wf ? wf("(","main") : M.parenW) * scale * M.derivParenScale;
+      const g = M.derivGap*scale;
+      const freelist = measure(node.freelist, scale, wf);  // [free vars]
+      const expr = measure(node.expr, scale, wf);          // [expression]
+      const values = measure(node.values, scale, wf);      // (point tuple)
+      const w = opW + g
+        + brW + brInset + freelist.w + brInset + brW + g
+        + brW + brInset + expr.w + brInset + brW + g
+        + pw + values.w + pw;
+      const a = Math.max(opA, freelist.a, expr.a, values.a);
+      const d = Math.max(opD, freelist.d, expr.d, values.d);
+      return { node, scale, dscale, dvar, dW, numW, denW, opW, bar, gap, axis, pad,
+               brW, brInset, pw, g, freelist, expr, values, w, a, d };
+    }
+    case "deriv": {
+      // d/d{var} [ body ] ( point )
+      const dchar = "d";
+      const dscale = scale * M.derivOpScale;
+      const dvar = measure(node.dvar, dscale, wf);
+      const dW = (wf ? wf(dchar,"var") : M.charW) * dscale;
       const numW = dW;                       // numerator: "d"
       const denW = dW + dvar.w;              // denominator: "d" + var slot
       const pad = M.fracPad*dscale;
@@ -155,18 +191,19 @@ function measure(node, scale, wf){
       const axis = M.fracAxis*scale;
       const opA = axis + bar/2 + gap + (M.ascent*dscale + M.descent*dscale);
       const opD = (M.ascent*dscale + M.descent*dscale) + gap + bar/2 - axis;
-      // [ body ]
+      // [ body ] — brInset keeps the body from kissing the closing bracket.
       const body = measure(node.body, scale, wf);
       const brW = (wf ? wf("[","main") : M.parenW) * scale * M.derivBracketScale;
+      const brInset = M.derivBracketInset*scale;
       // ( point )
       const point = measure(node.point, scale, wf);
       const pw = (wf ? wf("(","main") : M.parenW) * scale * M.derivParenScale;
       const g = M.derivGap*scale;
-      const w = opW + g + brW + body.w + brW + g + pw + point.w + pw;
+      const w = opW + g + brW + brInset + body.w + brInset + brW + g + pw + point.w + pw;
       const a = Math.max(opA, body.a, point.a);
       const d = Math.max(opD, body.d, point.d);
       return { node, scale, dscale, dvar, dW, numW, denW, opW, bar, gap, axis, pad,
-               body, brW, point, pw, g, w, a, d };
+               body, brW, brInset, point, pw, g, w, a, d };
     }
     case "frac": {
       const num = measure(node.num, scale, wf);
@@ -302,7 +339,11 @@ function place(mz, x, baselineY, out){
       }
       // a whitespace atom draws nothing but still advances + anchors
       if(n.t!=="ws"){
-        out.boxes.push({ type:"text", text:n.v, x, y:baselineY, scale:mz.scale, tk:n.t, v:n.v, s:n.s, e:n.e });
+        // Display the multiplication "*" as a centered dot "·" (canonical text and
+        // source range stay "*", so mathjs still reads multiplication and the
+        // caret/editing are unaffected — only the rendered glyph changes).
+        const disp = (n.t==="op" && n.v==="*") ? "·" : n.v;
+        out.boxes.push({ type:"text", text:disp, x, y:baselineY, scale:mz.scale, tk:n.t, v:n.v, s:n.s, e:n.e });
       }
       // anchor at the LEFT edge for offset n.s, and (handled by row) right edge
       pushAnchor(out, n.s, x, baselineY, mz);
@@ -365,44 +406,99 @@ function place(mz, x, baselineY, out){
       if(n.slash) pushAnchor(out, n.slash.s, x, barY, mz);
       return;
     }
-    case "deriv": {
-      // d/d{var} [ body ] ( point )
+    case "pderiv": {
+      // ∂/∂{dvar} [freelist] [expr] (values).
       const barY = baselineY - mz.axis;
       const opW = mz.opW;
-      // operator fraction: bar + "d" over "d{var}"
       out.boxes.push({ type:"rule", x, y:barY - mz.bar/2, w:opW, h:mz.bar, s:n.nameRange.s, e:n.nameRange.e });
       const numBaseline = barY - mz.gap - mz.bar/2 - M.descent*mz.dscale;
-      out.boxes.push({ type:"text", text:"d", x:x+(opW-mz.numW)/2, y:numBaseline, scale:mz.dscale, tk:"ident", v:"d" });
+      out.boxes.push({ type:"text", text:"∂", x:x+(opW-mz.numW)/2, y:numBaseline, scale:mz.dscale, tk:"ident", v:"∂" });
       const denBaseline = barY + mz.gap + mz.bar/2 + M.ascent*mz.dscale;
       const denX = x + (opW - mz.denW)/2;
-      out.boxes.push({ type:"text", text:"d", x:denX, y:denBaseline, scale:mz.dscale, tk:"ident", v:"d" });
-      // anchor before operator, and the var slot (after the denominator "d")
+      out.boxes.push({ type:"text", text:"∂", x:denX, y:denBaseline, scale:mz.dscale, tk:"ident", v:"∂" });
       pushAnchor(out, n.s, x, baselineY, mz);
       place(mz.dvar, denX + mz.dW, denBaseline, out);
       const brScale = mz.scale*M.derivBracketScale;
       const parScale = mz.scale*M.derivParenScale;
-      // [ body ]   — the comma after body (commas[0]) marks the var-slot boundary
+      let cx = x + opW + mz.g;
+      // helper to render a [ slot ] with inset
+      const bracket = (slotMz)=>{
+        out.boxes.push({ type:"paren", which:"[", x:cx, y:baselineY, scale:brScale, h:mz.a+mz.d });
+        cx += mz.brW + mz.brInset;
+        place(slotMz, cx, baselineY, out);
+        cx += slotMz.w + mz.brInset;
+        out.boxes.push({ type:"paren", which:"]", x:cx, y:baselineY, scale:brScale, h:mz.a+mz.d });
+        cx += mz.brW;
+      };
+      // [ free-var list ]
+      bracket(mz.freelist);
+      cx += mz.g;
+      // [ expression ]
+      bracket(mz.expr);
+      cx += mz.g;
+      // ( value tuple )
+      out.boxes.push({ type:"paren", which:"(", x:cx, y:baselineY, scale:parScale, h:mz.a+mz.d });
+      cx += mz.pw;
+      place(mz.values, cx, baselineY, out);
+      cx += mz.values.w;
+      // The value/free-var slots come from array tokens "[...]"; the hidden "]"
+      // sits between the editable inner content and the operator's close. Without
+      // help, the offset just after "]" is a caret stop at the same screen x as the
+      // inner-end, so typing there inserts OUTSIDE the array (e.g. "[8,4]8"). Record
+      // each array's interior-end so the snap map routes the post-"]" position back
+      // inside, keeping edits within the brackets.
+      if(n.values && n.values.arrEnd!=null) out.arrayEnds.push(n.values.arrEnd);
+      if(n.freelist && n.freelist.arrEnd!=null) out.arrayEnds.push(n.freelist.arrEnd);
+      out.boxes.push({ type:"paren", which:")", x:cx, y:baselineY, scale:parScale, h:mz.a+mz.d, s:n.close?n.close.s:n.e, e:n.close?n.close.e:n.e });
+      if(n.close){ pushAnchor(out, n.close.s, cx, baselineY, mz); pushAnchor(out, n.close.e, cx+mz.pw, baselineY, mz); }
+      cx += mz.pw;
+      pushAnchor(out, n.e, cx, baselineY, mz);
+      out.spans.push({ s:n.s, e:n.e, kind:"pderiv" });
+      return;
+    }
+    case "deriv": {
+      // d/d{var} [ body ] ( point ).
+      const dchar = "d";
+      const barY = baselineY - mz.axis;
+      const opW = mz.opW;
+      // operator fraction: bar + "d"/"∂" over "d{var}"
+      out.boxes.push({ type:"rule", x, y:barY - mz.bar/2, w:opW, h:mz.bar, s:n.nameRange.s, e:n.nameRange.e });
+      const numBaseline = barY - mz.gap - mz.bar/2 - M.descent*mz.dscale;
+      out.boxes.push({ type:"text", text:dchar, x:x+(opW-mz.numW)/2, y:numBaseline, scale:mz.dscale, tk:"ident", v:dchar });
+      const denBaseline = barY + mz.gap + mz.bar/2 + M.ascent*mz.dscale;
+      const denX = x + (opW - mz.denW)/2;
+      out.boxes.push({ type:"text", text:dchar, x:denX, y:denBaseline, scale:mz.dscale, tk:"ident", v:dchar });
+      pushAnchor(out, n.s, x, baselineY, mz);
+      place(mz.dvar, denX + mz.dW, denBaseline, out);
+      // NOTE: do NOT anchor commas[0].s here — its offset coincides with the body
+      // slot's start, and anchoring it at the denominator would steal the body
+      // slot's caret position (putting the cursor under the fraction). The body
+      // and var slots emit their own correct anchors when placed.
+      const brScale = mz.scale*M.derivBracketScale;
+      const parScale = mz.scale*M.derivParenScale;
+      // [ body ]  — inset so the body never touches the brackets
       let cx = x + opW + mz.g;
       out.boxes.push({ type:"paren", which:"[", x:cx, y:baselineY, scale:brScale, h:mz.a+mz.d, s:n.open?n.open.s:n.s, e:n.open?n.open.e:n.s });
-      if(n.open) pushAnchor(out, n.open.s, cx, baselineY, mz);       // body slot start
+      if(n.open) pushAnchor(out, n.open.s, cx, baselineY, mz);
       cx += mz.brW;
       if(n.open) pushAnchor(out, n.open.e, cx, baselineY, mz);
+      cx += mz.brInset;
       place(mz.body, cx, baselineY, out);
-      cx += mz.body.w;
-      // comma between body and var (slot boundary into the var)
-      if(n.commas && n.commas[0]) pushAnchor(out, n.commas[0].s, denX + mz.dW, denBaseline, mz);
+      cx += mz.body.w + mz.brInset;
       out.boxes.push({ type:"paren", which:"]", x:cx, y:baselineY, scale:brScale, h:mz.a+mz.d });
       cx += mz.brW;
-      // ( point )  — the comma between var and point marks the point-slot boundary
+      // ( point )
       cx += mz.g;
       out.boxes.push({ type:"paren", which:"(", x:cx, y:baselineY, scale:parScale, h:mz.a+mz.d });
       cx += mz.pw;
-      if(n.commas && n.commas[1]) pushAnchor(out, n.commas[1].s, cx, baselineY, mz);  // point slot start
+      // (point slot emits its own anchor; commas[1].s coincides with the var slot
+      // offset, so anchoring it here would steal the var's caret position.)
       place(mz.point, cx, baselineY, out);
       cx += mz.point.w;
       out.boxes.push({ type:"paren", which:")", x:cx, y:baselineY, scale:parScale, h:mz.a+mz.d, s:n.close?n.close.s:n.e, e:n.close?n.close.e:n.e });
       if(n.close){ pushAnchor(out, n.close.s, cx, baselineY, mz); pushAnchor(out, n.close.e, cx+mz.pw, baselineY, mz); }
-      pushAnchor(out, n.e, cx+mz.pw, baselineY, mz);
+      cx += mz.pw;
+      pushAnchor(out, n.e, cx, baselineY, mz);
       out.spans.push({ s:n.s, e:n.e, kind:"deriv" });
       return;
     }
@@ -524,7 +620,7 @@ function layoutMath(text, opts={}){
   _caret = opts.caret!=null ? opts.caret : -1;  // for caret-aware sqrt paren room
   const tree = parseLayout(text);
   const mz = measure(tree, scale, wf);
-  const out = { boxes:[], anchors:[], spans:[], wf };
+  const out = { boxes:[], anchors:[], spans:[], arrayEnds:[], wf };
 
   // Place the top-level row with auto-wrapping. Only the TOP LEVEL breaks: each
   // top-level child (an atom, fraction, group, bigop, sup, sqrt, call…) is an
@@ -592,6 +688,12 @@ function layoutMath(text, opts={}){
   }
 
   const spans = out.spans.slice().sort((a,b)=>a.s-b.s);
+  // Keep the caret inside array slots: the offset just past a hidden "]" (which
+  // renders at the same x as the last inside position) is forced to snap back to
+  // the interior end, so typing at the end of a [..] tuple inserts INSIDE it.
+  for(const ae of out.arrayEnds){
+    if(ae+1>=0 && ae+1<=text.length) snap[ae+1] = ae;
+  }
   return { boxes: out.boxes, anchors, snap, spans, width: mz.w, ascent: mz.a, descent: mz.d, height: totalH };
 }
 function ensureAnchor(out, offset, x, baselineY, mz){

@@ -17,7 +17,7 @@ const GREEK_NAMES={
 // than a component file because it's pure domain logic — it has nothing to do
 // with React or any particular input widget.
 const MATH_CONSTANTS=new Set(["pi","e","tau","phi","Inf","Infinity"]);
-const MATH_FUNCS=new Set(["sin","cos","tan","asin","acos","atan","atan2","sinh","cosh","tanh","exp","log","ln","log10","log2","sqrt","cbrt","abs","sign","floor","ceil","round","fract","mod","pow","min","max","gamma","factorial","hypot","norm","dot","cross","summation","product","integrate","differentiate"]);
+const MATH_FUNCS=new Set(["sin","cos","tan","asin","acos","atan","atan2","sinh","cosh","tanh","exp","log","ln","log10","log2","sqrt","cbrt","abs","sign","floor","ceil","round","fract","mod","pow","min","max","gamma","factorial","hypot","norm","dot","cross","summation","product","integrate","differentiate","partial"]);
 const MATH_BOUND=new Set(["x","y","z","u","v","s","r","t","n","i","j","k"]); // loop/param/index vars
 
 // Tokenize a raw mathjs-style expression string into {t,v} tokens (ws, ident,

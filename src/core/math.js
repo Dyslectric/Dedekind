@@ -97,25 +97,88 @@ function integrate(args, _m, scope) {
 }
 integrate.rawArgs = true;
 
-// differentiate(body, x, point)  — d/dx[body] evaluated at x = point.
-// Takes the SYMBOLIC derivative of body w.r.t. x (mathjs `derivative`, which
-// treats every other free variable as a constant — so this same function serves
-// partials ∂/∂x as well), then evaluates the resulting expression with x bound
-// to `point` (other scope variables still resolve, via _evalWith). rawArgs keeps
-// body/var/point unevaluated so the differentiation variable isn't resolved early.
+// differentiate(body, x, point, [pin...])  — d/dx[body] evaluated at x = point.
+// Takes the SYMBOLIC derivative of body w.r.t. x (mathjs `derivative`), then
+// evaluates with x bound to `point`; remaining free variables resolve from the
+// ambient scope unless pinned by a trailing `name=value` assignment arg. rawArgs
+// keeps everything unevaluated so the differentiation variable isn't resolved
+// early.
 function differentiate(args, _m, scope) {
   if (args.length < 3 || !args[1].isSymbolNode) return NaN;
   const name = args[1].name;
   let d;
   try { d = math.derivative(args[0], name); }      // symbolic d(body)/d(name)
   catch { return NaN; }
-  const pt = args[2].compile().evaluate(scope);    // the point value (may use scope)
+  let pt; try { pt = args[2].compile().evaluate(scope); } catch { return NaN; }
   if (typeof pt !== "number" || !isFinite(pt)) return NaN;
-  return _evalWith(d.compile(), name, pt, scope);  // derivative value at x = point
+  const binds = [[name, pt]];
+  for (let i = 3; i < args.length; i++) {
+    const a = args[i];
+    if (a && a.isAssignmentNode && a.object && a.object.isSymbolNode) {
+      let val; try { val = a.value.compile().evaluate(scope); } catch { val = NaN; }
+      binds.push([a.object.name, val]);
+    }
+  }
+  for (const [, val] of binds) if (typeof val !== "number" || !isFinite(val)) return NaN;
+  const nms = binds.map(b => b[0]);
+  const had = nms.map(nm => _scopeHas(scope, nm));
+  const prev = nms.map((nm, i) => had[i] ? _scopeGet(scope, nm) : undefined);
+  binds.forEach(([nm, val]) => _scopeSet(scope, nm, val));
+  let v;
+  try { v = d.compile().evaluate(scope); }
+  catch { v = NaN; }
+  finally {
+    nms.forEach((nm, i) => { if (had[i]) _scopeSet(scope, nm, prev[i]); else _scopeDelete(scope, nm); });
+  }
+  return typeof v === "number" ? v : NaN;
 }
 differentiate.rawArgs = true;
 
-math.import({ summation, product, integrate, differentiate }, { override: true });
+// partial(expr, x, [freevars...], [values...])  — ∂/∂x[expr] evaluated at a point.
+// Differentiates expr symbolically w.r.t. x (mathjs `derivative`, treating other
+// variables as constants), then binds each free variable in the list to the
+// positionally-matched value and evaluates. The diff variable x must appear in
+// the free-var list (its value is the evaluation coordinate). Any free variable
+// in expr NOT listed falls back to the ambient scope (sliders, scalars). rawArgs
+// keeps everything unevaluated so the differentiation variable isn't resolved
+// early.
+function partial(args, _m, scope) {
+  if (args.length < 4 || !args[1].isSymbolNode) return NaN;
+  const dv = args[1].name;
+  let d;
+  try { d = math.derivative(args[0], dv); }        // symbolic ∂(expr)/∂(dv)
+  catch { return NaN; }
+  const namesNode = args[2], valsNode = args[3];
+  if (!namesNode || !namesNode.isArrayNode || !valsNode || !valsNode.isArrayNode) return NaN;
+  const names = namesNode.items || [];
+  const vals  = valsNode.items || [];
+  const binds = [];
+  for (let i = 0; i < names.length; i++) {
+    const nm = names[i];
+    if (!nm || !nm.isSymbolNode) return NaN;
+    let val = NaN;
+    if (i < vals.length) { try { val = vals[i].compile().evaluate(scope); } catch { val = NaN; } }
+    binds.push([nm.name, val]);
+  }
+  if (!binds.some(b => b[0] === dv)) return NaN;    // diff var must be in the list
+  for (const [, val] of binds) if (typeof val !== "number" || !isFinite(val)) return NaN;
+  // bind listed vars on the live scope (so unlisted free vars still resolve from
+  // scope), evaluate the derivative, then restore.
+  const nms = binds.map(b => b[0]);
+  const had = nms.map(nm => _scopeHas(scope, nm));
+  const prev = nms.map((nm, i) => had[i] ? _scopeGet(scope, nm) : undefined);
+  binds.forEach(([nm, val]) => _scopeSet(scope, nm, val));
+  let v;
+  try { v = d.compile().evaluate(scope); }
+  catch { v = NaN; }
+  finally {
+    nms.forEach((nm, i) => { if (had[i]) _scopeSet(scope, nm, prev[i]); else _scopeDelete(scope, nm); });
+  }
+  return typeof v === "number" ? v : NaN;
+}
+partial.rawArgs = true;
+
+math.import({ summation, product, integrate, differentiate, partial }, { override: true });
 
 // Re-export parse so other modules (e.g. mathlatex) share this instance and its
 // knowledge of the custom operators.

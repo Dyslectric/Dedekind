@@ -242,16 +242,30 @@ class Parser {
         s:id.s, e,
       };
     }
+    if(id.v==="partial"){
+      // ∂/∂{dvar} [freevars] [expr] (point) — partial derivative operator.
+      // Canonical args: (expr, dvar, [freevars], [values]). The two arrays render
+      // as a bracketed free-var list and a parenthesized value tuple. All slots
+      // exist (empty rows) when absent so the caret can sit in placeholders.
+      const expr  = args.length>=1 ? args[0] : emptyRow(open.e);
+      const dvar  = args.length>=2 ? args[1] : emptyRow(open.e);
+      // args[2]/args[3] arrive as rows that may contain a single "index" atom like
+      // "[x,y]". Extract the inner content into an editable row spanning the chars
+      // between the brackets (so the caret edits inside, not the brackets).
+      const freelist = arrayInner(args[2], open.e);
+      const values   = arrayInner(args[3], open.e);
+      return { kind:"pderiv", expr, dvar, freelist, values,
+               nameRange:{s:id.s,e:id.e}, ...punct, s:id.s, e };
+    }
     if(id.v==="differentiate"){
-      // d/d{var} [ body ] ( point ) — Leibniz operator that differentiates `body`
-      // w.r.t. `var` and evaluates at `var = point`. args: (body, var, point).
-      // All slots exist even when empty so the caret can sit in an empty
-      // placeholder right after the "d/d" auto-expand. (Same node serves partials
-      // ∂/∂x later — just a glyph swap.)
+      // d/d{var} [ body ] ( point ) — Leibniz operator. Differentiates `body`
+      // w.r.t. `var` and evaluates at `var = point`. All slots exist even when
+      // empty so the caret can sit in a placeholder right after auto-expand.
       const body  = args.length>=1 ? args[0] : emptyRow(open.e);
       const dvar  = args.length>=2 ? args[1] : emptyRow(open.e);
       const point = args.length>=3 ? args[2] : emptyRow(open.e);
-      return { kind:"deriv", body, dvar, point, nameRange:{s:id.s,e:id.e}, ...punct, s:id.s, e };
+      return { kind:"deriv", body, dvar, point,
+               nameRange:{s:id.s,e:id.e}, ...punct, s:id.s, e };
     }
     if(id.v==="sqrt"){
       // sqrt always lays out as √ with a radicand slot — even when empty
@@ -268,6 +282,34 @@ class Parser {
 }
 
 function emptyRow(at){ return { kind:"row", children:[], s:at, e:at }; }
+
+// Extract the inner, editable content of an array argument like "[x,y]". The arg
+// row typically holds a single "index" atom whose value is "[x,y]"; we strip the
+// brackets and re-tokenize the inside (e.g. "x,y") with offsets shifted to sit
+// just after the "[", so the caret edits the elements/commas, not the brackets.
+// Falls back to an empty row at `fallbackAt` when there's nothing usable.
+function arrayInner(argRow, fallbackAt){
+  if(!argRow) return emptyRow(fallbackAt);
+  // find an index atom inside the arg row
+  let idx = null;
+  if(argRow.kind==="atom" && argRow.t==="index") idx = argRow;
+  else if(argRow.kind==="row" && Array.isArray(argRow.children)){
+    idx = argRow.children.find(c=>c.kind==="atom" && c.t==="index") || null;
+  }
+  if(!idx){
+    // not a bracketed array — just use the arg row as-is (lenient)
+    return argRow.kind==="row" ? argRow : { kind:"row", children:[argRow], s:argRow.s, e:argRow.e };
+  }
+  const raw = idx.v;                       // "[x,y]"
+  const innerStart = idx.s + 1;            // just after "["
+  const inner = raw.slice(1, raw.length-1);// "x,y"  (drop [ and ])
+  const arrEnd = innerStart + inner.length;// offset of "]" = last inside position
+  if(inner.length===0){ const r=emptyRow(innerStart); r.arrEnd=arrEnd; return r; }
+  // tokenize inner with offsets relative to innerStart
+  const toks = tokenizeWithPos(inner).map(t=>({ ...t, s:t.s+innerStart, e:t.e+innerStart }));
+  const children = toks.filter(t=>t.t!=="ws").map(t=>atom(t));
+  return { kind:"row", children, s:innerStart, e:innerStart+inner.length, arrEnd };
+}
 // Ensure a node is wrapped in a row (so frac/sup parts are uniformly rows).
 function wrapRow(node){
   if(!node) return emptyRow(0);

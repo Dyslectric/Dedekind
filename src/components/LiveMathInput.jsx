@@ -247,9 +247,9 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
         // "differentiate(" = 14 chars; then ",,)" → body=14, var=15, point=16
         const insert = "differentiate(,,)";
         const off = start;
-        // caret in the VAR slot first; Tab cycles var → body → point
-        splice(start, c, insert, off+15);
-        fieldStopsRef.current = [off+15, off+14, off+16].sort((a,b)=>a-b);
+        // caret in the BODY (expression) slot first; Tab cycles body → var → point
+        splice(start, c, insert, off+14);
+        fieldStopsRef.current = [off+14, off+15, off+16];
         return true;
       }
     }
@@ -257,10 +257,10 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
   };
 
   // Convert a completed "\name" greek escape ending at caret `c` into its glyph.
-  // Scans back from the caret for a backslash followed by letters; if those
-  // letters exactly match a greek name (none is a prefix of another, so a full
-  // match is unambiguous), replace "\name" with the single unicode char. Runs on
-  // every printable keystroke, so it fires the instant the name is complete.
+  // Scans back from the caret for a backslash followed by letters; if those match
+  // a greek name (none is a prefix of another, so a full match is unambiguous),
+  // replace "\name" with the single unicode char. Runs on every printable
+  // keystroke, so it fires the instant the name is complete.
   const maybeConvertGreek = (c)=>{
     const t = valRef.current;
     // find the backslash that starts the escape immediately before the caret
@@ -268,6 +268,22 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
     while(i>=0 && /[A-Za-z]/.test(t[i])) i--;
     if(i<0 || t[i]!=="\\") return false;
     const name = t.slice(i+1, c);
+    // operator escape: \partial → ∂/∂{var} [freevars] [expr] (point). Distinct
+    // from greek glyph conversion. ("partial" shares no prefix with any greek
+    // name — pi/phi/psi diverge at the 2nd letter — so \pi etc. still convert.)
+    if(name==="partial"){
+      const start = i;
+      // "partial(,,[],[])" — offsets within: "partial(" = 8 chars, then
+      // expr=8, dvar=9, '['=10, freelist-inner=11, ']'=12... build & index:
+      // p a r t i a l (  ,  ,  [  ]  ,  [  ]  )
+      // 0 1 2 3 4 5 6 7  8  9 10 11 12 13 14 15
+      const insert = "partial(,,[],[])";
+      // caret in the FIRST bracket (free-var list) inner = start+11
+      splice(start, c, insert, start+11);
+      // Tab order: freelist(11) → expr(8) → values(14) → dvar(9)
+      fieldStopsRef.current = [start+11, start+8, start+14, start+9].sort((a,b)=>a-b);
+      return true;
+    }
     const glyph = GREEK_NAMES[name];
     if(!glyph) return false;
     splice(i, c, glyph);   // replace "\name" with the glyph; caret lands after it
@@ -355,6 +371,11 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
       // \greek escape). This keeps a name a single identifier — no operators,
       // slashes, parens, etc. — so it can never become an expression.
       if(nameMode && !/[A-Za-z0-9_\u0370-\u03ff\u03d0-\u03f6\\]/.test(e.key)) return;
+      // Snap the caret to its drawable stop before inserting. This keeps insertion
+      // inside structural slots — e.g. at the end of a "[..]" tuple the raw offset
+      // may sit just past the hidden "]" (snapping back inside), so typing there
+      // lands within the brackets ("[8,49]") instead of outside ("[8,4]9").
+      if(!sel){ const sc = layout.snap[c] ?? c; if(sc!==c){ c = sc; caretRef.current = c; } }
       const s = sel ? sel[0] : c;
       const en = sel ? sel[1] : c;
       // insert (replacing any selection)
@@ -390,7 +411,7 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
     if(best){
       if(e.shiftKey){ if(anchorRef.current==null) anchorRef.current=caretRef.current; }
       else { anchorRef.current=null; }
-      caretRef.current = best.offset;
+      caretRef.current = layout.snap[best.offset] ?? best.offset;
     }
     fieldStopsRef.current = null;   // leaving template editing on an explicit click
     requestAnimationFrame(()=>{ host.focus(); rerender(); });
