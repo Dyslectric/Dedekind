@@ -97,7 +97,25 @@ function integrate(args, _m, scope) {
 }
 integrate.rawArgs = true;
 
-math.import({ summation, product, integrate }, { override: true });
+// differentiate(body, x, point)  — d/dx[body] evaluated at x = point.
+// Takes the SYMBOLIC derivative of body w.r.t. x (mathjs `derivative`, which
+// treats every other free variable as a constant — so this same function serves
+// partials ∂/∂x as well), then evaluates the resulting expression with x bound
+// to `point` (other scope variables still resolve, via _evalWith). rawArgs keeps
+// body/var/point unevaluated so the differentiation variable isn't resolved early.
+function differentiate(args, _m, scope) {
+  if (args.length < 3 || !args[1].isSymbolNode) return NaN;
+  const name = args[1].name;
+  let d;
+  try { d = math.derivative(args[0], name); }      // symbolic d(body)/d(name)
+  catch { return NaN; }
+  const pt = args[2].compile().evaluate(scope);    // the point value (may use scope)
+  if (typeof pt !== "number" || !isFinite(pt)) return NaN;
+  return _evalWith(d.compile(), name, pt, scope);  // derivative value at x = point
+}
+differentiate.rawArgs = true;
+
+math.import({ summation, product, integrate, differentiate }, { override: true });
 
 // Re-export parse so other modules (e.g. mathlatex) share this instance and its
 // knowledge of the custom operators.

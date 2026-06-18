@@ -42,6 +42,10 @@ const M = {
   fracBar: 0.06,      // fraction rule thickness
   fracPad: 0.12,      // horizontal padding inside a fraction
   fracAxis: 0.30,     // height of the fraction bar above baseline (math axis)
+  derivOpScale: 0.8,  // the d/d{var} operator fraction is smaller than the body
+  derivBracketScale: 1.15, // medium brackets around the differentiated body
+  derivParenScale: 1.0,    // parens around the evaluation point
+  derivGap: 0.12,     // gap between operator, brackets, and point
   bigGlyphScale: 1.05, // ∑ ∏ vertical metric-box (reserves room; hugs the glyph)
   intGlyphScale: 1.25, // ∫ metric box (taller)
   sumFontEm: 0.85,     // ∑/∏ rendered from Size1 (already a display glyph), so a
@@ -136,6 +140,33 @@ function measure(node, scale, wf){
       const a = Math.max(base.a, shift + exp.a);
       const d = base.d;
       return { node, scale, base, exp, shift, w: base.w + exp.w, a, d };
+    }
+    case "deriv": {
+      // d/d{var} [ body ] ( point )
+      const dscale = scale * M.derivOpScale;
+      const dvar = measure(node.dvar, dscale, wf);
+      const dW = (wf ? wf("d","var") : M.charW) * dscale;
+      const numW = dW;                       // numerator: "d"
+      const denW = dW + dvar.w;              // denominator: "d" + var slot
+      const pad = M.fracPad*dscale;
+      const opW = Math.max(numW, denW) + pad*2;
+      const bar = M.fracBar*dscale;
+      const gap = M.fracGap*dscale;
+      const axis = M.fracAxis*scale;
+      const opA = axis + bar/2 + gap + (M.ascent*dscale + M.descent*dscale);
+      const opD = (M.ascent*dscale + M.descent*dscale) + gap + bar/2 - axis;
+      // [ body ]
+      const body = measure(node.body, scale, wf);
+      const brW = (wf ? wf("[","main") : M.parenW) * scale * M.derivBracketScale;
+      // ( point )
+      const point = measure(node.point, scale, wf);
+      const pw = (wf ? wf("(","main") : M.parenW) * scale * M.derivParenScale;
+      const g = M.derivGap*scale;
+      const w = opW + g + brW + body.w + brW + g + pw + point.w + pw;
+      const a = Math.max(opA, body.a, point.a);
+      const d = Math.max(opD, body.d, point.d);
+      return { node, scale, dscale, dvar, dW, numW, denW, opW, bar, gap, axis, pad,
+               body, brW, point, pw, g, w, a, d };
     }
     case "frac": {
       const num = measure(node.num, scale, wf);
@@ -332,6 +363,47 @@ function place(mz, x, baselineY, out){
       place(mz.den, denX, denBaseline, out);
       // caret anchor for the slash offset sits at the bar's left
       if(n.slash) pushAnchor(out, n.slash.s, x, barY, mz);
+      return;
+    }
+    case "deriv": {
+      // d/d{var} [ body ] ( point )
+      const barY = baselineY - mz.axis;
+      const opW = mz.opW;
+      // operator fraction: bar + "d" over "d{var}"
+      out.boxes.push({ type:"rule", x, y:barY - mz.bar/2, w:opW, h:mz.bar, s:n.nameRange.s, e:n.nameRange.e });
+      const numBaseline = barY - mz.gap - mz.bar/2 - M.descent*mz.dscale;
+      out.boxes.push({ type:"text", text:"d", x:x+(opW-mz.numW)/2, y:numBaseline, scale:mz.dscale, tk:"ident", v:"d" });
+      const denBaseline = barY + mz.gap + mz.bar/2 + M.ascent*mz.dscale;
+      const denX = x + (opW - mz.denW)/2;
+      out.boxes.push({ type:"text", text:"d", x:denX, y:denBaseline, scale:mz.dscale, tk:"ident", v:"d" });
+      // anchor before operator, and the var slot (after the denominator "d")
+      pushAnchor(out, n.s, x, baselineY, mz);
+      place(mz.dvar, denX + mz.dW, denBaseline, out);
+      const brScale = mz.scale*M.derivBracketScale;
+      const parScale = mz.scale*M.derivParenScale;
+      // [ body ]   — the comma after body (commas[0]) marks the var-slot boundary
+      let cx = x + opW + mz.g;
+      out.boxes.push({ type:"paren", which:"[", x:cx, y:baselineY, scale:brScale, h:mz.a+mz.d, s:n.open?n.open.s:n.s, e:n.open?n.open.e:n.s });
+      if(n.open) pushAnchor(out, n.open.s, cx, baselineY, mz);       // body slot start
+      cx += mz.brW;
+      if(n.open) pushAnchor(out, n.open.e, cx, baselineY, mz);
+      place(mz.body, cx, baselineY, out);
+      cx += mz.body.w;
+      // comma between body and var (slot boundary into the var)
+      if(n.commas && n.commas[0]) pushAnchor(out, n.commas[0].s, denX + mz.dW, denBaseline, mz);
+      out.boxes.push({ type:"paren", which:"]", x:cx, y:baselineY, scale:brScale, h:mz.a+mz.d });
+      cx += mz.brW;
+      // ( point )  — the comma between var and point marks the point-slot boundary
+      cx += mz.g;
+      out.boxes.push({ type:"paren", which:"(", x:cx, y:baselineY, scale:parScale, h:mz.a+mz.d });
+      cx += mz.pw;
+      if(n.commas && n.commas[1]) pushAnchor(out, n.commas[1].s, cx, baselineY, mz);  // point slot start
+      place(mz.point, cx, baselineY, out);
+      cx += mz.point.w;
+      out.boxes.push({ type:"paren", which:")", x:cx, y:baselineY, scale:parScale, h:mz.a+mz.d, s:n.close?n.close.s:n.e, e:n.close?n.close.e:n.e });
+      if(n.close){ pushAnchor(out, n.close.s, cx, baselineY, mz); pushAnchor(out, n.close.e, cx+mz.pw, baselineY, mz); }
+      pushAnchor(out, n.e, cx+mz.pw, baselineY, mz);
+      out.spans.push({ s:n.s, e:n.e, kind:"deriv" });
       return;
     }
     case "sqrt": {

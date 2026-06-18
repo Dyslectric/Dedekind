@@ -236,6 +236,23 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
         }
       }
     }
+    // Special trigger: "d/d" → differentiate operator. Distinct from the word
+    // templates because the trigger contains "/". Fires when the second "d" lands
+    // (so the text just before the caret is "d/d") and the preceding char isn't an
+    // identifier char (so "x/d" → nothing, but "d/d" or "2*d/d" triggers).
+    if(c>=3 && t.slice(c-3,c)==="d/d"){
+      const before = c-3>0 ? t[c-4] : "";
+      if(!/[A-Za-z0-9_]/.test(before)){
+        const start = c-3;
+        // "differentiate(" = 14 chars; then ",,)" → body=14, var=15, point=16
+        const insert = "differentiate(,,)";
+        const off = start;
+        // caret in the VAR slot first; Tab cycles var → body → point
+        splice(start, c, insert, off+15);
+        fieldStopsRef.current = [off+15, off+14, off+16].sort((a,b)=>a-b);
+        return true;
+      }
+    }
     return false;
   };
 

@@ -242,6 +242,17 @@ class Parser {
         s:id.s, e,
       };
     }
+    if(id.v==="differentiate"){
+      // d/d{var} [ body ] ( point ) — Leibniz operator that differentiates `body`
+      // w.r.t. `var` and evaluates at `var = point`. args: (body, var, point).
+      // All slots exist even when empty so the caret can sit in an empty
+      // placeholder right after the "d/d" auto-expand. (Same node serves partials
+      // ∂/∂x later — just a glyph swap.)
+      const body  = args.length>=1 ? args[0] : emptyRow(open.e);
+      const dvar  = args.length>=2 ? args[1] : emptyRow(open.e);
+      const point = args.length>=3 ? args[2] : emptyRow(open.e);
+      return { kind:"deriv", body, dvar, point, nameRange:{s:id.s,e:id.e}, ...punct, s:id.s, e };
+    }
     if(id.v==="sqrt"){
       // sqrt always lays out as √ with a radicand slot — even when empty
       // (sqrt() right after auto-expand), so the cursor can sit inside an empty
