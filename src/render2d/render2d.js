@@ -58,7 +58,7 @@ function projectToParamSurf(px,py,pz,exprX,exprY,exprZ,uMin,uMax,vMin,vMax,scope
 // ── 2D quiver renderer ───────────────────────────────────────────────────────
 function render2DQuiver(ctx,node,scope,toS,wxMin,wxMax,wyMin,wyMax){
   const np=node.props,color=node.color||"#5b9cf6";
-  const gridN=Math.max(3,Math.min(128,resolveNum(np.gridN,scope,12)));
+  const gridN=Math.max(3,Math.min(256,resolveNum(np.gridN,scope,12)));
   const xMin=resolveNum(np.xMin,scope,wxMin),xMax=resolveNum(np.xMax,scope,wxMax);
   const yMin=resolveNum(np.yMin,scope,wyMin),yMax=resolveNum(np.yMax,scope,wyMax);
   const xs=linspace(xMin,xMax,gridN),ys=linspace(yMin,yMax,gridN);
@@ -113,16 +113,16 @@ function render2DTransformer(ctx,tNode,fnNode,paramNode,scope,toS,color){
     const pp=paramNode.props||{};
     const deg=Math.max(1,Math.min(2,Math.round(Number(pp.degree||"1"))));
     if(deg>=2){
-      const ur=Math.max(2,Math.min(60,resolveNum(pp.uRes,scope,30))),vr=Math.max(2,Math.min(60,resolveNum(pp.vRes,scope,20)));
+      const ur=Math.max(2,Math.min(200,resolveNum(pp.uRes,scope,30))),vr=Math.max(2,Math.min(200,resolveNum(pp.vRes,scope,20)));
       const us=linspace(resolveNum(pp.uMin,scope,0),resolveNum(pp.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(pp.vMin,scope,0),resolveNum(pp.vMax,scope,Math.PI),vr);
       for(const v of vs)for(const u of us)samples.push([safeEval(pp.exprXu,{...scope,u,v})??0,safeEval(pp.exprYu,{...scope,u,v})??0,safeEval(pp.exprZu,{...scope,u,v})??0]);
     } else {
-      const res=Math.max(2,Math.min(600,resolveNum(pp.res,scope,200)));
+      const res=Math.max(2,Math.min(1200,resolveNum(pp.res,scope,200)));
       for(const t of linspace(resolveNum(pp.tMin,scope,0),resolveNum(pp.tMax,scope,Math.PI*2),res))
         samples.push([safeEval(pp.exprX,{...scope,t})??0,safeEval(pp.exprY,{...scope,t})??0,safeEval(pp.exprZ,{...scope,t})??0]);
     }
   } else {
-    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?30:8),Math.round(resolveNum(tp.res,scope,inDim===1?200:14))));
+    const res=Math.max(2,Math.min(inDim===1?8000:(inDim===2?300:16),Math.round(resolveNum(tp.res,scope,inDim===1?200:14))));
     const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
     if(inDim===1){ for(const x of linspace(aMin,aMax,res)) samples.push([x,0,0]); }
     else {
@@ -213,7 +213,7 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
     const psx=p2d.psExprX||"cos(u)*sin(v)",psy=p2d.psExprY||"sin(u)*sin(v)",psz=p2d.psExprZ||"cos(v)";
     const uMin=resolveNum(p2d.psUMin,scope,0),uMax=resolveNum(p2d.psUMax,scope,Math.PI*2);
     const vMin=resolveNum(p2d.psVMin,scope,0),vMax=resolveNum(p2d.psVMax,scope,Math.PI);
-    const res=Math.max(4,Math.min(24,resolveNum(p2d.psRes,scope,16)));
+    const res=Math.max(4,Math.min(96,resolveNum(p2d.psRes,scope,16)));
     ctx.strokeStyle="rgba(80,110,180,0.35)";ctx.lineWidth=0.7;ctx.setLineDash([3,4]);
     const us=linspace(uMin,uMax,res),vs=linspace(vMin,vMax,res);
     for(let j=0;j<vs.length;j+=3){ctx.beginPath();let st=false;for(const u of us){const[sx,sy]=toS(u,vs[j]);st?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);st=true;}ctx.stroke();}
@@ -316,7 +316,7 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
         const av=animVals||{};
         const fieldSc={...pscope, ...resolveScope(fnNode.id,nodes,av)};
         const seedSc={...pscope, ...resolveScope(seedNode.id,nodes,av)};
-        const steps=Math.max(2,Math.min(2000,resolveNum(np.steps,pscope,500)));const stepSize=resolveNum(np.stepSize,pscope,0.02);
+        const steps=Math.max(2,Math.min(8000,resolveNum(np.steps,pscope,500)));const stepSize=resolveNum(np.stepSize,pscope,0.02);
         const field={exprX:fnNode.props.out0||"0",exprY:fnNode.props.out1||"0",exprZ:fnNode.props.out2||"0"};
         const seedInfo = seedNode.type==="points"
           ? { pts: parsePointsExplicit(seedNode.props, seedSc).pts, grid:false }
@@ -351,14 +351,14 @@ function render2D(canvas, camNode, nodes, scope, theme, animVals) {
       ctx.beginPath();let started=false;for(const t of ts){const x=safeEval(np.exprX,{...pscope,t}),y=safeEval(np.exprY,{...pscope,t});if(x==null||y==null){started=false;continue;}const[sx,sy]=toS(x,y);started?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);started=true;}ctx.stroke();
     }
     if(node.type==="surf3d"){
-      const res=Math.max(2,Math.min(60,resolveNum(np.res,pscope,40)));const xs=linspace(resolveNum(np.xMin,pscope,-4),resolveNum(np.xMax,pscope,4),res),ys=linspace(resolveNum(np.yMin,pscope,-4),resolveNum(np.yMax,pscope,4),res);
+      const res=Math.max(2,Math.min(200,resolveNum(np.res,pscope,40)));const xs=linspace(resolveNum(np.xMin,pscope,-4),resolveNum(np.xMax,pscope,4),res),ys=linspace(resolveNum(np.yMin,pscope,-4),resolveNum(np.yMax,pscope,4),res);
       ctx.globalAlpha=0.55;
       for(const x of xs.filter((_,i)=>i%4===0)){ctx.beginPath();let st=false;for(const y of ys){const[sx,sy]=toS(x,y);st?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);st=true;}ctx.stroke();}
       for(const y of ys.filter((_,i)=>i%4===0)){ctx.beginPath();let st=false;for(const x of xs){const[sx,sy]=toS(x,y);st?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);st=true;}ctx.stroke();}
       ctx.globalAlpha=1;
     }
     if(node.type==="paramsurf"){
-      const ur=Math.max(2,Math.min(60,resolveNum(np.uRes,pscope,30))),vr=Math.max(2,Math.min(60,resolveNum(np.vRes,pscope,20)));
+      const ur=Math.max(2,Math.min(200,resolveNum(np.uRes,pscope,30))),vr=Math.max(2,Math.min(200,resolveNum(np.vRes,pscope,20)));
       const us=linspace(resolveNum(np.uMin,pscope,0),resolveNum(np.uMax,pscope,Math.PI*2),ur),vs=linspace(resolveNum(np.vMin,pscope,0),resolveNum(np.vMax,pscope,Math.PI),vr);
       ctx.globalAlpha=0.55;
       for(const v of vs.filter((_,i)=>i%3===0)){ctx.beginPath();let st=false;for(const u of us){const x=safeEval(np.exprX,{...pscope,u,v}),y=safeEval(np.exprY,{...pscope,u,v});if(x==null||y==null){st=false;continue;}const[sx,sy]=toS(x,y);st?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);st=true;}ctx.stroke();}

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
-import { buildCurve3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU } from "./builders.js";
+import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU } from "./builders.js";
 import { marchingSquares, marchingCubes } from "./implicit.js";
 import { buildImplicitRaymarch } from "./implicit-raymarch.js";
 
@@ -80,7 +80,7 @@ function rampColors(vals, tp, scope){
 //   inline 2D → res×res grid (row-major, returns {pts, nu, nv})
 //   inline 3D → res×res×res
 function sampleDomain(tp, scope, inDim, paramNode){
-  const res=Math.max(2,Math.min(inDim>=3?40:(inDim===2?120:2000),Math.round(resolveNum(tp.res,scope,inDim===1?300:40))));
+  const res=Math.max(2,Math.min(inDim>=3?80:(inDim===2?300:8000),Math.round(resolveNum(tp.res,scope,inDim===1?300:40))));
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
   if(inDim===1){
     const xs=linspace(aMin,aMax,res);
@@ -93,7 +93,7 @@ function sampleDomain(tp, scope, inDim, paramNode){
     return { pts, grid:true, nu:res, nv:res };
   }
   const cMin=resolveNum(tp.cMin,scope,-3),cMax=resolveNum(tp.cMax,scope,3);
-  const r3=Math.min(res,40);
+  const r3=Math.min(res,80);
   const xs=linspace(aMin,aMax,r3), ys=linspace(bMin,bMax,r3), zs=linspace(cMin,cMax,r3);
   if(inDim===3){
     const pts=[]; for(const x of xs) for(const y of ys) for(const z of zs) pts.push([x,y,z]);
@@ -116,7 +116,7 @@ function sampleParamSpace(node, scope){
   const p=node.props||{};
   const degree=clampDim(p.degree,1);
   if(degree>=2){
-    const ur=Math.max(2,Math.min(80,resolveNum(p.uRes,scope,40))), vr=Math.max(2,Math.min(80,resolveNum(p.vRes,scope,30)));
+    const ur=Math.max(2,Math.min(200,resolveNum(p.uRes,scope,40))), vr=Math.max(2,Math.min(200,resolveNum(p.vRes,scope,30)));
     const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur);
     const vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);
     const pts=[];
@@ -126,7 +126,7 @@ function sampleParamSpace(node, scope){
     }
     return { pts, grid:true, nu:ur, nv:vr };
   }
-  const res=Math.max(2,Math.min(2000,resolveNum(p.res,scope,300)));
+  const res=Math.max(2,Math.min(8000,resolveNum(p.res,scope,300)));
   const ts=linspace(resolveNum(p.tMin,scope,0),resolveNum(p.tMax,scope,Math.PI*2),res);
   const pts=ts.map(t=>{
     const x=safeEval(p.exprX,{...scope,t})??0, y=safeEval(p.exprY,{...scope,t})??0, z=safeEval(p.exprZ,{...scope,t})??0;
@@ -169,7 +169,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
       const rm = buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum);
       if(rm) return rm;
 
-      const res=Math.max(2,Math.min(120,Math.round(resolveNum(tp.res,scope,48))));
+      const res=Math.max(2,Math.min(300,Math.round(resolveNum(tp.res,scope,48))));
       const { positions, normals } = marchingCubes(eqNode, scope,
         aMin,aMax, bMin,bMax, cMin,cMax, res);
       if(!positions.length) return [];
@@ -195,19 +195,14 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
 
     // 2D implicit curve — marching squares over the (a,b) box, drawn in the
     // world ground plane via (a, 0, b).
-    const res=Math.max(2,Math.min(600,Math.round(resolveNum(tp.res,scope,120))));
+    const res=Math.max(2,Math.min(1200,Math.round(resolveNum(tp.res,scope,120))));
     const segs=marchingSquares(eqNode, scope, aMin, aMax, bMin, bMax, res);
     if(!segs.length) return [];
-    const pos=new Float32Array(segs.length*2*3);
-    let k=0;
-    for(const [p0,p1] of segs){
-      pos[k++]=p0[0]; pos[k++]=0; pos[k++]=p0[1];
-      pos[k++]=p1[0]; pos[k++]=0; pos[k++]=p1[1];
-    }
-    const g=new THREE.BufferGeometry();
-    g.setAttribute("position",new THREE.BufferAttribute(pos,3));
-    const mat=new THREE.LineBasicMaterial({color:hexToThree(color),linewidth:2});
-    return [new THREE.LineSegments(g,mat)];
+    // Render as a screen-space fat line (CSS-pixel width) instead of a 1px
+    // hairline so the implicit curve stays clearly visible at all angles/zoom.
+    // The curve lives in the world ground plane at (a, 0, b). buildSegments3d
+    // bakes math (x,y,z)→world (x, z, −y), so feed math (a, −b, 0) to land there.
+    return buildSegments3d(segs.map(([p0,p1])=>[[p0[0],-p0[1],0],[p1[0],-p1[1],0]]), color);
   }
 
   if(!fnNode) return [];

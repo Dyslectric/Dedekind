@@ -38,7 +38,7 @@ function marchingSquares(eqNode, scope, aMin, aMax, bMin, bMax, res){
   const compiled = compileExpr(fExpr);
   if (!compiled) return [];
 
-  const N = Math.max(2, Math.min(600, Math.round(res)));
+  const N = Math.max(2, Math.min(1200, Math.round(res)));
   const nA = N, nB = N;
   const da = (aMax - aMin) / nA, db = (bMax - bMin) / nB;
 
@@ -152,7 +152,7 @@ function marchingCubes(eqNode, scope, xMin, xMax, yMin, yMax, zMin, zMax, res){
   const compiled = compileExpr(fExpr);
   if (!compiled) return { positions:new Float32Array(0), normals:new Float32Array(0) };
 
-  const N = Math.max(2, Math.min(120, Math.round(res)));
+  const N = Math.max(2, Math.min(256, Math.round(res)));
   const nx=N, ny=N, nz=N;
   const dx=(xMax-xMin)/nx, dy=(yMax-yMin)/ny, dz=(zMax-zMin)/nz;
 

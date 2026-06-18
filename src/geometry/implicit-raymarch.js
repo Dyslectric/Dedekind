@@ -46,7 +46,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
   const cMin=resolveNum(tp.cMin,scope,-3), cMax=resolveNum(tp.cMax,scope,3);
   // March step count scales with the requested resolution (capped — this is the
   // per-ray sample count, the dominant cost). Default mirrors the mesh res.
-  const steps = Math.max(16, Math.min(512, Math.round(resolveNum(tp.res,scope,96))));
+  const steps = Math.max(16, Math.min(1024, Math.round(resolveNum(tp.res,scope,96))));
 
   // Box geometry in THREE space: math (x,y,z)→three (x,z,y), so:
   //   three.x ∈ [aMin,aMax]   (math x)

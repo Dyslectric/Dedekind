@@ -103,8 +103,8 @@ function surfaceSeeds(p,sN,rN,scope){
   return grid;
 }
 function buildFlowVolume(p,steps,stepSize,scope,color){
-  let sN=Math.max(2,Math.min(40,Math.round(resolveNum(p.seedN,scope,6))));
-  let rN=Math.max(2,Math.min(40,Math.round(resolveNum(p.seedRN,scope,6))));
+  let sN=Math.max(2,Math.min(120,Math.round(resolveNum(p.seedN,scope,6))));
+  let rN=Math.max(2,Math.min(120,Math.round(resolveNum(p.seedRN,scope,6))));
   // Cap total integration work (seeds × steps) so a big volume can't freeze the
   // UI thread. If over budget, scale the seed grid down proportionally; the
   // mesh stays correct, just coarser.
@@ -113,7 +113,7 @@ function buildFlowVolume(p,steps,stepSize,scope,color){
     const k=Math.sqrt(BUDGET/(steps*sN*rN));
     sN=Math.max(2,Math.round(sN*k)); rN=Math.max(2,Math.round(rN*k));
   }
-  const slices=Math.max(2,Math.min(24,Math.round(resolveNum(p.volSlices,scope,6))));
+  const slices=Math.max(2,Math.min(64,Math.round(resolveNum(p.volSlices,scope,6))));
   const grid=surfaceSeeds(p,sN,rN,scope);             // grid[r][s]
   const flat=[]; for(const row of grid) for(const pt of row) flat.push(pt);
   // advect every seed; trajs laid out same order as flat

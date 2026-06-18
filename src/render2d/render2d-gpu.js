@@ -66,34 +66,57 @@ function buildThickSegments2D(segs, color, half){
 }
 
 // Internal: build one ribbon mesh from a contiguous point run.
+//
+// Each segment is thickened INDEPENDENTLY into its own full-width quad using
+// that segment's own normal, then a round join (triangle fan) is dropped at
+// every interior vertex. This deliberately avoids shared mitered vertices: a
+// miter collapses to zero width at sharp turns, which is exactly what made
+// fast-moving / steep curves (near-vertical y=f(x), tight parametric loops) go
+// skinny and hard to see. Per-segment quads keep the full half-width through any
+// angle; the round joints fill the outer corner so the stroke reads continuous.
 function ribbonMesh(run, half, color, opacity=1){
   const n=run.length; if(n<2) return null;
-  // per-vertex outward normals (averaged from adjacent segment normals)
-  const nrm=new Array(n);
-  const segN=(i)=>{ const a=run[i],b=run[i+1]; const dx=b[0]-a[0],dy=b[1]-a[1]; const l=Math.hypot(dx,dy)||1; return [-dy/l, dx/l]; };
-  for(let i=0;i<n;i++){
-    let nx,ny;
-    if(i===0){ [nx,ny]=segN(0); }
-    else if(i===n-1){ [nx,ny]=segN(n-2); }
-    else{
-      const [ax,ay]=segN(i-1), [bx,by]=segN(i);
-      nx=ax+bx; ny=ay+by; const l=Math.hypot(nx,ny);
-      if(l<1e-6){ [nx,ny]=segN(i); } else { nx/=l; ny/=l;
-        // miter length compensation, clamped to avoid spikes at sharp turns
-        const dot=ax*nx+ay*ny; const scale=Math.min(3, 1/Math.max(0.34,dot)); nx*=scale; ny*=scale; }
-    }
-    nrm[i]=[nx,ny];
-  }
   const pos=[];
+  const pushTri=(a,b,c)=>{ pos.push(a[0],a[1],0, b[0],b[1],0, c[0],c[1],0); };
+  // Round-join fan: sweep a disc wedge of radius `half` around centre `c`, from
+  // angle a0 to a1 along the shorter arc. A few wedges is plenty at ~2.6px.
+  const JOIN_SEGS=6;
+  const fan=(c,a0,a1)=>{
+    let d=a1-a0;
+    while(d> Math.PI) d-=2*Math.PI;
+    while(d<-Math.PI) d+=2*Math.PI;
+    const steps=Math.max(1,Math.ceil(Math.abs(d)/(Math.PI/JOIN_SEGS)));
+    let prev=[c[0]+Math.cos(a0)*half, c[1]+Math.sin(a0)*half];
+    for(let k=1;k<=steps;k++){
+      const a=a0+d*(k/steps);
+      const cur=[c[0]+Math.cos(a)*half, c[1]+Math.sin(a)*half];
+      pushTri(c, prev, cur);
+      prev=cur;
+    }
+  };
+  let prev=null; // {q1,q2, angN} of the previous segment's END
   for(let i=0;i<n-1;i++){
-    const p=run[i], q=run[i+1], np_=nrm[i], nq=nrm[i+1];
-    const p1=[p[0]+np_[0]*half, p[1]+np_[1]*half];
-    const p2=[p[0]-np_[0]*half, p[1]-np_[1]*half];
-    const q1=[q[0]+nq[0]*half, q[1]+nq[1]*half];
-    const q2=[q[0]-nq[0]*half, q[1]-nq[1]*half];
-    pos.push(p1[0],p1[1],0, q1[0],q1[1],0, q2[0],q2[1],0);
-    pos.push(p1[0],p1[1],0, q2[0],q2[1],0, p2[0],p2[1],0);
+    const p=run[i], q=run[i+1];
+    const dx=q[0]-p[0], dy=q[1]-p[1];
+    const l=Math.hypot(dx,dy);
+    if(l<1e-12) continue;
+    const ux=dx/l, uy=dy/l;          // unit direction
+    const nx=-uy, ny=ux;             // unit left normal
+    const hx=nx*half, hy=ny*half;
+    const p1=[p[0]+hx,p[1]+hy], p2=[p[0]-hx,p[1]-hy];
+    const q1=[q[0]+hx,q[1]+hy], q2=[q[0]-hx,q[1]-hy];
+    // Full-width quad for this segment (its own normal → never pinches).
+    pushTri(p1,q1,q2);
+    pushTri(p1,q2,p2);
+    // Round join at the shared vertex p between the previous segment and this one.
+    if(prev){
+      const angN=Math.atan2(ny,nx);          // this segment's +normal angle
+      fan(p, prev.angN, angN);               // outer side
+      fan(p, prev.angN+Math.PI, angN+Math.PI); // inner side
+    }
+    prev={angN:Math.atan2(ny,nx)};
   }
+  if(!pos.length) return null;
   const g=new THREE.BufferGeometry();
   g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
   const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide,transparent:opacity<1,opacity});
@@ -255,7 +278,7 @@ const LINE_PX = 2.6;
 
 function build2DFn1d(np, pscope, color, wxMin, wxMax, px, fr){
   const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
-  const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,600)));
+  const res=Math.max(2, Math.min(8000, resolveNum(np.res,pscope,600)));
   const pts=linspace(xMin,xMax,res).map(x=>{
     const y=safeEval(np.expr,{...pscope,x});
     return (y!=null&&isFinite(y)) ? [x,y,0] : null;
@@ -265,7 +288,7 @@ function build2DFn1d(np, pscope, color, wxMin, wxMax, px, fr){
 
 function build2DCurve3d(np, pscope, color, px, fr){
   const tMin=resolveNum(np.tMin,pscope,0), tMax=resolveNum(np.tMax,pscope,Math.PI*2);
-  const res=Math.max(2, Math.min(2000, resolveNum(np.res,pscope,400)));
+  const res=Math.max(2, Math.min(8000, resolveNum(np.res,pscope,400)));
   const pts=linspace(tMin,tMax,res).map(t=>{
     const x=safeEval(np.exprX,{...pscope,t}), y=safeEval(np.exprY,{...pscope,t}), z=safeEval(np.exprZ,{...pscope,t});
     return (x!=null&&y!=null&&isFinite(x)&&isFinite(y)) ? [x,y,(z!=null&&isFinite(z))?z:0] : null;
@@ -309,7 +332,7 @@ function build2DPoint(np, pscope, color, px, fr){
 }
 
 function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
-  const gridN=Math.max(3,Math.min(128,resolveNum(np.gridN,pscope,12)));
+  const gridN=Math.max(3,Math.min(256,resolveNum(np.gridN,pscope,12)));
   const xMin=resolveNum(np.xMin,pscope,wxMin), xMax=resolveNum(np.xMax,pscope,wxMax);
   const yMin=resolveNum(np.yMin,pscope,wyMin), yMax=resolveNum(np.yMax,pscope,wyMax);
   const xs=linspace(xMin,xMax,gridN), ys=linspace(yMin,yMax,gridN);
@@ -344,7 +367,7 @@ function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
 // then project base→tip so out-of-plane arrows foreshorten correctly (same
 // orthographic treatment as a 3-D vector field).
 function build2DQuiver3d(np, pscope, color, px, fr){
-  const gridN=Math.max(2,Math.min(14,resolveNum(np.gridN,pscope,5)));
+  const gridN=Math.max(2,Math.min(48,resolveNum(np.gridN,pscope,5)));
   const xMin=resolveNum(np.xMin,pscope,-3),xMax=resolveNum(np.xMax,pscope,3);
   const yMin=resolveNum(np.yMin,pscope,-3),yMax=resolveNum(np.yMax,pscope,3);
   const zMin=resolveNum(np.zMin,pscope,-3),zMax=resolveNum(np.zMax,pscope,3);
@@ -382,7 +405,7 @@ function build2DImplicit(tNode, eqNode, pscope, color, px, fr){
   const tp=tNode.props||{};
   const aMin=resolveNum(tp.aMin,pscope,-5), aMax=resolveNum(tp.aMax,pscope,5);
   const bMin=resolveNum(tp.bMin,pscope,-5), bMax=resolveNum(tp.bMax,pscope,5);
-  const res=Math.max(2,Math.min(600,Math.round(resolveNum(tp.res,pscope,160))));
+  const res=Math.max(2,Math.min(1200,Math.round(resolveNum(tp.res,pscope,160))));
   const segs=marchingSquares(eqNode, pscope, aMin, aMax, bMin, bMax, res);
   if(!segs.length) return [];
   const proj=segs.map(([a,b])=>[projectPt(fr,a[0],a[1],0),projectPt(fr,b[0],b[1],0)]);
@@ -481,7 +504,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   // of scatter dots, which was both slow and visually wrong). This is what makes
   // a ripple surface render cheaply and correctly in the 2-D plane.
   if(inDim===2 && tp.domainSrc!=="param"){
-    const res=Math.max(2,Math.min(120,Math.round(resolveNum(tp.res,pscope,40))));
+    const res=Math.max(2,Math.min(300,Math.round(resolveNum(tp.res,pscope,40))));
     const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
     const bMin=resolveNum(tp.bMin,pscope,-5),bMax=resolveNum(tp.bMax,pscope,5);
     const xs=linspace(aMin,aMax,res), ys=linspace(bMin,bMax,res);
@@ -509,17 +532,17 @@ function transformerSamples(tp,paramNode,pscope,inDim){
     const pp=paramNode.props||{};
     const deg=Math.max(1,Math.min(2,Math.round(Number(pp.degree||"1"))));
     if(deg>=2){
-      const ur=Math.max(2,Math.min(60,resolveNum(pp.uRes,pscope,30))),vr=Math.max(2,Math.min(60,resolveNum(pp.vRes,pscope,20)));
+      const ur=Math.max(2,Math.min(200,resolveNum(pp.uRes,pscope,30))),vr=Math.max(2,Math.min(200,resolveNum(pp.vRes,pscope,20)));
       for(const v of linspace(resolveNum(pp.vMin,pscope,0),resolveNum(pp.vMax,pscope,Math.PI),vr))
         for(const u of linspace(resolveNum(pp.uMin,pscope,0),resolveNum(pp.uMax,pscope,Math.PI*2),ur))
           samples.push([safeEval(pp.exprXu,{...pscope,u,v})??0,safeEval(pp.exprYu,{...pscope,u,v})??0,safeEval(pp.exprZu,{...pscope,u,v})??0]);
     } else {
-      const res=Math.max(2,Math.min(600,resolveNum(pp.res,pscope,200)));
+      const res=Math.max(2,Math.min(1200,resolveNum(pp.res,pscope,200)));
       for(const t of linspace(resolveNum(pp.tMin,pscope,0),resolveNum(pp.tMax,pscope,Math.PI*2),res))
         samples.push([safeEval(pp.exprX,{...pscope,t})??0,safeEval(pp.exprY,{...pscope,t})??0,safeEval(pp.exprZ,{...pscope,t})??0]);
     }
   } else {
-    const res=Math.max(2,Math.min(inDim===1?600:(inDim===2?128:8), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
+    const res=Math.max(2,Math.min(inDim===1?8000:(inDim===2?300:16), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
     const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
     if(inDim===1){ for(const x of linspace(aMin,aMax,res)) samples.push([x,0,0]); }
     else {
@@ -580,7 +603,7 @@ function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals, fr){
   const av=animVals||{};
   const fieldSc={...pscope, ...resolveScope(fnNode.id,nodes,av)};
   const seedSc={...pscope, ...resolveScope(seedNode.id,nodes,av)};
-  const steps=Math.max(2,Math.min(2000,resolveNum(np.steps,pscope,500)));
+  const steps=Math.max(2,Math.min(8000,resolveNum(np.steps,pscope,500)));
   const stepSize=resolveNum(np.stepSize,pscope,0.02);
   const field={exprX:fnNode.props.out0||"0",exprY:fnNode.props.out1||"0",exprZ:fnNode.props.out2||"0"};
   const seedInfo=seedNode.type==="points"

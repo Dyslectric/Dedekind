@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { exprToGLSL, _glslNum } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
@@ -20,7 +22,7 @@ function buildSurfGPU(kind, p, scope, color){
     if(gx==null) return null;
     umin=resolveNum(p.xMin,scope,-4); umax=resolveNum(p.xMax,scope,4);
     vmin=resolveNum(p.yMin,scope,-4); vmax=resolveNum(p.yMax,scope,4);
-    const res=Math.max(2,Math.min(256,resolveNum(p.res,scope,40))); ures=res; vres=res;
+    const res=Math.max(2,Math.min(512,resolveNum(p.res,scope,40))); ures=res; vres=res;
     // _gd.x∈[0,1]→x, _gd.y∈[0,1]→y, z=f(x,y). The grid-coord vec2 is named `_gd`
     // (not `d`) so a user scalar called `d` stays a distinct uniform inside the shader.
     bodyP = `x = ${_glslNum(umin)} + _gd.x*${_glslNum(umax-umin)};
@@ -33,8 +35,8 @@ function buildSurfGPU(kind, p, scope, color){
     if(sx==null||sy==null||sz==null) return null;
     umin=resolveNum(p.uMin,scope,0); umax=resolveNum(p.uMax,scope,Math.PI*2);
     vmin=resolveNum(p.vMin,scope,0); vmax=resolveNum(p.vMax,scope,Math.PI);
-    ures=Math.max(2,Math.min(256,resolveNum(p.uRes,scope,40)));
-    vres=Math.max(2,Math.min(256,resolveNum(p.vRes,scope,30)));
+    ures=Math.max(2,Math.min(512,resolveNum(p.uRes,scope,40)));
+    vres=Math.max(2,Math.min(512,resolveNum(p.vRes,scope,30)));
     bodyP = `float u = ${_glslNum(umin)} + _gd.x*${_glslNum(umax-umin)};
              float v = ${_glslNum(vmin)} + _gd.y*${_glslNum(vmax-vmin)};
              vec3 P = vec3(${sx}, ${sy}, ${sz});`;
@@ -89,7 +91,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
   const AX={x:0,y:1,z:2};                          // color/none/undefined → not spatial
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
   const bMin=resolveNum(tp.bMin,scope,-5),bMax=resolveNum(tp.bMax,scope,5);
-  const res=Math.max(2,Math.min(256,Math.round(resolveNum(tp.res,scope,40))));
+  const res=Math.max(2,Math.min(512,Math.round(resolveNum(tp.res,scope,40))));
   const uniforms=new Set();
   // input grid coords in map symbols: x=a, y=b
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
@@ -132,7 +134,7 @@ function buildFn1dGPU(p, scope, color){
   // buildFn1dGPU can't use a custom vertex shader with LineMaterial (which has
   // its own), so fall back to CPU sampling + buildCurve3d for thick lines.
   const xmin=resolveNum(p.xMin,scope,-5), xmax=resolveNum(p.xMax,scope,5);
-  const res=Math.max(2,Math.min(2000,resolveNum(p.res,scope,300)));
+  const res=Math.max(2,Math.min(8000,resolveNum(p.res,scope,300)));
   const xs=linspace(xmin,xmax,res);
   // Evaluate y = expr(x) in scope. safeEval handles errors → NaN.
   const pts=xs.map(x=>{
@@ -204,6 +206,42 @@ function buildCurve3d(pts,color,cols=null){
     line.frustumCulled = false;
     return line;
   });
+}
+
+// Fat-line builder for DISCONNECTED 3D segments (e.g. marching-squares implicit
+// curves). Same screen-space CSS-pixel width as buildCurve3d so these curves no
+// longer render as 1px hairlines (LineBasicMaterial.linewidth is ignored by most
+// WebGL drivers). `segs` is math-space [[ [x,y,z],[x,y,z] ], ...]; coordinates
+// are baked to final world space (x, z, −y) and the object is flagged for the
+// unmirrored group + resize refinement, exactly like buildCurve3d.
+function buildSegments3d(segs, color){
+  if(!segs||!segs.length) return [];
+  const pos=new Float32Array(segs.length*2*3);
+  let k=0;
+  for(const [a,b] of segs){
+    const ax=a[0], ay=a[1], az=a[2]||0;
+    const bx=b[0], by=b[1], bz=b[2]||0;
+    pos[k++]=ax; pos[k++]=az; pos[k++]=-ay;
+    pos[k++]=bx; pos[k++]=bz; pos[k++]=-by;
+  }
+  const geo=new LineSegmentsGeometry();
+  geo.setPositions(pos);
+  const c3=new THREE.Color(hexToThree(color));
+  const _res = (typeof window!=="undefined" && window.innerWidth)
+    ? new THREE.Vector2(window.innerWidth, window.innerHeight)
+    : new THREE.Vector2(1024,768);
+  const mat=new LineMaterial({
+    color: c3.getHex(),
+    linewidth: CURVE_3D_PX,
+    worldUnits: false,
+    resolution: _res,
+  });
+  mat._isCurve3d = true;
+  const seg=new LineSegments2(geo,mat);
+  seg._unmirroredWorld = true;
+  seg.computeLineDistances();
+  seg.frustumCulled = false;
+  return [seg];
 }
 function buildSurf(rows,color,colRows=null,showWire=true){
   const nv=rows.length,nu=rows[0].length,pos=[],idx=[],colArr=[];
@@ -336,7 +374,7 @@ function buildQuiver3dGPU(p, scope, color){
   const gy=exprToGLSL(p.exprY, new Set(["x","y","z"]), uniforms);
   const gz=p.exprZ ? exprToGLSL(p.exprZ, new Set(["x","y","z"]), uniforms) : "0.0";
   if(gx==null||gy==null||gz==null) return null;
-  const gridN=Math.max(2,Math.min(20,Math.round(resolveNum(p.gridN,scope,5))));
+  const gridN=Math.max(2,Math.min(64,Math.round(resolveNum(p.gridN,scope,5))));
   const xMin=resolveNum(p.xMin,scope,-3),xMax=resolveNum(p.xMax,scope,3);
   const yMin=resolveNum(p.yMin,scope,-3),yMax=resolveNum(p.yMax,scope,3);
   const zMin=resolveNum(p.zMin,scope,-3),zMax=resolveNum(p.zMax,scope,3);
@@ -592,7 +630,7 @@ function buildSurfFromGridGPU(rows, color, opts={}){
 // surface to draw. Points are coloured by normalized value (colorLo→colorHi)
 // when colorByValue is set, else the node colour.
 function buildScalarVolume(p, scope, color){
-  const res=Math.max(2,Math.min(40,Math.round(resolveNum(p.res,scope,18))));
+  const res=Math.max(2,Math.min(96,Math.round(resolveNum(p.res,scope,18))));
   const xMin=resolveNum(p.xMin,scope,-5),xMax=resolveNum(p.xMax,scope,5);
   const yMin=resolveNum(p.yMin,scope,-4),yMax=resolveNum(p.yMax,scope,4);
   const zMin=resolveNum(p.zMin,scope,-3),zMax=resolveNum(p.zMax,scope,3);
@@ -631,5 +669,5 @@ function buildScalarVolume(p, scope, color){
 }
 
 export {
-  buildSurfGPU, buildTransformerGraphGPU, buildFn1dGPU, buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
+  buildSurfGPU, buildTransformerGraphGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
 };

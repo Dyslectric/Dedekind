@@ -164,14 +164,14 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     let objs=[];
     if(node.type==="curve3d"){const ts=linspace(resolveNum(p.tMin,scope,0),resolveNum(p.tMax,scope,Math.PI*2),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(ts.map(t=>{const x=safeEval(p.exprX,{...scope,t}),y=safeEval(p.exprY,{...scope,t}),z=safeEval(p.exprZ,{...scope,t});return x!=null&&y!=null&&z!=null?[x,y,z]:[NaN,NaN,NaN];}),node.color||"#5b9cf6");}
     if(node.type==="fn1d"){const xs=linspace(resolveNum(p.xMin,scope,-5),resolveNum(p.xMax,scope,5),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(xs.map(x=>{const y=safeEval(p.expr,{...scope,x});return y!=null?[x,y,0]:[NaN,NaN,NaN];}),node.color||"#f7cc4f");}
-    if(node.type==="surf3d"){const res=Math.max(2,Math.min(80,resolveNum(p.res,scope,40)));const xs=linspace(resolveNum(p.xMin,scope,-4),resolveNum(p.xMax,scope,4),res),ys=linspace(resolveNum(p.yMin,scope,-4),resolveNum(p.yMax,scope,4),res);objs=buildSurf(ys.map(y=>xs.map(x=>{const z=safeEval(p.expr,{...scope,x,y});return z!=null?[x,y,z]:null;})),node.color||"#5b9cf6",null,p.showWire!==false);}
-    if(node.type==="paramsurf"){const ur=Math.max(2,Math.min(80,resolveNum(p.uRes,scope,40))),vr=Math.max(2,Math.min(80,resolveNum(p.vRes,scope,30)));const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);objs=buildSurf(vs.map(v=>us.map(u=>{const x=safeEval(p.exprX,{...scope,u,v}),y=safeEval(p.exprY,{...scope,u,v}),z=safeEval(p.exprZ,{...scope,u,v});return x!=null&&y!=null&&z!=null?[x,y,z]:null;})),node.color||"#c761f7",null,p.showWire!==false);}
+    if(node.type==="surf3d"){const res=Math.max(2,Math.min(200,resolveNum(p.res,scope,40)));const xs=linspace(resolveNum(p.xMin,scope,-4),resolveNum(p.xMax,scope,4),res),ys=linspace(resolveNum(p.yMin,scope,-4),resolveNum(p.yMax,scope,4),res);objs=buildSurf(ys.map(y=>xs.map(x=>{const z=safeEval(p.expr,{...scope,x,y});return z!=null?[x,y,z]:null;})),node.color||"#5b9cf6",null,p.showWire!==false);}
+    if(node.type==="paramsurf"){const ur=Math.max(2,Math.min(200,resolveNum(p.uRes,scope,40))),vr=Math.max(2,Math.min(200,resolveNum(p.vRes,scope,30)));const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);objs=buildSurf(vs.map(v=>us.map(u=>{const x=safeEval(p.exprX,{...scope,u,v}),y=safeEval(p.exprY,{...scope,u,v}),z=safeEval(p.exprZ,{...scope,u,v});return x!=null&&y!=null&&z!=null?[x,y,z]:null;})),node.color||"#c761f7",null,p.showWire!==false);}
     if(node.type==="paramvol"){
       // A degree-3 parametric manifold: sample a (u,v,w) grid and map each node
       // into 3-D space, drawn as a point cloud (optionally gradient-colored).
-      const ur=Math.max(2,Math.min(40,resolveNum(p.uRes,scope,14))),
-            vr=Math.max(2,Math.min(40,resolveNum(p.vRes,scope,14))),
-            wr=Math.max(2,Math.min(40,resolveNum(p.wRes,scope,14)));
+      const ur=Math.max(2,Math.min(96,resolveNum(p.uRes,scope,14))),
+            vr=Math.max(2,Math.min(96,resolveNum(p.vRes,scope,14))),
+            wr=Math.max(2,Math.min(96,resolveNum(p.wRes,scope,14)));
       const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,1),ur),
             vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr),
             ws=linspace(resolveNum(p.wMin,scope,0),resolveNum(p.wMax,scope,Math.PI*2),wr);
@@ -234,9 +234,9 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       if(!objs.length) objs=buildPointSeq3d(pts,node.color||"#ff70bb",resolveNum(p.radius,scope,0.07),p.drawLines!==false);
       if(p.sequenced){ objs._sequenced=true; applySequence(objs,node,scope); }
     }
-    if(node.type==="quiver3d"){const gridN=Math.max(2,Math.min(12,resolveNum(p.gridN,scope,5)));objs=buildQuiver3d(p,p.exprX,p.exprY,p.exprZ,gridN,resolveNum(p.xMin,scope,-3),resolveNum(p.xMax,scope,3),resolveNum(p.yMin,scope,-3),resolveNum(p.yMax,scope,3),resolveNum(p.zMin,scope,-3),resolveNum(p.zMax,scope,3),node.color||"#5b9cf6",scope,p.normalize!==false);}
+    if(node.type==="quiver3d"){const gridN=Math.max(2,Math.min(48,resolveNum(p.gridN,scope,5)));objs=buildQuiver3d(p,p.exprX,p.exprY,p.exprZ,gridN,resolveNum(p.xMin,scope,-3),resolveNum(p.xMax,scope,3),resolveNum(p.yMin,scope,-3),resolveNum(p.yMax,scope,3),resolveNum(p.zMin,scope,-3),resolveNum(p.zMax,scope,3),node.color||"#5b9cf6",scope,p.normalize!==false);}
     if(node.type==="flow"){
-      const steps=Math.max(2,Math.min(2000,resolveNum(p.steps,scope,500)));
+      const steps=Math.max(2,Math.min(8000,resolveNum(p.steps,scope,500)));
       const stepSize=resolveNum(p.stepSize,scope,0.02);
       // Find the wired vector-field fnMap and the seed source. Seeds may come
       // from a paramSpace (continuous manifold → surface/volume) or a points
