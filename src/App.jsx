@@ -218,7 +218,7 @@ function Editor({initialHash, active=true}){
   // Mirror the project's math-input-mode preference into the shared UI-settings
   // holder that the EI/XF input wrappers subscribe to (they're too far down the
   // tree to thread the project node to).
-  useEffect(()=>{ setUISetting("mathInputMode", projectNode?.props?.mathInputMode || "plain"); },[projectNode]);
+  useEffect(()=>{ setUISetting("mathInputMode", projectNode?.props?.mathInputMode || "live"); },[projectNode]);
   const selectedNode=selected?nodes[selected]:null;
 
   // Does the selected node depend (transitively) on a playing animator? If not,

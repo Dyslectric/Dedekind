@@ -10,7 +10,7 @@
 
 import { useState, useEffect } from "react";
 
-const settings = { mathInputMode: "plain" };   // "plain" | "live"
+const settings = { mathInputMode: "live" };   // "plain" | "live"
 const listeners = new Set();
 
 function setUISetting(key, value){
