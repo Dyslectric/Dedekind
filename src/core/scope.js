@@ -176,9 +176,9 @@ function geomSignature(node, scope){
   const p=node.props;
   const c=node.color||"";
   switch(node.type){
-    case "surf3d": return `s|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${scopeSigFns(node,scope)}`;
+    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${scopeSigFns(node,scope)}`;
     case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
-    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${scopeSigFns(node,scope)}`;
+    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${scopeSigFns(node,scope)}`;
     case "paramvol": return `pv|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${p.wMin}|${p.wMax}|${resolveNum(p.uRes,scope,14)}|${resolveNum(p.vRes,scope,14)}|${resolveNum(p.wRes,scope,14)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
     case "curve3d": return `c|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.tMin,scope,0)}|${resolveNum(p.tMax,scope,6.283)}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
     case "plane": return `pl|${c}|${resolveNum(p.centerX,scope,0)}|${resolveNum(p.centerY,scope,0)}|${resolveNum(p.centerZ,scope,0)}|${resolveNum(p.normalX,scope,0)}|${resolveNum(p.normalY,scope,1)}|${resolveNum(p.normalZ,scope,0)}|${resolveNum(p.size,scope,8)}`;
@@ -195,8 +195,8 @@ function geomSignature(node, scope){
       p.__eqRaymarch ? scopeSigFns(node,scope) : scopeSig(node,scope)
     }`;
     case "pointSeq": return `ps|${c}|${p.points}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${scopeSig(node,scope)}`;
-    case "quiver2d": return `q2|${c}|${p.exprX}|${p.exprY}|${resolveNum(p.gridN,scope,12)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
-    case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
+    case "quiver2d": return `q2|${c}|${p.exprX}|${p.exprY}|${resolveNum(p.gridN,scope,12)}|${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
+    case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${resolveNum(p.xMin,scope,-3)}|${resolveNum(p.xMax,scope,3)}|${resolveNum(p.yMin,scope,-3)}|${resolveNum(p.yMax,scope,3)}|${resolveNum(p.zMin,scope,-3)}|${resolveNum(p.zMax,scope,3)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "glyphField": return `gl|${c}|${p.pairs}|${resolveNum(p.arrowLen,scope,0.5)}|${p.lenMode||(p.normalize===false?"scaled":"uniform")}|${p.anim||"crest"}|${resolveNum(p.speed,scope,1)}|${p.crestColor||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
     case "flow": return `fl|${c}|${resolveNum(p.steps,scope,500)}|${resolveNum(p.stepSize,scope,0.02)}|${p.output||"surface"}|${resolveNum(p.volSlices,scope,6)}|${p.gradient?1:0}|${p.gradA||""}|${p.gradB||""}|${p.showWire?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${scopeSig(node,scope)}`;
     default: return null;
