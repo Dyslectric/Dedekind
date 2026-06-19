@@ -98,6 +98,48 @@ function latticeScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
 }
 
+// ── "Crazy" showcase scene (for the #demo route) ────────────────────────────
+// The Clebsch diagonal cubic — the most celebrated algebraic surface (it carries
+// all 27 lines of a smooth cubic in real form). It's a torture test for the
+// implicit renderer: a degree-3 surface with sharp ridges and near-singular
+// pinches. We animate a morph parameter `s` that deforms the cubic's constant
+// term, pushing it THROUGH singular configurations (nodes appear and vanish) so
+// the new gradient-hardening + seam shading is visible in motion. This is the
+// "open the URL and see something crazy" scene.
+function clebschScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1100,y:120}));cam.label="clebsch";
+  cam.props.orbRadius="13";cam.props.orbTheta="0.9";cam.props.orbPhi="1.0";
+  // slow auto-orbit so the surface turns and the lit ridges sweep
+  cam.props.spin="loop"; cam.props.spinPeriod="22";
+  // morph animator: deforms the cubic through singular configs and back
+  const anim=makeNode("animator",{x:40,y:320});anim.name="s";anim.value=0;
+  anim.props.period="14";anim.props.min="-1";anim.props.max="1";anim.props.loop="pingpong";anim.playing=true;
+  const eq=makeNode("equation",{x:380,y:160});eq.label="Clebsch";eq.color="#ffd479";
+  eq.props.dims="3d";
+  // Clebsch diagonal cubic in the symmetric form:
+  //   81(x³+y³+z³) − 189(x²y+…) + 54xyz + 126(xy+yz+zx) − 9(x²+y²+z²) − 9(x+y+z) + 1 = 0
+  // We expose a morph by scaling the linear+constant tail with the animator `s`,
+  // which slides the surface through singular pinches. Written compactly:
+  eq.props.lhs=[
+    "81*(x^3+y^3+z^3)",
+    "-189*(x^2*y+x^2*z+y^2*x+y^2*z+z^2*x+z^2*y)",
+    "+54*x*y*z",
+    "+126*(x*y+y*z+z*x)",
+    "-9*(1+0.6*s)*(x^2+y^2+z^2)",
+    "-9*(x+y+z)",
+    "+1"
+  ].join(" ");
+  eq.props.rhs="0";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:740,y:160});tr.label="Clebsch Cubic";tr.color="#ffd479";
+  tr.props.mode="graph";
+  tr.props.aMin="-1.5";tr.props.aMax="1.5";tr.props.bMin="-1.5";tr.props.bMax="1.5";tr.props.cMin="-1.5";tr.props.cMax="1.5";
+  tr.props.res="240";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
 const SCENES = { surface:surfaceScene, field:fieldScene, flow:flowScene, lattice:latticeScene };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,6 +360,7 @@ Object.assign(SCENES, {
   flowsurface: flowSurface3DScene,
   glyphspiral: recursiveGlyphScene,
   wavytorus: wavyTorusScene,
+  clebsch: clebschScene,
 });
 
 // Build the editable node-map for a given demo kind (drops the project's

@@ -453,7 +453,11 @@ function place(mz, x, baselineY, out){
       if(n.close){ pushAnchor(out, n.close.s, cx, baselineY, mz); pushAnchor(out, n.close.e, cx+mz.pw, baselineY, mz); }
       cx += mz.pw;
       pushAnchor(out, n.e, cx, baselineY, mz);
-      out.spans.push({ s:n.s, e:n.e, kind:"pderiv" });
+      // visual order ∂/∂{var}[freelist][expr](values): var under ∂/∂, then the two
+      // brackets, then the value parens — left to right.
+      const pF = [];
+      for(const node of [n.dvar, n.freelist, n.expr, n.values]) if(node && node.s!=null) pF.push({ s:node.s, e:node.e });
+      out.spans.push({ s:n.s, e:n.e, kind:"pderiv", fields:pF });
       return;
     }
     case "deriv": {
@@ -499,7 +503,11 @@ function place(mz, x, baselineY, out){
       if(n.close){ pushAnchor(out, n.close.s, cx, baselineY, mz); pushAnchor(out, n.close.e, cx+mz.pw, baselineY, mz); }
       cx += mz.pw;
       pushAnchor(out, n.e, cx, baselineY, mz);
-      out.spans.push({ s:n.s, e:n.e, kind:"deriv" });
+      // visual order for d/d{var}[body](point): the var sits under the d/d (left),
+      // then the bracketed body, then the point parens — left to right.
+      const dF = [];
+      for(const node of [n.dvar, n.body, n.point]) if(node && node.s!=null) dF.push({ s:node.s, e:node.e });
+      out.spans.push({ s:n.s, e:n.e, kind:"deriv", fields:dF });
       return;
     }
     case "sqrt": {
@@ -589,8 +597,17 @@ function place(mz, x, baselineY, out){
       pushAnchor(out, n.e, x+mz.w, baselineY, mz);
       // record this operator's full span so the editor can treat it as an atomic
       // unit: arrows skip its hidden syntax, backspace-after deletes it whole,
-      // shift-arrow from outside selects it whole.
-      out.spans.push({ s:n.s, e:n.e, kind:"bigop" });
+      // shift-arrow from outside selects it whole. `fields` lists the editable
+      // sub-regions in VISUAL traversal order — index/lower (bottom) → upper
+      // (top) → body (right) — so left/right arrows move through the stacked
+      // pieces coherently instead of jumping by raw source offset.
+      const F = [];
+      const pushField = (node)=>{ if(node && node.s!=null) F.push({ s:node.s, e:node.e }); };
+      pushField(n.idx);   // bottom: index var (sum/prod) or integration var
+      pushField(n.lo);    // bottom: lower bound
+      pushField(n.hi);    // top: upper bound
+      pushField(n.body);  // right: summand / integrand
+      out.spans.push({ s:n.s, e:n.e, kind:"bigop", fields:F });
       return;
     }
   }

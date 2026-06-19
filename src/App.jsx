@@ -10,6 +10,16 @@ import { kindEnabled, ADDABLE_KINDS, ALL_KINDS } from "./nodes/kinds.js";
 import { UICtx, UI_DEFAULTS, buildUI, makeS, darken, relLum } from "./theme/tokens.jsx";
 import { buildTheme } from "./theme/presets.js";
 import { useAnimators } from "./hooks/useAnimators.js";
+import { makeDemoProject } from "./landing/previews.jsx";
+
+// Demo route: a URL hash like "#demo" or "#demo=clebsch" boots the editor
+// straight into a curated showcase scene (default: the Clebsch cubic). Lets you
+// open a striking scene from the address bar with no setup.
+function demoKindFromHash(hash){
+  if(hash==="demo") return "clebsch";
+  const m = /^demo=([a-z0-9_]+)$/i.exec(hash||"");
+  return m ? m[1] : null;
+}
 import { setUISetting } from "./core/uisettings.js";
 import { useHistory } from "./hooks/useHistory.js";
 import { NodeCanvas } from "./components/NodeCanvas.jsx";
@@ -129,7 +139,12 @@ function MobileProjectPicker({nodes}){
 }
 
 function Editor({initialHash, active=true}){
-  const initialNodes=useMemo(()=>{if(initialHash){const l=deserializeProject(initialHash);if(l)return l;}return makeInitialScene();},[]);
+  const initialNodes=useMemo(()=>{
+    const demoKind = demoKindFromHash(initialHash);
+    if(demoKind){ try{ const d=makeDemoProject(demoKind); if(d) return d; }catch{} }
+    if(initialHash){const l=deserializeProject(initialHash);if(l)return l;}
+    return makeInitialScene();
+  },[]);
   const hist=useHistory(initialNodes);
   const nodes=hist.state;
   // User-facing edits record history (coalescing rapid bursts like a drag).
@@ -735,9 +750,11 @@ function Editor({initialHash, active=true}){
 
 function Root(){
   const hash=window.location.hash.slice(1);
-  // a fresh visit (no hash / not a share) starts on the landing overlay
+  // a fresh visit (no hash / not a share) starts on the landing overlay; a demo
+  // route opens straight into the editor showcase.
   const isShare = hash ? isShareHash(hash) : false;
-  const startOnLanding=!isShare && !hash;
+  const isDemo = !!demoKindFromHash(hash);
+  const startOnLanding=!isShare && !isDemo && !hash;
   const [showLanding,setShowLanding]=useState(startOnLanding);
   const [closing,setClosing]=useState(false);
   const closeTimer=useRef(null);
@@ -791,7 +808,8 @@ export default function App(){
     return deserializeProject(hash);
   },[parsed,hash]);
 
-  if(hash){
+  const isDemo = !!demoKindFromHash(hash);
+  if(hash && !isDemo){
     // A camera/viewport share opens straight into that single camera.
     if(parsed) return<SharePage data={parsed}/>;
     // A full project URL on mobile can't open the desktop editor — show a

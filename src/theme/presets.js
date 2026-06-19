@@ -22,7 +22,7 @@ function preset(view, ui){
 const DARK_UI = {
   uiHeading:"#dde6f8",uiText:"#cdd6ee",uiMuted:"#8c98b8",uiFaint:"#909bbb",uiAccent:"#6ab2ff",
   uiInputText:"#cdd6ee",uiInputBg:"#070918",uiInputBorder:"#2a2e4a",uiBtnText:"#9aa6c4",
-  uiBtnBg:"#1c1e30",uiBtnBorder:"#3a3e58",uiPanelBar:"#1b1c2c",uiDanger:"#ff7070",uiGood:"#5fe39a",
+  uiBtnBg:"#0c0e20",uiBtnBorder:"#2a2e48",uiPanelBar:"#0b0c1c",uiDanger:"#ff7070",uiGood:"#5fe39a",
 };
 // Catppuccin UI palette builder from the named swatches of each flavour.
 // Text tokens must come from the *text* swatches (text/subtext/overlay), never
@@ -58,7 +58,7 @@ const CAT = {
 };
 
 const THEME_PRESETS = {
-  "Midnight": preset({canvasBg:"#21242f",nodeBg:"#21242f",bg2d:"#1d1f28",grid2d:"#4e4450",axes2d:"#324679",label2d:"#324679",bg3d:"#0d0f18",grid3d:"#1c2334",grid3d2:"#141a28",overlayBg:"#0c0f1c88",overlayBorder:"#222747",overlayText:"#54739a"}, DARK_UI),
+  "Midnight": preset({canvasBg:"#11141f",nodeBg:"#11141f",bg2d:"#0d0f18",grid2d:"#1e2440",axes2d:"#324679",label2d:"#324679",bg3d:"#0d0f18",grid3d:"#1c2334",grid3d2:"#141a28",overlayBg:"#0c0f1c88",overlayBorder:"#222747",overlayText:"#54739a"}, DARK_UI),
   "Slate":    preset({canvasBg:"#101319",nodeBg:"#0d1015",bg2d:"#0c0f14",grid2d:"#222731",axes2d:"#3a4654",label2d:"#46525f",bg3d:"#0c0f14",grid3d:"#1e242c",grid3d2:"#161b21",overlayBg:"#0c0f1499",overlayBorder:"#252b34",overlayText:"#5a6675"}, {...DARK_UI,uiHeading:"#d2d8e2",uiText:"#aeb6c4",uiMuted:"#9aa6b8",uiFaint:"#9098a8",uiAccent:"#6aa0d8",uiInputBg:"#0d1015",uiInputBorder:"#252b34",uiBtnBg:"#12161c",uiBtnBorder:"#252b34",uiPanelBar:"#0d1015"}),
   "Carbon":   preset({canvasBg:"#0d0d0f",nodeBg:"#0a0a0c",bg2d:"#08080a",grid2d:"#1e1e22",axes2d:"#3a3a44",label2d:"#44444e",bg3d:"#08080a",grid3d:"#1a1a1e",grid3d2:"#101012",overlayBg:"#0a0a0c99",overlayBorder:"#222228",overlayText:"#55555f"}, {...DARK_UI,uiHeading:"#dadade",uiText:"#b0b0b8",uiMuted:"#9a9aa6",uiFaint:"#8e8e98",uiAccent:"#8a8a96",uiInputBg:"#0a0a0c",uiInputBorder:"#222228",uiBtnBg:"#111113",uiBtnBorder:"#222228",uiPanelBar:"#0a0a0c"}),
   "Forest":   preset({canvasBg:"#0a120e",nodeBg:"#08100c",bg2d:"#070f0b",grid2d:"#16281e",axes2d:"#2a5a3e",label2d:"#356648",bg3d:"#070f0b",grid3d:"#14241a",grid3d2:"#0d180f",overlayBg:"#070f0b99",overlayBorder:"#1a3024",overlayText:"#48886a"}, {...DARK_UI,uiHeading:"#cfe8d6",uiText:"#a0c4ac",uiMuted:"#88c4a0",uiFaint:"#7fb896",uiAccent:"#5ec888",uiInputBg:"#08100c",uiInputBorder:"#1a3024",uiBtnBg:"#0c1810",uiBtnBorder:"#1a3024",uiPanelBar:"#08100c",uiGood:"#5ec888"}),

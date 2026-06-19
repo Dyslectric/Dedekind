@@ -36,6 +36,28 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
       </Sec>
       {eq3d&&<Sec title="Display">
         <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>
+        <PR label="coloring">
+          <select value={node.props.colorMode||"flat"} onChange={e=>set("colorMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+            <option value="flat">Flat color</option>
+            <option value="depth">Depth (distance from camera)</option>
+            <option value="gradient">Gradient |∇F| (highlights singularities)</option>
+            <option value="normal">Normal direction (orientation)</option>
+            <option value="iridescent">Iridescent (animated)</option>
+          </select>
+        </PR>
+        {(node.props.colorMode||"flat")!=="flat" && (node.props.colorMode!=="iridescent") &&
+          <PR label="hue shift"><EI v={node.props.colorShift??"0"} sc={scope} onChange={v=>set("colorShift",v)} placeholder="0"/></PR>}
+        <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+          {(()=>{
+            const m=node.props.colorMode||"flat";
+            if(m==="depth") return "Hue encodes distance from the camera — near vs far reads instantly on tangled surfaces.";
+            if(m==="gradient") return "Hue encodes |∇F|; singular points (nodes, cusps, where the gradient vanishes) stand out as a distinct band.";
+            if(m==="normal") return "Hue encodes surface orientation — useful for reading curvature.";
+            if(m==="iridescent") return "Decorative oil-slick palette that shimmers over time (not a measured quantity).";
+            return "Surface drawn in its single flat color. Pick a mode to encode depth, gradient, or orientation as hue.";
+          })()}
+          {" Applies to GPU-rendered implicit surfaces."}
+        </div>
       </Sec>}
     </>;
   }

@@ -160,7 +160,48 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
   // neighbour. nextStop moves to the next real stop in a direction — so one arrow
   // press glides over "ummation(" etc. instead of stalling on each hidden char.
   const isStop = (i)=> i>=0 && i<=text.length && (layout.snap[i]??i)===i;
+
+  // Field-aware traversal. Big operators (∑ ∫ ∏, d/dx, ∂/∂x) lay their editable
+  // pieces out in 2D — bounds stacked above/below the glyph, body to the side — so
+  // moving the caret by raw source offset makes it leap between visually distant
+  // regions. Each operator span carries `fields`: its editable sub-ranges in the
+  // intended VISUAL order. Inside a field we move character by character; at a
+  // field edge we hop to the adjacent field (in that order), and past the last/
+  // first field we exit the operator. Outside any operator, plain snap stops.
+  const spansWithFields = (layout.spans||[]).filter(s=>Array.isArray(s.fields) && s.fields.length);
+  // the operator span that owns offset `i` (i within [s,e]), if any
+  const spanAt = (i)=> spansWithFields.find(s=> i>=s.s && i<=s.e) || null;
+  // index of the field within span that contains offset i (at-edge counts), or -1
+  const fieldIndexAt = (span, i)=>{
+    for(let k=0;k<span.fields.length;k++){ const f=span.fields[k]; if(i>=f.s && i<=f.e) return k; }
+    return -1;
+  };
   const nextStop = (from, dir)=>{
+    const span = spanAt(from);
+    if(span){
+      const fields = span.fields;
+      const fi = fieldIndexAt(span, from);
+      if(fi>=0){
+        const f = fields[fi];
+        // move within the field if we're not yet at its edge in the travel dir
+        if(dir>0 && from < f.e) return from+1;
+        if(dir<0 && from > f.s) return from-1;
+        // at the field edge → hop to the adjacent field, or exit the operator
+        const nf = fields[fi+dir];
+        if(nf) return dir>0 ? nf.s : nf.e;        // enter neighbour at its near edge
+        return dir>0 ? span.e : span.s;            // past last/before first → exit
+      }
+      // inside the span but between fields (hidden syntax) — go to the nearest
+      // field edge in the travel direction, else exit.
+      if(dir>0){
+        const nf = fields.find(f=>f.s>=from);
+        return nf ? nf.s : span.e;
+      } else {
+        let nf=null; for(const f of fields) if(f.e<=from) nf=f;
+        return nf ? nf.e : span.s;
+      }
+    }
+    // not in an operator: plain snap-stop walk (skips collapsed hidden syntax)
     let i = from + dir;
     while(i>0 && i<text.length && !isStop(i)) i += dir;
     return Math.max(0, Math.min(text.length, i));
@@ -193,18 +234,19 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
   };
 
   // Templates: typing the bare words expands to the call form with empty slots,
-  // dropping the caret into a starting field. Bigops have four fields (the caret
-  // starts at the lower bound; Tab cycles lower → upper → body → index). sqrt
+  // dropping the caret into a starting field. Bigops have four fields. The caret
+  // starts on the INDEX/VARIABLE (the accumulator's variable), then Tab cycles
+  // through the bounds and finally the body: index → lower → upper → body. sqrt
   // has one field — the radicand — and the caret goes straight inside the parens.
   const TEMPLATES = {
-    sum:  { text:"summation(,,,)",  // body, idx, lo, hi  → all empty
-            // caret offsets of each empty slot, in tab order (lower, upper, body):
-            // "summation(" = 10 chars; slots at body=10, idx=11, lo=12, hi=13
-            fields:[12,13,10,11], first:12 },
-    prod: { text:"product(,,,)",    // "product(" = 8 chars; body=8,idx=9,lo=10,hi=11
-            fields:[10,11,8,9], first:10 },
-    int:  { text:"integrate(,,,)",  // "integrate(" = 10; body=10,var=11,lo=12,hi=13
-            fields:[12,13,10,11], first:12 },
+    sum:  { text:"summation(,,,)",  // args: (body, idx, lo, hi) → all empty
+            // "summation(" = 10 chars; body=10, idx=11, lo=12, hi=13.
+            // tab order index→lower→upper→body:
+            fields:[11,12,13,10], first:11 },
+    prod: { text:"product(,,,)",    // "product(" = 8 chars; body=8, idx=9, lo=10, hi=11
+            fields:[9,10,11,8], first:9 },
+    int:  { text:"integrate(,,,)",  // "integrate(" = 10; body=10, var=11, lo=12, hi=13
+            fields:[11,12,13,10], first:11 },
     sqrt: { text:"sqrt()",          // "sqrt(" = 5 chars; radicand slot at offset 5
             fields:[5], first:5 },
   };
@@ -230,8 +272,9 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
           const insert = tpl.text;
           const caretAt = start + tpl.first;
           splice(start, c, insert, caretAt);
-          // remember field stops for this structure so Tab/arrows can cycle.
-          fieldStopsRef.current = tpl.fields.map(off=>start+off).sort((a,b)=>a-b);
+          // remember field stops in the intended tab order (index → bounds → body),
+          // NOT sorted by offset — the visual/logical order is deliberate.
+          fieldStopsRef.current = tpl.fields.map(off=>start+off);
           return true;
         }
       }
@@ -247,9 +290,10 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
         // "differentiate(" = 14 chars; then ",,)" → body=14, var=15, point=16
         const insert = "differentiate(,,)";
         const off = start;
-        // caret in the BODY (expression) slot first; Tab cycles body → var → point
-        splice(start, c, insert, off+14);
-        fieldStopsRef.current = [off+14, off+15, off+16];
+        // caret on the VARIABLE first (the differentiator's variable); Tab cycles
+        // variable → body → point, matching arrow-key field order.
+        splice(start, c, insert, off+15);
+        fieldStopsRef.current = [off+15, off+14, off+16];
         return true;
       }
     }
@@ -278,10 +322,11 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
       // p a r t i a l (  ,  ,  [  ]  ,  [  ]  )
       // 0 1 2 3 4 5 6 7  8  9 10 11 12 13 14 15
       const insert = "partial(,,[],[])";
-      // caret in the FIRST bracket (free-var list) inner = start+11
-      splice(start, c, insert, start+11);
-      // Tab order: freelist(11) → expr(8) → values(14) → dvar(9)
-      fieldStopsRef.current = [start+11, start+8, start+14, start+9].sort((a,b)=>a-b);
+      // Land on the differentiation VARIABLE first (the ∂/∂ variable = start+9).
+      // Tab order variable → free-var list → expression → values, matching the
+      // arrow-key field order. Offsets: dvar=9, freelist-inner=11, expr=8, values-inner=14.
+      splice(start, c, insert, start+9);
+      fieldStopsRef.current = [start+9, start+11, start+8, start+14];
       return true;
     }
     const glyph = GREEK_NAMES[name];
