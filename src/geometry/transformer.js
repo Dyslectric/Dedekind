@@ -167,7 +167,14 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
       // shader (no mesh extraction, no field readback), crisp at any zoom. Falls
       // back to the marching-cubes mesh when the expression can't transpile to GLSL.
       const rm = buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum);
-      if(rm) return rm;
+      if(rm){
+        // Mark the array as a GPU surface so the rebuild cache-hit path runs
+        // updateGpuUniforms on it — this is what animates the morph parameter
+        // (a live shader uniform) without rebuilding. Without this tag an animated
+        // implicit surface freezes once its signature is stable across frames.
+        rm._gpu = true;
+        return rm;
+      }
 
       const res=Math.max(2,Math.min(300,Math.round(resolveNum(tp.res,scope,48))));
       const { positions, normals } = marchingCubes(eqNode, scope,

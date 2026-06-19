@@ -1,6 +1,29 @@
 import { catOf } from "./taxonomy.js";
 import { resolveNum, safeEval, makeFn } from "./math.js";
 import * as math from "mathjs";
+import { exprToGLSL } from "../geometry/glsl.js";
+
+// Memoized check: will an equation's lhs/rhs transpile to GLSL (→ GPU raymarch
+// path)? If so, its sliders/animators become live shader uniforms and must NOT
+// invalidate the geometry cache (changing them should push a uniform, not rebuild
+// the surface). Cached by the expression text so the per-frame signature stays
+// cheap. Returns true when BOTH sides transpile.
+const _glslOkCache = new Map();
+function eqTranspiles(eqNode){
+  if(!eqNode || (eqNode.props?.dims||"2d")!=="3d") return false;
+  const q=eqNode.props||{};
+  const key=`${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`;
+  const hit=_glslOkCache.get(key);
+  if(hit!==undefined) return hit;
+  let ok=false;
+  try{
+    const axis=new Set([(q.varA||"x").trim()||"x",(q.varB||"y").trim()||"y",(q.varC||"z").trim()||"z"]);
+    const f=`(${q.lhs ?? "0"}) - (${q.rhs ?? "0"})`;
+    ok = exprToGLSL(f, axis, new Set()) != null;
+  }catch{ ok=false; }
+  _glslOkCache.set(key, ok);
+  return ok;
+}
 
 // ── Scope resolution ─────────────────────────────────────────────────────────
 // `node.attachments` lists the node's UPSTREAM dependencies. A node may only
@@ -161,7 +184,16 @@ function geomSignature(node, scope){
     case "plane": return `pl|${c}|${resolveNum(p.centerX,scope,0)}|${resolveNum(p.centerY,scope,0)}|${resolveNum(p.centerZ,scope,0)}|${resolveNum(p.normalX,scope,0)}|${resolveNum(p.normalY,scope,1)}|${resolveNum(p.normalZ,scope,0)}|${resolveNum(p.size,scope,8)}`;
     case "point": return `pt|${c}|${resolveNum(p.x,scope,0)}|${resolveNum(p.y,scope,0)}|${resolveNum(p.z,scope,0)}|${resolveNum(p.radius,scope,0.08)}`;
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
-    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${scopeSig(node,scope)}`;
+    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
+      // For a transpilable implicit equation (GPU raymarch), the wired sliders/
+      // animators become live shader uniforms — they must NOT invalidate the
+      // geometry cache, or every animated frame triggers a full CPU rebuild
+      // (the Firefox-desktop stutter: GPU idle, main thread rebuilding). Use the
+      // function-only signature so only structural/expression changes rebuild;
+      // value changes flow through updateGpuUniforms. The mesh-fallback path
+      // (non-transpilable) keeps the full scopeSig so it rebuilds on value change.
+      p.__eqRaymarch ? scopeSigFns(node,scope) : scopeSig(node,scope)
+    }`;
     case "pointSeq": return `ps|${c}|${p.points}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${scopeSig(node,scope)}`;
     case "quiver2d": return `q2|${c}|${p.exprX}|${p.exprY}|${resolveNum(p.gridN,scope,12)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
@@ -180,16 +212,32 @@ function plotSignature(node, p, scope, nodes, animVals){
   let pSig=p, sigScope=scope;
   if(node.type==="transformer"||node.type==="flow"){
     let fnSig="",paramSig="",eqSig="";
+    let eqRaymarch=false;   // equation wired AND transpilable → GPU uniform path
     const structScopes=[];
     const animV=animVals||{};
     for(const depId of (node.attachments||[])){
       const dep=nodes[depId]; if(!dep) continue;
       if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
-      else if(dep.type==="equation"){ const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="equation"){
+        const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`;
+        eqRaymarch=eqTranspiles(dep);
+        const eqScope=resolveScope(dep.id,nodes,animV);
+        structScopes.push(eqScope);
+        // For the MESH fallback (non-transpilable), the equation is sampled on the
+        // CPU, so the scalar VALUES it references must be in the signature or an
+        // animated mesh surface would never rebuild. scopeSig on the transformer
+        // can't see them (they live in the equation's expression, not the
+        // transformer's), so fold them in here. For the raymarch path we skip this
+        // — those scalars are live uniforms and must NOT invalidate the cache.
+        if(!eqRaymarch){
+          const eqNodeForSig={ props:{ expr:`${q.lhs} ${q.rhs}` }, type:"__eqvals" };
+          eqSig += "|vals:" + scopeSig(eqNodeForSig, eqScope);
+        }
+      }
       else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="points"){ const q=dep.props; paramSig=`pts|${q.kind}|${q.mode}|${q.listPoints}|${q.idxPoint}|${q.idxCount}|${q.recInit}|${q.recStep}|${q.recCount}|${q.listGlyphs}|${q.idxGlyph}|${q.idxGlyphCount}|${q.recGlyphInit}|${q.recGlyphStep}|${q.recGlyphCount}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
     }
-    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig};
+    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__eqRaymarch:eqRaymarch};
     sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);
   }
   return geomSignature({...node,props:pSig},sigScope);

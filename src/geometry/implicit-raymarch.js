@@ -205,26 +205,23 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
       float baseDt = span / uSteps;            // nominal sampling scale
       float minStep = baseDt * 0.25;
       float maxStep = baseDt * 4.0;
-      vec3  hgrad   = (uMaxM - uMinM) * 0.0015 + 1e-4;  // grad FD radius
+      float dEps    = baseDt * 0.5;            // forward-diff radius along the ray
 
       float t = t0;
       float prev = sampleF(ro + rd*t);
       float tHit = -1.0;
       bool  grazeHit = false;
       float lastStep = minStep;     // length of the step taken to reach current t
-      // |F| graze threshold scales with the field's local slope so it adapts to
-      // steep vs flat regions; uGrazeK is the tunable sensitivity.
+      // PERF: the adaptive step only needs the slope of F ALONG THE RAY, not the
+      // full 3-D gradient. So instead of a 6-tap gradient every step (the old hot
+      // spot — 6 field evals per iteration), estimate dF/dt with a single extra
+      // sample a hair ahead. This cuts the inner loop from ~7 field evals to ~2,
+      // a big win on heavy polynomials (and the main reason Firefox stuttered).
+      // The full-quality gradient is computed ONCE at the hit point for shading.
       for(int i=0;i<1024;i++){
         if(t >= t1) break;
         vec3 pos = ro + rd*t;
         float f = sampleF(pos);
-        // local slope along the ray (for adaptive step + graze threshold)
-        vec3 gW = vec3(0.0);
-        {
-          vec3 gM = gradM(pos, hgrad);
-          gW = vec3(gM.x, gM.z, -gM.y);
-        }
-        float gMag = max(length(gW), 1e-6);
 
         // sign-change crossing → bisect between the previous sample and this one
         if(prev * f < 0.0){
@@ -239,14 +236,19 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
           tHit = 0.5*(ta+tb);
           break;
         }
+
+        // directional slope |dF/dt| along the ray (1 extra eval, not 6)
+        float fAhead = sampleF(pos + rd*dEps);
+        float slope = max(abs(fAhead - f) / dEps, 1e-6);
+
         // near-zero graze (tangency / seam) → accept this point as a hit
-        float graze = uGrazeK * baseDt * gMag;   // |F| considered "on surface"
+        float graze = uGrazeK * baseDt * slope;   // |F| considered "on surface"
         if(abs(f) < graze){
           tHit = t; grazeHit = true; break;
         }
 
-        // adaptive step: Newton distance estimate, damped + clamped
-        float dist = abs(f) / gMag;              // ~distance to surface
+        // adaptive step: Newton distance estimate (along-ray), damped + clamped
+        float dist = abs(f) / slope;              // ~distance to surface along ray
         float step = clamp(dist * uSafety, minStep, maxStep);
         lastStep = step;
         prev = f;
@@ -261,6 +263,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
       // cusp from a sparkling artifact into a coherent point. The number of extra
       // samples ramps up with how degenerate the gradient is.
       vec3 viewDir = rd;
+      vec3 hgrad = (uMaxM - uMinM) * 0.0015 + 1e-4;  // gradient FD radius (hit-point shading)
       vec3 nrm = normalAt(pHit, viewDir);
       {
         vec3 gM = gradM(pHit, hgrad);
