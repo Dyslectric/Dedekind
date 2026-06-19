@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useRef, useEffect, useState, useCallback, useLayoutEffect, memo } from "react";
 import { useUI, relLum, darken } from "../theme/tokens.jsx";
 import { classifyIdent, tokenColor, GREEK_NAMES } from "../core/identClass.js";
 import { layoutMath } from "../core/mathmeasure.js";
@@ -67,12 +67,27 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
   const { ui } = useUI();
   const hostRef = useRef(null);
   const valRef = useRef(v ?? "");
+  const lastEmittedRef = useRef(v ?? "");   // last value we sent via onChange
   const caretRef = useRef((v ?? "").length);   // caret = text index (the focus end)
   const anchorRef = useRef(null);              // selection anchor; null = no selection
   const fieldStopsRef = useRef(null);          // sorted caret offsets of the active template's slots
   const [focused, setFocused] = useState(false);
   const [, force] = useState(0);     // re-render trigger
   const rerender = useCallback(()=>force(n=>n+1), []);
+  // Emit an edit to the parent, recording it so the external-value sync effect can
+  // tell our own (possibly not-yet-propagated) value from a genuine external one.
+  // awaitEchoRef holds the value we're waiting to see come back as `v`; until it
+  // does (or a different external value arrives after a short window), we don't let
+  // a stale `v` overwrite the field — this is what stops the commit-on-Enter from
+  // snapping back while an animation is re-rendering the panel.
+  const awaitEchoRef = useRef(null);
+  const awaitSinceRef = useRef(0);
+  const emit = useCallback((next)=>{
+    lastEmittedRef.current = next;
+    awaitEchoRef.current = next;
+    awaitSinceRef.current = performance.now();
+    onChange && onChange(next);
+  }, [onChange]);
   const [fontsReady, setFontsReady] = useState(false);
   const [hostW, setHostW] = useState(0);
 
@@ -121,10 +136,39 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
     return ()=>ro.disconnect();
   }, []);
 
-  // keep valRef in sync with external prop when not focused (selecting a
-  // different node, undo, etc.). When focused, the user is the authority.
+  // Keep valRef in sync with the external prop, but NEVER while this field is the
+  // one being edited. We check the live DOM focus (document.activeElement) rather
+  // than React's `focused` state, because during an animation the props panel
+  // re-renders several times a second and the React state can lag a frame behind
+  // the real focus — long enough for a re-render carrying the stale, pre-edit `v`
+  // to overwrite valRef and snap the field back (the value that then gets
+  // committed on Enter). The DOM is the ground truth: if our host element holds
+  // focus, the user is editing it and valRef is authoritative, full stop.
   useEffect(()=>{
-    if(!focused){ valRef.current = v ?? ""; caretRef.current = Math.min(caretRef.current, (v??"").length); anchorRef.current=null; fieldStopsRef.current=null; rerender(); }
+    const incoming = v ?? "";
+    const hostHasFocus = hostRef.current && document.activeElement === hostRef.current;
+    if(focused || hostHasFocus){
+      // user is editing this field — do not overwrite
+      return;
+    }
+    // Post-commit echo wait: if we're waiting for our just-emitted value to come
+    // back as `v` and it hasn't yet, don't let a stale (pre-edit) `v` overwrite us.
+    // Clear the wait once the echo arrives, or after a short timeout so a genuine
+    // external change can't be blocked indefinitely.
+    if(awaitEchoRef.current !== null){
+      if(incoming === awaitEchoRef.current){
+        awaitEchoRef.current = null;               // echo arrived; in sync
+      } else if(performance.now() - awaitSinceRef.current < 600){
+        return;                                     // still waiting — ignore stale v
+      } else {
+        awaitEchoRef.current = null;               // gave up waiting; adopt below
+      }
+    }
+    if(incoming === valRef.current) return;     // already in sync
+    valRef.current = incoming;
+    lastEmittedRef.current = incoming;
+    caretRef.current = Math.min(caretRef.current, incoming.length);
+    anchorRef.current=null; fieldStopsRef.current=null; rerender();
   }, [v, focused, rerender]);
 
   const text = valRef.current;
@@ -229,7 +273,7 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
     valRef.current = next;
     caretRef.current = caretAt!=null ? caretAt : start + ins.length;
     anchorRef.current = null;
-    onChange && onChange(next);
+    emit(next);
     rerender();
   };
 
@@ -431,7 +475,7 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
       if(!nameMode && maybeExpandTemplate(caretRef.current)) return;
       // greek escape conversion (\alpha → α) applies in both modes.
       if(maybeConvertGreek(caretRef.current)) return;
-      onChange && onChange(next); rerender();
+      emit(next); rerender();
       return;
     }
   };
@@ -474,7 +518,7 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
         onPaste={onPaste}
         onMouseDown={onMouseDown}
         onFocus={()=>{ setFocused(true); }}
-        onBlur={()=>{ setFocused(false); onChange && onChange(valRef.current); }}
+        onBlur={()=>{ setFocused(false); blurAtRef.current = performance.now(); emit(valRef.current); }}
         style={{
           position:"relative",
           background: ui.uiInputBg,
@@ -624,3 +668,30 @@ function LiveMathInput({ v, sc, onChange, placeholder, nameMode, hostStyle, oute
 }
 
 export { LiveMathInput };
+
+// Memoized wrapper. The props panel re-renders several times a second while an
+// animation plays, purely to refresh live evaluated-value highlighting (the `sc`
+// prop). That highlighting refresh must NOT re-render a field the user is actively
+// editing — re-running the field mid-edit is what caused committed edits to snap
+// back. So: if the ONLY thing that changed is `sc` (or the cosmetic style props)
+// and this field currently holds DOM focus, skip the re-render. Highlighting then
+// catches up the moment the field is blurred. Any change to the actual value `v`,
+// onChange, or edit-relevant props always re-renders normally.
+function lmiPropsEqual(prev, next){
+  if(prev.v !== next.v) return false;
+  if(prev.onChange !== next.onChange) return false;
+  if(prev.placeholder !== next.placeholder) return false;
+  if(prev.nameMode !== next.nameMode) return false;
+  if(prev.hostStyle !== next.hostStyle || prev.outerStyle !== next.outerStyle) return false;
+  // Only `sc` differs (or nothing). If a math field is being edited right now,
+  // skip — don't disturb the focused editor for a highlighting refresh.
+  if(prev.sc !== next.sc){
+    const ae = typeof document!=="undefined" ? document.activeElement : null;
+    const editing = ae && ae.closest && ae.closest("[data-math-input]");
+    if(editing) return true;     // treat as equal → skip re-render
+    return false;                // not editing → allow highlight refresh
+  }
+  return true;
+}
+const LiveMathInputMemo = memo(LiveMathInput, lmiPropsEqual);
+export { LiveMathInputMemo };

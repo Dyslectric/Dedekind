@@ -184,7 +184,16 @@ function Editor({initialHash, active=true}){
   const PREVIEW_HZ=8;
   useEffect(()=>{
     if(!Object.values(nodes).some(n=>n.type==="animator"&&n.playing)) return;
-    const iv=setInterval(()=>setAnimTick(t=>t+1),1000/PREVIEW_HZ);
+    const iv=setInterval(()=>{
+      // Don't re-render the editor while the user is typing in a math field. The
+      // animTick re-render exists only to refresh live evaluated-value previews in
+      // the props panel; firing it mid-edit re-feeds the field its (not-yet-
+      // propagated) prop value and snaps the edit back. The live preview pausing
+      // for the moment a field is focused is imperceptible; losing the edit isn't.
+      const ae=document.activeElement;
+      if(ae && ae.closest && ae.closest("[data-math-input]")) return;
+      setAnimTick(t=>t+1);
+    },1000/PREVIEW_HZ);
     return()=>clearInterval(iv);
   },[nodes]);
 

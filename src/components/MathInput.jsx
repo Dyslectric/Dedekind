@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useUI, relLum, darken } from "../theme/tokens.jsx";
 import { MATH_CONSTANTS, MATH_FUNCS, MATH_BOUND, tokenizeMath, classifyIdent, tokenColor } from "../core/identClass.js";
-import { LiveMathInput } from "./LiveMathInput.jsx";
+import { LiveMathInput, LiveMathInputMemo } from "./LiveMathInput.jsx";
 import { useUISetting } from "../core/uisettings.js";
 
 // ── Math expression tokenizer ────────────────────────────────────────────────
@@ -140,6 +140,7 @@ function MathInput({v,sc,onChange,placeholder,multiline}){
     <div style={{position:"relative",background:ui.uiInputBg,border:`1px solid ${foc?ui.uiAccent:ui.uiInputBorder}`,borderRadius:4,
       display:"flex",alignItems:multiline?"stretch":"center",minHeight:multiline?"5.4em":"1.9em"}}>
       <div ref={ref} contentEditable suppressContentEditableWarning spellCheck={false}
+        data-math-input=""
         onInput={onInput}
         onFocus={()=>setFoc(true)}
         onBlur={()=>{setFoc(false);commit();}}
@@ -171,7 +172,7 @@ function MathInput({v,sc,onChange,placeholder,multiline}){
 // typed as ordinary text (summation/integrate/product) in either mode.
 function MathField2(props){
   const mode = useUISetting("mathInputMode");
-  return mode==="live" ? <LiveMathInput {...props}/> : <MathInput {...props}/>;
+  return mode==="live" ? <LiveMathInputMemo {...props}/> : <MathInput {...props}/>;
 }
 function EI({v,sc,onChange,placeholder}){ return <MathField2 v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
 function XF({v,sc,onChange,placeholder}){ return <MathField2 v={v} sc={sc} onChange={onChange} placeholder={placeholder}/>; }
