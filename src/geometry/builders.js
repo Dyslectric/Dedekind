@@ -24,9 +24,11 @@ function buildSurfGPU(kind, p, scope, color){
     vmin=resolveNum(p.yMin,scope,-4); vmax=resolveNum(p.yMax,scope,4);
     const res=Math.max(2,Math.min(512,resolveNum(p.res,scope,40))); ures=res; vres=res;
     // _gd.x∈[0,1]→x, _gd.y∈[0,1]→y, z=f(x,y). The grid-coord vec2 is named `_gd`
-    // (not `d`) so a user scalar called `d` stays a distinct uniform inside the shader.
-    bodyP = `x = ${_glslNum(umin)} + _gd.x*${_glslNum(umax-umin)};
-             y = ${_glslNum(vmin)} + _gd.y*${_glslNum(vmax-vmin)};
+    // (not `d`) so a user scalar called `d` stays a distinct uniform inside the
+    // shader. Domain bounds are UNIFORMS (uDomU/uDomV), not baked literals, so
+    // animating a bound is a per-frame uniform write — no shader recompile.
+    bodyP = `x = uDomU.x + _gd.x*(uDomU.y - uDomU.x);
+             y = uDomV.x + _gd.y*(uDomV.y - uDomV.x);
              float zz = ${gx}; vec3 P = vec3(x, y, zz);`;
   } else if(kind==="paramsurf"){
     const sx=exprToGLSL(p.exprX,new Set(["u","v"]),uniforms);
@@ -37,23 +39,31 @@ function buildSurfGPU(kind, p, scope, color){
     vmin=resolveNum(p.vMin,scope,0); vmax=resolveNum(p.vMax,scope,Math.PI);
     ures=Math.max(2,Math.min(512,resolveNum(p.uRes,scope,40)));
     vres=Math.max(2,Math.min(512,resolveNum(p.vRes,scope,30)));
-    bodyP = `float u = ${_glslNum(umin)} + _gd.x*${_glslNum(umax-umin)};
-             float v = ${_glslNum(vmin)} + _gd.y*${_glslNum(vmax-vmin)};
+    bodyP = `float u = uDomU.x + _gd.x*(uDomU.y - uDomU.x);
+             float v = uDomV.x + _gd.y*(uDomV.y - uDomV.x);
              vec3 P = vec3(${sx}, ${sy}, ${sz});`;
   } else return null;
 
-  return assembleSurfGPU(bodyP, [...uniforms], scope, color, ures, vres, showWire);
+  // Pass the initial domain so the shader's uDomU/uDomV uniforms start correct;
+  // they are refreshed each frame by updateGpuUniforms, which re-resolves the
+  // bound EXPRESSIONS (so an animator/slider in a bound updates live, no rebuild).
+  const domExpr = kind==="surf3d"
+    ? { uMin:p.xMin, uMax:p.xMax, vMin:p.yMin, vMax:p.yMax }
+    : { uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax };
+  return assembleSurfGPU(bodyP, [...uniforms], scope, color, ures, vres, showWire,
+    null, { uDomU:[umin,umax], uDomV:[vmin,vmax],
+            expr:domExpr, defs:{ uMin:umin, uMax:umax, vMin:vmin, vMax:vmax } });
 }
 // Given a GLSL body that sets `vec3 P` (math-order x,y,z) from grid coords d∈[0,1]²,
 // build the unit grid geometry + fill/wire shader meshes. Shared by analytic
 // surfaces and GPU-accelerated graph-mode transformers. `colorOpts` (optional):
 // { colorBody, colorLo, colorHi, cmin, cmax } enables per-vertex gradient fill.
-function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colorOpts){
+function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colorOpts, domain){
   const geo = new THREE.PlaneGeometry(1,1, ures-1, vres-1);
   const arr = geo.attributes.position.array;
   for(let i=0;i<arr.length;i+=3){ arr[i]+=0.5; arr[i+1]+=0.5; arr[i+2]=0; }
   geo.attributes.position.needsUpdate = true;
-  const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts);
+  const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts, domain);
   const mesh = new THREE.Mesh(geo, matFill);
   // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
   // shader, so three.js's CPU-side bounding volume (a tiny 1×1 patch) does NOT
@@ -61,9 +71,12 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   // mesh gets culled the moment the camera frames the displaced geometry — which
   // looked like "only the wireframe renders / fill is invisible".
   mesh.frustumCulled = false;
-  mesh._gpuSurface = { uNames };
+  // `domain` (uDomU/uDomV) is recorded so updateGpuUniforms can refresh the
+  // bounds each frame — animating a domain bound costs one uniform write, no
+  // rebuild. uNames covers the expression uniforms (sliders in exprX/Y/Z).
+  mesh._gpuSurface = { uNames, domain: domain||null };
   if(showWire===false) return [mesh];
-  const matWire = makeSurfaceShader(bodyP, uNames, scope, color, true);
+  const matWire = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain);
   matWire.uniforms.uColor.value = new THREE.Color(hexToThree(color)).multiplyScalar(1.4);
   // Wireframe shares the SAME geometry (no clone): two meshes can reference one
   // BufferGeometry, halving vertex memory and skipping a full-buffer clone on
@@ -71,7 +84,7 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   const wire = new THREE.Mesh(geo, matWire);
   wire.frustumCulled = false;
   wire._sharedGeometry = true;
-  wire._gpuSurface = { uNames };
+  wire._gpuSurface = { uNames, domain: domain||null };
   return [mesh, wire];
 }
 // GPU-accelerated graph-mode transformer with TWO inputs → a surface.

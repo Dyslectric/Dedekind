@@ -25,6 +25,27 @@ function eqTranspiles(eqNode){
   return ok;
 }
 
+// Memoized check: will a surf3d / paramsurf transpile to GLSL (→ GPU surface
+// path)? When it does, its DOMAIN BOUNDS are shader uniforms (animating a bound
+// is a uniform write, no rebuild), so the bound VALUES must stay OUT of the cache
+// signature. When it doesn't (CPU mesh fallback), the bounds are baked into the
+// geometry and their values MUST be in the signature so an animated bound rebuilds.
+const _surfGlslCache = new Map();
+function surfTranspiles(node){
+  const p=node.props||{};
+  let key, exprs, axis;
+  if(node.type==="surf3d"){ key=`s|${p.expr}`; exprs=[p.expr]; axis=new Set(["x","y"]); }
+  else if(node.type==="paramsurf"){ key=`p|${p.exprX}|${p.exprY}|${p.exprZ}`; exprs=[p.exprX,p.exprY,p.exprZ]; axis=new Set(["u","v"]); }
+  else return false;
+  const hit=_surfGlslCache.get(key);
+  if(hit!==undefined) return hit;
+  let ok=true;
+  try{ for(const e of exprs){ if(exprToGLSL(e ?? "0", axis, new Set())==null){ ok=false; break; } } }
+  catch{ ok=false; }
+  _surfGlslCache.set(key, ok);
+  return ok;
+}
+
 // ── Scope resolution ─────────────────────────────────────────────────────────
 // `node.attachments` lists the node's UPSTREAM dependencies. A node may only
 // evaluate the scalars/functions/exprs that are DIRECTLY attached to it — not
@@ -176,9 +197,13 @@ function geomSignature(node, scope){
   const p=node.props;
   const c=node.color||"";
   switch(node.type){
-    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${scopeSigFns(node,scope)}`;
+    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${
+      surfTranspiles(node) ? "" : `${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|`
+    }${scopeSigFns(node,scope)}`;
     case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
-    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${scopeSigFns(node,scope)}`;
+    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${
+      surfTranspiles(node) ? "" : `${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|`
+    }${scopeSigFns(node,scope)}`;
     case "paramvol": return `pv|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${p.wMin}|${p.wMax}|${resolveNum(p.uRes,scope,14)}|${resolveNum(p.vRes,scope,14)}|${resolveNum(p.wRes,scope,14)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
     case "curve3d": return `c|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.tMin,scope,0)}|${resolveNum(p.tMax,scope,6.283)}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
     case "plane": return `pl|${c}|${resolveNum(p.centerX,scope,0)}|${resolveNum(p.centerY,scope,0)}|${resolveNum(p.centerZ,scope,0)}|${resolveNum(p.normalX,scope,0)}|${resolveNum(p.normalY,scope,1)}|${resolveNum(p.normalZ,scope,0)}|${resolveNum(p.size,scope,8)}`;

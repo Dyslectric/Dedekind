@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { resolveNum } from "../core/math.js";
 
 // ── THREE helpers ────────────────────────────────────────────────────────────
 function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(o); if(o.geometry&&!o._sharedGeometry)o.geometry.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else if(o.material)o.material.dispose();}}
@@ -17,17 +18,26 @@ function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
 //   computes `float cval` — a per-vertex scalar mapped through a lo→hi ramp over
 //   [cmin,cmax]. When present the fill pass is gradient-colored instead of using
 //   the flat uColor. opts.colorLo/colorHi are THREE.Color; cmin/cmax are numbers.
-function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts){
+function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, domain){
   const colored = !!(opts && opts.colorBody);
   const uniforms = { uColor:{value:new THREE.Color(hexToThree(color))} };
   for(const u of uniformNames) uniforms[u] = { value: Number(scope[u]) || 0 };
+  // Domain bounds as uniforms (uDomU = [min,max] for the first param, uDomV for
+  // the second). When the body references them, animating a bound is a uniform
+  // write — no shader rebuild. Default to the unit range if not supplied.
+  const hasDomain = !!domain;
+  if(hasDomain){
+    uniforms.uDomU = { value: new THREE.Vector2(domain.uDomU[0], domain.uDomU[1]) };
+    uniforms.uDomV = { value: new THREE.Vector2(domain.uDomV[0], domain.uDomV[1]) };
+  }
   if(colored){
     uniforms.uColorLo = { value: opts.colorLo.clone() };
     uniforms.uColorHi = { value: opts.colorHi.clone() };
     uniforms.uCMin = { value: Number(opts.cmin)||0 };
     uniforms.uCMax = { value: Number(opts.cmax)||1 };
   }
-  const decls = uniformNames.map(u=>`uniform float ${u};`).join("\n");
+  const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
+  const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${u};`).join("\n");
   // Map math (x,y,z) → three (x,z,y) to match the rest of the app's convention.
   // The wireframe overlay is flat-shaded (no lighting), so it skips the two extra
   // mathPos() evaluations the fill pass needs for finite-difference normals —
@@ -114,12 +124,25 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts){
 }
 
 
-// Update live uniforms on a GPU object set from the current scope.
+// Update live uniforms on a GPU object set from the current scope. This covers
+// (a) expression sliders/animators (info.uNames → float uniforms) and (b) domain
+// bounds (info.domain → uDomU/uDomV vec2s), re-resolving the bound expressions so
+// an animator wired into a domain edge sweeps the surface with no rebuild.
 function updateGpuUniforms(objs, scope){
   for(const o of objs){
     const info=o._gpuSurface; if(!info) continue;
     const mat=o.material; if(!mat||!mat.uniforms) continue;
     for(const u of info.uNames){ if(mat.uniforms[u]) mat.uniforms[u].value = Number(scope[u])||0; }
+    const dom=info.domain;
+    if(dom && dom.expr && mat.uniforms.uDomU && mat.uniforms.uDomV){
+      const d=dom.defs||{};
+      const uMin=resolveNum(dom.expr.uMin,scope,d.uMin??0);
+      const uMax=resolveNum(dom.expr.uMax,scope,d.uMax??1);
+      const vMin=resolveNum(dom.expr.vMin,scope,d.vMin??0);
+      const vMax=resolveNum(dom.expr.vMax,scope,d.vMax??1);
+      mat.uniforms.uDomU.value.set(uMin,uMax);
+      mat.uniforms.uDomV.value.set(vMin,vMax);
+    }
   }
 }
 

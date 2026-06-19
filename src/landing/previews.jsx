@@ -236,22 +236,28 @@ function lissajousRibbonScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="lissajous ribbon";
   cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
-  // animator drives the section position around the loop
-  const anim=makeNode("animator",{x:40,y:360});anim.name="s";anim.value=0;anim.props.period="6";anim.props.min="0";anim.props.max="1";anim.props.loop="loop";anim.playing=true;
-  // degree-2 paramSpace: u runs along the lissajous knot, v across the ribbon
-  // width. A travelling lit band is created by modulating the ribbon's WIDTH with
-  // a moving window centered at s (wrapping around the loop): only the arc near s
-  // has full width, the rest pinches to the centerline — so a ribbon "section"
-  // appears to fly around the knot as s animates.
-  const ribbon=makeNode("paramSpace",{x:520,y:160});ribbon.label="ribbon";ribbon.color="#c4b5fd";
-  ribbon.props.degree="2";
-  // width(u) = exp(-((frac(u/2pi - s + .5)-.5)*k)^2): a wrapped Gaussian bump at s.
-  const W="(0.05 + 0.5*exp(-pow((( (u/6.283 - s) - floor(u/6.283 - s) ) - 0.5)*9,2)))";
-  ribbon.props.exprXu=`(2.2)*cos(3*u) + ${W}*v*cos(3*u)`;
-  ribbon.props.exprYu=`(2.2)*sin(2*u) + ${W}*v*sin(2*u)`;
-  ribbon.props.exprZu=`sin(4*u) + ${W}*v*cos(4*u)`;
-  ribbon.props.uMin="0";ribbon.props.uMax="6.283";ribbon.props.vMin="-1";ribbon.props.vMax="1";
-  ribbon.props.uRes="260";ribbon.props.vRes="6";
+  // The animator drives the LEADING edge of the drawn section around the knot.
+  // s runs a little past 2π so the section can fully exit before the loop wraps.
+  const anim=makeNode("animator",{x:40,y:360});anim.name="s";anim.value=0;
+  anim.props.period="5";anim.props.min="0";anim.props.max="7.5";anim.props.loop="loop";anim.playing=true;
+  // A clean lissajous-knot ribbon: u runs ALONG the knot, v (−1..1) across the
+  // ribbon width. The centerline is a (3,2,4)-lissajous curve; the width offset is
+  // a small vector so the ribbon has body. No width-window trickery — the visible
+  // SECTION is produced purely by animating the u-domain: only u∈[uMin,uMax] is
+  // drawn, and that window slides around the loop. Because domain bounds are live
+  // GPU uniforms now, the section runs at frame rate with no per-frame rebuild.
+  const ribbon=makeNode("paramsurf",{x:560,y:160});ribbon.label="ribbon";ribbon.color="#c4b5fd";
+  ribbon.props.exprX="2.2*cos(3*u) + 0.18*v*cos(3*u)";
+  ribbon.props.exprY="2.2*sin(2*u) + 0.18*v*sin(2*u)";
+  ribbon.props.exprZ="sin(4*u) + 0.18*v*cos(4*u)";
+  // The drawn section: leading edge at s, trailing edge a fixed arc (1.4 rad)
+  // behind. Clamped into [0, 2π] by the expressions so the window enters at the
+  // start of the loop and exits at the end, then re-enters as s loops — reading
+  // as a lit segment flying around the knot.
+  ribbon.props.uMin="max(0, s - 1.4)";
+  ribbon.props.uMax="min(6.283, s)";
+  ribbon.props.vMin="-1";ribbon.props.vMax="1";
+  ribbon.props.uRes="240";ribbon.props.vRes="6";
   ribbon.attachments=[anim.id];
   cam.attachments=[ribbon.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[ribbon.id]:ribbon},camId:cam.id,animated:true};
