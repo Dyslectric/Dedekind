@@ -27,6 +27,7 @@ import { PropsPanel } from "./components/PropsPanel.jsx";
 import { ViewportStrip, ViewportSwitch, DetachedWindow, useIsMobile } from "./components/Viewport.jsx";
 import { PropsPanelWindow } from "./components/primitives.jsx";
 import { Landing } from "./landing/Landing.jsx";
+import { Tutorials, isTutorialsHash } from "./landing/Tutorials.jsx";
 
 // ── Share page ───────────────────────────────────────────────────────────────
 // Renders a single camera from a shared payload. `camIdOverride` lets the mobile
@@ -768,6 +769,20 @@ function Root(){
   const [closing,setClosing]=useState(false);
   const closeTimer=useRef(null);
 
+  // Tutorials overlay: shown whenever the hash is a #tutorials route. Tracked in
+  // state and kept in sync with the address bar so deep links and the browser
+  // Back button work. Exiting clears the hash and returns to the editor.
+  const [tutorials,setTutorials]=useState(()=>isTutorialsHash(window.location.hash));
+  useEffect(()=>{
+    const onHash=()=>setTutorials(isTutorialsHash(window.location.hash));
+    window.addEventListener("hashchange",onHash);
+    return ()=>window.removeEventListener("hashchange",onHash);
+  },[]);
+  const exitTutorials=useCallback(()=>{
+    try{ history.replaceState(null,"",window.location.pathname); }catch{}
+    setTutorials(false);
+  },[]);
+
   // Open the editor: slide the landing away and push a history entry so the
   // browser Back button (or Alt+Left) returns to the landing.
   const openEditor=useCallback((pushHistory=true)=>{
@@ -799,8 +814,9 @@ function Root(){
   },[startOnLanding,openEditor,restoreLanding]);
 
   return <>
-    <Editor initialHash={hash} active={!showLanding}/>
-    {showLanding && <Landing onOpen={()=>openEditor(true)} closing={closing}/>}
+    <Editor initialHash={hash} active={!showLanding && !tutorials}/>
+    {showLanding && !tutorials && <Landing onOpen={()=>openEditor(true)} closing={closing}/>}
+    {tutorials && <Tutorials onExit={exitTutorials}/>}
   </>;
 }
 

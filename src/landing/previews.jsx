@@ -489,6 +489,624 @@ Object.assign(SCENES, {
   whitney: whitneyScene,
 });
 
+// ── Tutorial teaching scenes ────────────────────────────────────────────────
+// Purpose-built, deliberately simple scenes for the in-app tutorials. Each one
+// is a single step in a building progression, so they start minimal and add one
+// idea at a time. They register in SCENES like any other scene, so LivePreview
+// renders them and their "open project" button drops the exact graph into the
+// editor.
+
+// Tutorial: functions vs geometry. Step scenes build the same map three ways.
+
+// Step 1: a lone fnMap, nothing drawn yet. We still need a camera so the preview
+// has something to show, so we point it at an empty scene with just the map node
+// present (the map produces no geometry on its own).
+function tutFnOnlyScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="no geometry yet";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  cam.props.showGrid=true;cam.props.showAxes=true;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x,y)";fn.color="#a6e3a1";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="sin(x)*cos(y)";
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn},camId:cam.id,animated:false};
+}
+// Step 2: the same map wired into a graph transformer becomes a surface z=f(x,y).
+function tutFnSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="z = f(x,y)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.05";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x,y)";fn.color="#a6e3a1";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="sin(x)*cos(y)";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.14";tr.props.aMax="3.14";tr.props.bMin="-3.14";tr.props.bMax="3.14";tr.props.res="80";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 3: the SAME map, drawn as a vector field instead — a different transformer
+// on the identical function. (A 2->2 field so each sample has an arrow.)
+function tutFnFieldScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="same f, as a field";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.1";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x,y)";fn.color="#7ad7ff";
+  fn.props.inDim="2";fn.props.outDim="2";fn.props.out0="sin(x)*cos(y)";fn.props.out1="cos(x)*sin(y)";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="field";tr.color="#7ad7ff";
+  tr.props.mode="field";tr.props.inAxis0="x";tr.props.inAxis1="y";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";tr.props.res="14";
+  tr.props.normalize=true;tr.props.arrowLen="0.4";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Tutorial: implicit surfaces and level sets. Sphere, then a slider, then a real
+// variety, each openable.
+
+// Step 1: the simplest level set, a sphere x^2+y^2+z^2 = 1.
+function tutSphereScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="x²+y²+z² = 1";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="4.4";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="sphere";eq.color="#a6e3a1";
+  eq.props.dims="3d";eq.props.lhs="x^2 + y^2 + z^2";eq.props.rhs="1";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#a6e3a1";
+  tr.props.mode="graph";
+  tr.props.aMin="-1.6";tr.props.aMax="1.6";tr.props.bMin="-1.6";tr.props.bMax="1.6";tr.props.cMin="-1.6";tr.props.cMax="1.6";
+  tr.props.res="120";tr.props.colorMode="normal";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 2: a slider r controls the radius; drag it to resize the level set live.
+function tutSphereSliderScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="drag r";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="5.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const r=makeNode("slider",{x:40,y:320});r.name="r";r.label="r · radius";r.value=1;
+  r.props.min="0.4";r.props.max="1.8";r.props.step="0.01";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="sphere(r)";eq.color="#9b8cff";
+  eq.props.dims="3d";eq.props.lhs="x^2 + y^2 + z^2";eq.props.rhs="r^2";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  eq.attachments=[r.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#9b8cff";
+  tr.props.mode="graph";
+  tr.props.aMin="-2";tr.props.aMax="2";tr.props.bMin="-2";tr.props.bMax="2";tr.props.cMin="-2";tr.props.cMax="2";
+  tr.props.res="120";tr.props.colorMode="normal";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[r.id]:r,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 3: a genuine variety. A torus level set, the next step up in complexity
+// from a sphere, still a single readable equation.
+function tutTorusLevelScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="a torus level set";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="torus";eq.color="#ffcf6e";
+  eq.props.dims="3d";eq.props.lhs="(sqrt(x^2 + y^2) - 1.4)^2 + z^2";eq.props.rhs="0.36";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#ffcf6e";
+  tr.props.mode="graph";
+  tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-1";tr.props.cMax="1";
+  tr.props.res="160";tr.props.colorMode="gradient";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Register tutorial scenes alongside the rest.
+Object.assign(SCENES, {
+  "tut-fn-only": tutFnOnlyScene,
+  "tut-fn-surface": tutFnSurfaceScene,
+  "tut-fn-field": tutFnFieldScene,
+  "tut-sphere": tutSphereScene,
+  "tut-sphere-slider": tutSphereSliderScene,
+  "tut-torus-level": tutTorusLevelScene,
+  "tut-const-curve": tutConstCurveScene,
+  "tut-slider-curve": tutSliderCurveScene,
+  "tut-named-scope": tutNamedScopeScene,
+  "tut-cam-3d": tutCam3dScene,
+  "tut-cam-2d": tutCam2dScene,
+  "tut-graph-1d": tutGraph1dScene,
+  "tut-graph-2d": tutGraph2dScene,
+  "tut-graph-anim": tutGraphAnimScene,
+  "tut-param-curve": tutParamCurveScene,
+  "tut-param-surface": tutParamSurfaceScene,
+  "tut-param-anim": tutParamAnimScene,
+  "tut-cubic-smooth": tutCubicSmoothScene,
+  "tut-cubic-nodal": tutCubicNodalScene,
+  "tut-node-gradient": tutNodeGradientScene,
+  "tut-poly-curve": tutPolyCurveScene,
+  "tut-transcendental": tutTranscendentalScene,
+  "tut-analytic-surface": tutAnalyticSurfaceScene,
+  "tut-normal-color": tutNormalColorScene,
+  "tut-revolution": tutRevolutionScene,
+  "tut-vector-field": tutVectorFieldScene,
+  "tut-streamlines": tutStreamlinesScene,
+  "tut-points-list": tutPointsListScene,
+  "tut-points-index": tutPointsIndexScene,
+  "tut-points-recursive": tutPointsRecursiveScene,
+  "tut-combine-union": tutCombineUnionScene,
+  "tut-combine-product": tutCombineProductScene,
+  "tut-combine-intersect": tutCombineIntersectScene,
+  "tut-orbit-logistic": tutOrbitLogisticScene,
+  "tut-orbit-attractor": tutOrbitAttractorScene,
+  "tut-series-1": tutSeries1Scene,
+  "tut-series-5": tutSeries5Scene,
+  "tut-series-15": tutSeries15Scene,
+  "tut-integral-area": tutIntegralAreaScene,
+  "tut-frame-tube": tutFrameTubeScene,
+  "tut-frame-moving": tutFrameMovingScene,
+});
+
+// Analytic geometry: sums, integrals, series ─────────────────────────────────
+
+// helper: a 1D curve y = f(x) on a 2D camera (for the series pages)
+function _curve2d(label, expr, color, xspan, yspan){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label=label;cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize=String(yspan);
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="partial sum";fn.color=color;
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0=expr;
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color=color;
+  // 2D camera views the Z-normal plane, so the in-plane vertical is world Y.
+  // Output must go to Y, not Z (Z is out-of-plane here and would flatten the curve).
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";
+  tr.props.aMin=String(-xspan);tr.props.aMax=String(xspan);tr.props.res="500";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+const _sqwave = (N) => `summation((4/3.14159265)*sin((2*k+1)*x)/(2*k+1), k, 0, ${N})`;
+// Step 1: one term — a lone sine.
+function tutSeries1Scene(){ return _curve2d("N = 0 (one term)", _sqwave(0), "#a6e3a1", 6.5, 2.2); }
+// Step 2: a few terms — the square wave taking shape.
+function tutSeries5Scene(){ return _curve2d("N = 5 (six terms)", _sqwave(5), "#9b8cff", 6.5, 2.2); }
+// Step 3: many terms — the sum approaches a square wave (Gibbs ears at the jumps).
+function tutSeries15Scene(){ return _curve2d("N = 15 (sixteen terms)", _sqwave(15), "#7ad7ff", 6.5, 2.2); }
+// A definite integral as accumulated area: F(x) = ∫₀ˣ sin(t²) dt, the Fresnel-like
+// curve, plotted by evaluating the integral with a moving upper limit.
+function tutIntegralAreaScene(){
+  return _curve2d("F(x) = ∫₀ˣ sin(t²) dt", "integrate(sin(t^2), t, 0, x)", "#ffcf6e", 4.5, 1.4);
+}
+
+// Differential geometry: frames along a curve ────────────────────────────────
+
+// Step 1: a tube around a curve — a ribbon/tube swept along a helix, giving the
+// curve body so its framing is visible.
+function tutFrameTubeScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="a tube along a curve";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="8";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="34";
+  // tube of radius rho around a helix: center (cos u, sin u, u/4), plus a circle
+  // of radius rho in the normal plane parameterized by v.
+  const ps=makeNode("paramsurf",{x:520,y:160});ps.label="tube";ps.color="#c4b5fd";
+  ps.props.exprX="(1 + 0.28*cos(v))*cos(u)";
+  ps.props.exprY="(1 + 0.28*cos(v))*sin(u)";
+  ps.props.exprZ="u/3 + 0.28*sin(v)";
+  ps.props.uMin="0";ps.props.uMax="18.85";ps.props.vMin="0";ps.props.vMax="6.2832";
+  ps.props.uRes="200";ps.props.vRes="20";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+// Step 2: a point (a small marker set) moving along the curve as a parameter
+// animates — the moving frame's position.
+function tutFrameMovingScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="a point traveling the curve";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="8";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const s=makeNode("animator",{x:40,y:340});s.name="s";s.value=0;
+  s.props.min="0";s.props.max="18.85";s.props.period="10";s.props.loop="loop";s.playing=true;
+  // the curve itself
+  const curve=makeNode("paramSpace",{x:360,y:120});curve.label="helix";curve.color="#7ad7ff";
+  curve.props.degree="1";curve.props.exprX="cos(t)";curve.props.exprY="sin(t)";curve.props.exprZ="t/3";
+  curve.props.tMin="0";curve.props.tMax="18.85";curve.props.res="300";
+  // a marker point at parameter s (index mode, single point at the current s)
+  const mark=makeNode("points",{x:360,y:340});mark.label="marker";mark.color="#ffcf6e";
+  mark.props.kind="points";mark.props.mode="index";
+  mark.props.idxPoint="cos(s), sin(s), s/3";mark.props.idxCount="1";
+  mark.props.drawLines=false;mark.props.radius="0.13";mark.attachments=[s.id];
+  const cam3=cam;cam3.attachments=[curve.id,mark.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[curve.id]:curve,[mark.id]:mark,[s.id]:s},camId:cam.id,animated:true};
+}
+
+// The editor: point sets and sequences ───────────────────────────────────────
+
+// Step 1: a handful of literal points.
+function tutPointsListScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="a list of points";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  const pts=makeNode("points",{x:620,y:160});pts.label="points";pts.color="#a6e3a1";
+  pts.props.kind="points";pts.props.mode="list";
+  pts.props.listPoints="-2, -1\n-1, 1\n0, -0.5\n1, 1.5\n2, 0";
+  pts.props.drawLines=true;pts.props.radius="6";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+// Step 2: a formula over an index i generates many points (a spiral).
+function tutPointsIndexScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="point(i), i = 0…359";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="11";cam.props.orbTheta="0.9";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const pts=makeNode("points",{x:620,y:160});pts.label="phyllotaxis";pts.color="#9b8cff";
+  pts.props.kind="points";pts.props.mode="index";
+  pts.props.idxPoint="2.6*sqrt(i/360)*cos(i*2.399), 2.6*sqrt(i/360)*sin(i*2.399), (i/360)*2 - 1";
+  pts.props.idxCount="360";pts.props.drawLines=false;pts.props.radius="0.06";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+// Step 3: a recurrence — each point from the previous (a converging spiral).
+function tutPointsRecursiveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="x[n] from x[n−1]";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="5";
+  const pts=makeNode("points",{x:620,y:160});pts.label="orbit";pts.color="#7ad7ff";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="3, 0";
+  pts.props.recStep="0.96*(x[n-1]*cos(0.4) - y[n-1]*sin(0.4)), 0.96*(x[n-1]*sin(0.4) + y[n-1]*cos(0.4))";
+  pts.props.recCount="90";pts.props.drawLines=true;pts.props.radius="3.5";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// Algebraic geometry: combining surfaces ─────────────────────────────────────
+
+// Step 1: union — product of two equations is zero where EITHER is. A slider d
+// pulls the two spheres apart so the reader can watch them merge and separate.
+function tutCombineUnionScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="union: drag the spheres apart";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const d=makeNode("slider",{x:40,y:320});d.name="d";d.label="d · separation";d.value=1.3;
+  d.props.min="0";d.props.max="2.4";d.props.step="0.02";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="two spheres";eq.color="#9b8cff";
+  eq.props.dims="3d";eq.props.lhs="((x+d/2)^2+y^2+z^2-1) * ((x-d/2)^2+y^2+z^2-1)";eq.props.rhs="0";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";eq.attachments=[d.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.aMin="-2.6";tr.props.aMax="2.6";tr.props.bMin="-2.6";tr.props.bMax="2.6";tr.props.cMin="-2.6";tr.props.cMax="2.6";
+  tr.props.res="150";tr.props.colorMode="depth";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[d.id]:d,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 2: a richer union — a product of three orthogonal cylinders.
+function tutCombineProductScene(){
+  return _implicitScene("product of 3 cylinders","(x^2+y^2-0.6) * (y^2+z^2-0.6) * (z^2+x^2-0.6)","0",2.0,"normal",6.5);
+}
+// Step 3: intersection — max(F,G) ≤ 0 boundary; surface where the larger crosses 0.
+function tutCombineIntersectScene(){
+  return _implicitScene("intersection (sphere ∩ cube-ish)","max(x^2+y^2+z^2-1.4, max(abs(x), max(abs(y),abs(z)))-1.0)","0",1.8,"normal",5.5);
+}
+
+// Applications: iteration and dynamical systems ──────────────────────────────
+
+// Step 1: the logistic map orbit, plotted as (n, x_n) — period doubling visible.
+function tutOrbitLogisticScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="logistic orbit";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="2.8";cam.props.planeOy="0.5";
+  const pts=makeNode("points",{x:620,y:160});pts.label="xₙ₊₁ = r·xₙ(1−xₙ)";pts.color="#ffcf6e";
+  pts.props.kind="points";pts.props.mode="recursive";
+  // plot (n scaled into view, x_n); r = 3.6 sits in the chaotic regime
+  pts.props.recInit="0, 0.2";
+  pts.props.recStep="x[n-1] + 0.06, 3.6*y[n-1]*(1 - y[n-1])";
+  pts.props.recCount="100";pts.props.drawLines=false;pts.props.radius="3";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+// Step 2: a 2D attractor traced by iteration (a Clifford-style attractor).
+function tutOrbitAttractorScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="a strange attractor";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="4";
+  const pts=makeNode("points",{x:620,y:160});pts.label="iterated map";pts.color="#c4b5fd";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="0.1, 0.1";
+  pts.props.recStep="sin(-1.4*y[n-1]) + 1.6*cos(-1.4*x[n-1]), sin(1.6*x[n-1]) + 0.7*cos(1.6*y[n-1])";
+  pts.props.recCount="4000";pts.props.drawLines=false;pts.props.radius="1.4";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// Algebraic geometry: singular points and nodes ──────────────────────────────
+
+// helper: a 3D implicit surface scene with a chosen coloring
+function _implicitScene(label, lhs, rhs, box, colorMode, orbRadius){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label=label;cam.props.showOpenBtn=false;
+  cam.props.orbRadius=String(orbRadius);cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  cam.props.spin="loop";cam.props.spinPeriod="34";
+  const eq=makeNode("equation",{x:360,y:160});eq.label=label;eq.color="#9b8cff";
+  eq.props.dims="3d";eq.props.lhs=lhs;eq.props.rhs=rhs;eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#9b8cff";
+  tr.props.mode="graph";
+  tr.props.aMin=String(-box);tr.props.aMax=String(box);tr.props.bMin=String(-box);tr.props.bMax=String(box);
+  tr.props.cMin=String(-box);tr.props.cMax=String(box);tr.props.res="150";tr.props.colorMode=colorMode;
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+// Step 1: a smooth cubic surface (no singular points).
+function tutCubicSmoothScene(){
+  return _implicitScene("smooth cubic","x^3 + y^3 + z^3 + 1 - 0.5*(x+y+z)","3*x*y*z",2.0,"normal",6.5);
+}
+// Step 2: a nodal cubic — the Cayley cubic, which has four ordinary double points.
+function tutCubicNodalScene(){
+  return _implicitScene("Cayley cubic (4 nodes)","-5*(x^2*(y+z) + y^2*(x+z) + z^2*(x+y)) + 2*(x*y+y*z+z*x)","-1",1.7,"normal",5.0);
+}
+// Step 3: the same nodal cubic, gradient-colored so the singular points light up.
+function tutNodeGradientScene(){
+  return _implicitScene("nodes light up","-5*(x^2*(y+z) + y^2*(x+z) + z^2*(x+y)) + 2*(x*y+y*z+z*x)","-1",1.7,"gradient",5.0);
+}
+
+// Analytic geometry: transcendental level sets ───────────────────────────────
+
+// Step 1: an algebraic curve — a polynomial level set in the plane.
+function tutPolyCurveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="x³ − x = y  (algebraic)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="cubic curve";eq.color="#a6e3a1";
+  eq.props.dims="2d";eq.props.lhs="x^3 - x";eq.props.rhs="y";eq.props.varA="x";eq.props.varB="y";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";tr.props.res="200";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 2: a transcendental curve no polynomial equation can produce.
+function tutTranscendentalScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="y = eˣ·sin(3x)  (transcendental)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="7";cam.props.planeOx="0";cam.props.planeOy="0";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="transcendental";eq.color="#9b8cff";
+  eq.props.dims="2d";eq.props.lhs="exp(0.35*x)*sin(3*x)";eq.props.rhs="y";eq.props.varA="x";eq.props.varB="y";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.aMin="-6";tr.props.aMax="3.5";tr.props.bMin="-5";tr.props.bMax="5";tr.props.res="400";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 3: an analytic surface — a transcendental height field.
+function tutAnalyticSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="z = e^(−r²)·cos(...)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="10";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="analytic f";fn.color="#7ad7ff";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="exp(-0.15*(x^2+y^2))*cos(2*sqrt(x^2+y^2))";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#7ad7ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-5";tr.props.aMax="5";tr.props.bMin="-5";tr.props.bMax="5";tr.props.res="110";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Differential geometry: curvature and normals ───────────────────────────────
+
+// Step 1: a surface colored by normal direction — orientation made visible.
+function tutNormalColorScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="colored by normal";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="6";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="30";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="torus";eq.color="#c4b5fd";
+  eq.props.dims="3d";eq.props.lhs="(sqrt(x^2+y^2) - 1.4)^2 + z^2";eq.props.rhs="0.36";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#c4b5fd";
+  tr.props.mode="graph";tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-1";tr.props.cMax="1";
+  tr.props.res="160";tr.props.colorMode="normal";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+// Step 2: a surface of revolution, built parametrically by spinning a profile.
+function tutRevolutionScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="surface of revolution";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="32";
+  const ps=makeNode("paramsurf",{x:520,y:160});ps.label="revolution";ps.color="#a6e3a1";
+  // profile r(v) = 1 + 0.4 sin(3v) spun around the z-axis over u
+  ps.props.exprX="(1.4 + 0.5*sin(3*v))*cos(u)";
+  ps.props.exprY="(1.4 + 0.5*sin(3*v))*sin(u)";
+  ps.props.exprZ="2*v";
+  ps.props.uMin="0";ps.props.uMax="6.2832";ps.props.vMin="-1.5708";ps.props.vMax="1.5708";
+  ps.props.uRes="60";ps.props.vRes="40";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+
+// Applications: vector fields and flow ───────────────────────────────────────
+
+// Step 1: a 2D vector field (a spiral), drawn as arrows.
+function tutVectorFieldScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="vector field";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="V(x,y)";fn.color="#7ad7ff";
+  fn.props.inDim="2";fn.props.outDim="2";fn.props.out0="-y + 0.25*x";fn.props.out1="x + 0.25*y";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="field";tr.color="#7ad7ff";
+  tr.props.mode="field";tr.props.inAxis0="x";tr.props.inAxis1="y";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";tr.props.res="13";
+  tr.props.normalize=true;tr.props.arrowLen="0.35";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 2: integrate that field from seed points into streamlines.
+function tutStreamlinesScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="streamlines";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  const field=makeNode("fnMap",{x:300,y:120});field.label="V(x,y)";field.props.inDim="2";field.props.outDim="2";
+  field.props.out0="-y + 0.25*x";field.props.out1="x + 0.25*y";
+  const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seeds";seeds.props.degree="1";
+  seeds.props.exprX="0.3 + 2.2*t";seeds.props.exprY="0.1";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="11";
+  const flow=makeNode("flow",{x:640,y:200});flow.label="flow";flow.color="#5be0c0";
+  flow.props.steps="260";flow.props.stepSize="0.04";flow.props.output="surface";
+  flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
+  flow.attachments=[field.id,seeds.id];cam.attachments=[flow.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow},camId:cam.id,animated:false};
+}
+
+// Tutorial: inputs and scope ─────────────────────────────────────────────────
+
+// Step 1: a constant `a` feeds the amplitude of a curve y = a·sin(x).
+function tutConstCurveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="y = a·sin(x)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.0";cam.props.orbPhi="1.45";cam.props.showGrid=true;cam.props.showAxes=true;
+  const c=makeNode("constant",{x:40,y:320});c.name="a";c.label="a = 1.5";c.props.value="1.5";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="a·sin(x)";fn.color="#a6e3a1";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="a*sin(x)";fn.attachments=[c.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="z";
+  tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="200";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[c.id]:c,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 2: swap the constant for a slider — now the amplitude is draggable/live.
+function tutSliderCurveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="drag a";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.0";cam.props.orbPhi="1.45";cam.props.showGrid=true;cam.props.showAxes=true;
+  const a=makeNode("animator",{x:40,y:320});a.name="a";a.value=1;
+  a.props.min="-2.5";a.props.max="2.5";a.props.period="8";a.props.loop="pingpong";a.playing=true;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="a·sin(x)";fn.color="#9b8cff";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="a*sin(x)";fn.attachments=[a.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="z";
+  tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="200";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
+}
+// Step 3: a slider `k` is referenced by NAME in the expression without being
+// wired straight to the transformer — showing named scalars live in global scope.
+function tutNamedScopeScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="k drives frequency";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.0";cam.props.orbPhi="1.45";cam.props.showGrid=true;cam.props.showAxes=true;
+  const k=makeNode("slider",{x:40,y:320});k.name="k";k.label="k · frequency";k.value=2;
+  k.props.min="1";k.props.max="5";k.props.step="0.05";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="sin(k·x)";fn.color="#7ad7ff";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="sin(k*x)";fn.attachments=[k.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#7ad7ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="z";
+  tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="240";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[k.id]:k,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Tutorial: cameras and viewing ──────────────────────────────────────────────
+
+// shared little surface for the camera tutorial
+function _camSurface(project,scene){
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="ripple";fn.color="#c4b5fd";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0.6*sin(2*sqrt(x^2+y^2))";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#c4b5fd";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.2";tr.props.aMax="3.2";tr.props.bMin="-3.2";tr.props.bMax="3.2";tr.props.res="80";
+  tr.attachments=[fn.id];scene[fn.id]=fn;scene[tr.id]=tr;
+  return tr.id;
+}
+// Step 1: a 3D camera orbiting the ripple surface.
+function tutCam3dScene(){
+  const project=makeProjectNode("preview");const scene={[project.id]:project};
+  const trId=_camSurface(project,scene);
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="3D camera";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  cam.props.spin="loop";cam.props.spinPeriod="30";cam.attachments=[trId];scene[cam.id]=cam;
+  return {scene,camId:cam.id,animated:true};
+}
+// Step 2: a 2D camera on the XY plane projecting the same surface flat (a contour-
+// like top-down view).
+function tutCam2dScene(){
+  const project=makeProjectNode("preview");const scene={[project.id]:project};
+  const trId=_camSurface(project,scene);
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="2D camera (top-down)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalX="0";cam.props.normalY="0";cam.props.normalZ="1";
+  cam.props.planeOx="0";cam.props.planeOy="0";cam.props.planeOz="0";cam.props.orthoSize="7";
+  cam.attachments=[trId];scene[cam.id]=cam;
+  return {scene,camId:cam.id,animated:false};
+}
+
+// Tutorial: function graphs ──────────────────────────────────────────────────
+
+// Step 1: a 1D function graph y = f(x).
+function tutGraph1dScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="y = x·sin(x)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="11";cam.props.orbTheta="0.0";cam.props.orbPhi="1.45";cam.props.showGrid=true;cam.props.showAxes=true;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x)";fn.color="#a6e3a1";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="x*sin(x)";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="z";
+  tr.props.aMin="-9";tr.props.aMax="9";tr.props.res="240";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 2: add a second input — z = f(x,y), a surface.
+function tutGraph2dScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="z = f(x,y)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="12";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x,y)";fn.color="#9b8cff";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="sin(x)*cos(y)";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.14";tr.props.aMax="3.14";tr.props.bMin="-3.14";tr.props.bMax="3.14";tr.props.res="90";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 3: animate a phase in the surface — a travelling wave.
+function tutGraphAnimScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="travelling wave";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="12";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const t=makeNode("animator",{x:40,y:320});t.name="t";t.value=0;
+  t.props.min="0";t.props.max="6.2832";t.props.period="6";t.props.loop="loop";t.playing=true;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x,y,t)";fn.color="#7ad7ff";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0.7*sin(sqrt(x^2+y^2)*1.6 - t)";fn.attachments=[t.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#7ad7ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-5";tr.props.aMax="5";tr.props.bMin="-5";tr.props.bMax="5";tr.props.res="100";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[t.id]:t,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+// Tutorial: parametric curves and surfaces ───────────────────────────────────
+
+// Step 1: a parametric curve (a helix) — coordinates are functions of t.
+function tutParamCurveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="helix (x(t),y(t),z(t))";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.1";cam.props.showGrid=true;cam.props.showAxes=true;
+  const ps=makeNode("paramSpace",{x:520,y:160});ps.label="helix";ps.color="#a6e3a1";
+  ps.props.degree="1";ps.props.exprX="cos(t)";ps.props.exprY="sin(t)";ps.props.exprZ="t/5";
+  ps.props.tMin="0";ps.props.tMax="18.85";ps.props.res="400";
+  const cam2=cam;cam2.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+// Step 2: bump to a parametric surface — coordinates are functions of (u,v).
+function tutParamSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="(x(u,v),y(u,v),z(u,v))";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="6";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";
+  const ps=makeNode("paramsurf",{x:520,y:160});ps.label="surface";ps.color="#9b8cff";
+  ps.props.exprX="cos(u)*sin(v)";ps.props.exprY="sin(u)*sin(v)";ps.props.exprZ="cos(v)";
+  ps.props.uMin="0";ps.props.uMax="6.2832";ps.props.vMin="0";ps.props.vMax="3.1416";
+  ps.props.uRes="48";ps.props.vRes="36";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+// Step 3: animate a domain bound so a section of the surface sweeps into being.
+function tutParamAnimScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="sweep the v-domain";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="6";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";
+  const s=makeNode("animator",{x:40,y:320});s.name="s";s.value=0;
+  s.props.min="0";s.props.max="3.1416";s.props.period="6";s.props.loop="pingpong";s.playing=true;
+  const ps=makeNode("paramsurf",{x:520,y:160});ps.label="surface";ps.color="#ffcf6e";
+  ps.props.exprX="cos(u)*sin(v)";ps.props.exprY="sin(u)*sin(v)";ps.props.exprZ="cos(v)";
+  ps.props.uMin="0";ps.props.uMax="6.2832";ps.props.vMin="0";ps.props.vMax="s";
+  ps.props.uRes="48";ps.props.vRes="36";ps.attachments=[s.id];
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[ps.id]:ps},camId:cam.id,animated:true};
+}
+
 // Build the editable node-map for a given demo kind (drops the project's
 // preview-only camera chrome so the editor shows full HUD). Used by the
 // "Open project" buttons on the landing page.
