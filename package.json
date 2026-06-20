@@ -6,7 +6,9 @@
   "description": "Node-graph math visualizer (2D/3D) built on React, three.js and mathjs.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npm run docs:dist",
+    "docs": "node docs/build.mjs",
+    "docs:dist": "node docs/build.mjs --out dist/docs",
     "preview": "vite preview"
   },
   "dependencies": {

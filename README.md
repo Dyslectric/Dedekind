@@ -8,11 +8,29 @@ in your browser, and a whole project encodes into the page URL so you can share 
 with a link. Built with React, three.js, and mathjs; much of the rendering is
 GPU-accelerated.
 
+It also renders **implicit surfaces and algebraic varieties** (the level set of
+`F(x,y,z)=0`) directly on the GPU, with clean singularities, visible self-intersection
+seams, and coloring that encodes depth or the gradient (so singular points light up).
+That's the part built for people who think about 3D spaces and varieties, from
+Blender-curious students to algebraic and differential geometers.
+
+**Full documentation** lives in [`docs/`](docs/). Run `node docs/build.mjs` to generate
+the static site, or read the markdown in `docs/content/`.
+
 <!-- Add a screenshot or GIF here for the GitHub page, e.g.: -->
 <!-- ![Dedekind](docs/screenshot.png) -->
 
 ## Highlights
 
+- **Implicit surfaces on the GPU.** An `equation` node draws the level set of
+  `F(x,y,z)=0` by ray-marching the field in a fragment shader -- no mesh. The marcher is
+  built for real algebraic varieties: adaptive damped-Newton stepping catches thin sheets,
+  gradient hardening and singularity supersampling make nodes and cusps shade as coherent
+  points, and self-intersections render with a visible seam. A Barth sextic resolves its
+  65 nodes; a Whitney umbrella keeps its pinch. Morph parameters animate as live uniforms.
+- **Surface coloring that means something.** Depth, gradient `|∇F|` (singular points light
+  up, since the gradient vanishes there), normal direction, or an animated iridescent
+  palette -- chosen per surface, with a hue-shift control.
 - **Functions separated from geometry.** An `fnMap` is a pure map Rm->Rn (up to four
   inputs `x, y, z, w` and four outputs). It has no shape of its own -- you wire it into a
   *transformer* that decides how to draw it.
@@ -40,10 +58,15 @@ GPU-accelerated.
   nodes drag together.
 - **Animators & live expressions.** Drive any value with a looping/bouncing/once
   animator; type math into any field with `i, j, k, n, t, u, v` and your own recursive
-  function definitions.
+  function definitions. Expression parameters *and domain bounds* on GPU surfaces animate
+  as live shader uniforms -- sweeping a parametric surface's domain open, or windowing a
+  moving section through it, runs at frame rate with no rebuild. The typeset live-math
+  editor (real fractions, roots, ∑/∫/∏, Greek) is the default input mode.
 - **2D & 3D cameras** you can dock in a strip or pop into floating windows, with a
   resizable, repositionable properties panel and theme presets.
 - **Shareable.** The whole project lives in the URL; you can also share a single camera.
+  Open the editor with `#demo` (or `#demo=clebsch`, `=gyroid`, `=ribbon`, ...) to boot
+  straight into a live, animated showcase scene.
 
 ## Quick start
 
@@ -59,6 +82,21 @@ npm run preview  # preview the production build
 The app opens on a landing page; click **Open the editor** to start. Load the **demo**
 project from the top bar for a feature showcase (most plots are left disconnected for you
 to wire into a camera and explore).
+
+## Documentation
+
+Full docs live in [`docs/`](docs/) as markdown, built into a static HTML site by a small
+zero-dependency generator:
+
+```bash
+npm run docs     # node docs/build.mjs -> docs/dist/  (standalone)
+```
+
+`npm run build` also builds the docs and folds them into the app's output at `dist/docs/`,
+so a single build produces a complete deployable site (the docs are served at `/docs/`).
+Source pages are in `docs/content/` (overview, core concepts, every node type, the
+implicit-surface renderer, the expression language, animation, sharing, keyboard
+reference, and architecture).
 
 ## Using it, briefly
 
@@ -118,6 +156,7 @@ src/
   geometry/              three.js geometry generation (no React)
     three-helpers.js     dispose/colour helpers, shader material, uniform updates
     glsl.js              mathjs -> GLSL transpiler for GPU evaluation
+    implicit-raymarch.js GPU fragment-shader raymarcher for implicit surfaces (singularities, seams, coloring)
     builders.js          CPU + GPU builders (surfaces, curves, quivers, glyph fields, instanced point clouds)
     transformer.js       Renders an fnMap over a domain (graph axis-mapping or vector field) + gradient coloring
     flow.js              Flow integration, stream surfaces & volumes
