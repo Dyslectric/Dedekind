@@ -296,18 +296,45 @@ function build2DCurve3d(np, pscope, color, px, fr){
   return buildThickLine2D(projectPts(fr,pts), color, px(LINE_PX)/2);
 }
 
-function build2DPointSeq(np, pscope, color, px, fr){
-  // Parse positions (and the per-point color slot) the same way the 3-D renderer
-  // does: prefer the explicit dropdown-authored parse so the recursible color
-  // slot is honoured; fall back to the legacy text parse for old projects.
-  let pts, cols=null;
-  if(np.__explicit){
-    const r=parsePointsExplicit(np.__explicit, pscope);
-    pts=r.pts;
-    cols = np.__useColor ? rampColors(r.cols, np, pscope) : pointGradientColors(pts, np, pscope);
+// Position cache for point sequences. Parsing a sequence (especially a long
+// recurrence) is O(count) mathjs evaluations; the result depends on the formula
+// and scope but NOT on zoom. We key a cache on the position-relevant fields so a
+// zoom (which only changes on-screen radius) reuses the parsed positions/colors
+// and rebuilds just the disk sprites. Without this, zooming a 4000-point orbit
+// re-ran the whole recurrence every wheel tick.
+const _ptPosCache = new Map();
+function _ptPosSig(np, pscope){
+  // only the fields that affect positions/colors, plus the scope values they read
+  const f = [np.__explicit?JSON.stringify(np.__explicit):"", np.points||np.data||"",
+    np.radius, np.drawLines, np.__useColor, np.colorMode, np.colorExpr, np.colorLo, np.colorHi,
+    np.colorMin, np.colorMax].join("|");
+  // include any scope scalars the formulas reference (cheap: stringify the scope's
+  // numeric entries; scopes here are small)
+  let sc=""; for(const k in pscope){ const v=pscope[k]; if(typeof v==="number") sc+=k+"="+v+";"; }
+  return f+"#"+sc;
+}
+function build2DPointSeq(np, pscope, color, px, fr, cacheKey){
+  const posSig=_ptPosSig(np, pscope);
+  let cachedPos = cacheKey!=null ? _ptPosCache.get(cacheKey) : null;
+  let pts, cols;
+  if(cachedPos && cachedPos.sig===posSig){
+    pts=cachedPos.pts; cols=cachedPos.cols;
   } else {
-    pts=parsePointSeq(np.points||np.data, pscope);
-    cols=pointGradientColors(pts, np, pscope);
+    // Parse positions (and the per-point color slot) the same way the 3-D renderer
+    // does: prefer the explicit dropdown-authored parse so the recursible color
+    // slot is honoured; fall back to the legacy text parse for old projects.
+    if(np.__explicit){
+      const r=parsePointsExplicit(np.__explicit, pscope);
+      pts=r.pts;
+      cols = np.__useColor ? rampColors(r.cols, np, pscope) : pointGradientColors(pts, np, pscope);
+    } else {
+      pts=parsePointSeq(np.points||np.data, pscope);
+      cols=pointGradientColors(pts, np, pscope);
+    }
+    if(cacheKey!=null){
+      _ptPosCache.set(cacheKey, {sig:posSig, pts, cols});
+      if(_ptPosCache.size>64){ const first=_ptPosCache.keys().next().value; _ptPosCache.delete(first); }
+    }
   }
   const rPx=resolveNum(np.radius,pscope,4);
   const r=px(rPx); // constant on-screen radius
@@ -318,11 +345,45 @@ function build2DPointSeq(np, pscope, color, px, fr){
   if(np.drawLines!==false && proj.length>1){
     objs.push(...buildThickLine2D(proj, color, px(LINE_PX)/2));
   }
-  for(let i=0;i<proj.length;i++){
-    const [u,v]=proj[i];
-    objs.push(buildDisk2D(u,v,r, cols&&cols[i]?rgbHex(cols[i]):color));
+  // All point disks render as ONE InstancedMesh of a shared unit-circle geometry,
+  // scaled to the on-screen radius and placed per point. This collapses what used
+  // to be one THREE.Mesh per point (thousands of draw calls + geometries on a big
+  // orbit) into a single draw call, so zoom/pan stay smooth even at 4000+ points.
+  const nPts=proj.length;
+  if(nPts>0){
+    const unit=_unitDiskGeo();
+    const useCol = !!cols;
+    const mat=new THREE.MeshBasicMaterial({color: useCol?0xffffff:hexToThree(color), depthTest:false});
+    const inst=new THREE.InstancedMesh(unit, mat, nPts);
+    const m=new THREE.Matrix4();
+    for(let i=0;i<nPts;i++){
+      const [u,v]=proj[i];
+      m.makeScale(r,r,1); m.setPosition(u,v,0);
+      inst.setMatrixAt(i,m);
+      if(useCol){
+        const c=cols[i];
+        const col = c==null ? new THREE.Color(hexToThree(color))
+          : Array.isArray(c) ? new THREE.Color(c[0],c[1],c[2])
+          : new THREE.Color(hexToThree(c));
+        inst.setColorAt(i, col);
+      }
+    }
+    inst.instanceMatrix.needsUpdate=true;
+    if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+    inst.frustumCulled=false;
+    objs.push(inst);
   }
   return objs;
+}
+
+// Shared unit-radius disk geometry for instanced 2D points (built once, reused).
+let _unitDisk=null;
+function _unitDiskGeo(){
+  if(_unitDisk) return _unitDisk;
+  const N=12, pts=[];
+  for(let i=0;i<=N;i++){ const a=i/N*Math.PI*2; pts.push(new THREE.Vector2(Math.cos(a),Math.sin(a))); }
+  _unitDisk=new THREE.ShapeGeometry(new THREE.Shape(pts));
+  return _unitDisk;
 }
 
 function build2DPoint(np, pscope, color, px, fr){
@@ -667,6 +728,12 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
   // Quantise zoom so tiny float wiggle doesn't thrash the cache; ~12 buckets per
   // power of 2 is visually smooth while still reusing geometry across small pans.
   const zoomBucket = Math.round(Math.log2(ppw)*12);
+  // Point sets carry many instances, so rebuilding them on every small zoom step
+  // is the dominant cost on big orbits. They keep constant on-screen size, but a
+  // coarse bucket (≈3 steps per power of two) lets a scroll reuse the instanced
+  // geometry across most of a zoom gesture and only re-fit at wide intervals — a
+  // barely-perceptible size discretisation in exchange for smooth scrolling.
+  const zoomBucketCoarse = Math.round(Math.log2(ppw)*3);
   // Coarse view key for view-filling plots (fn1d/quiver) — rounded so a 1px pan
   // doesn't rebuild, but a real domain shift does.
   const round=(v)=>{ const s=Math.max(1e-6,(wxMax-wxMin)); return Math.round(v/s*64); };
@@ -692,7 +759,8 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     // Build the per-plot signature: geometry + frame + (zoom?) + (view?).
     const gsig=plotSignature(node,np,pscope,nodes,animVals||{}) ?? `${node.type}|raw`;
     const t=rawNode.type==="transformer"||rawNode.type==="flow"?rawNode.type:node.type;
-    const zPart=ZOOM_SIZED.has(t)?`|z${zoomBucket}`:"";
+    const POINT_TYPES=new Set(["pointSeq","points","point"]);
+    const zPart=ZOOM_SIZED.has(t)?`|z${POINT_TYPES.has(t)?zoomBucketCoarse:zoomBucket}`:"";
     const vPart=VIEW_FILLING.has(t)?`|v${viewSig}`:"";
     const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;
 
@@ -710,7 +778,7 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     let built=[];
     if(node.type==="fn1d") built=build2DFn1d(np,pscope,color,wxMin,wxMax,px,fr);
     else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color,px,fr);
-    else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px,fr);
+    else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px,fr,childId);
     else if(node.type==="point") built=build2DPoint(np,pscope,color,px,fr);
     else if(node.type==="quiver2d") built=build2DQuiver(np,pscope,color,wxMin,wxMax,wyMin,wyMax,px,fr);
     else if(node.type==="quiver3d") built=build2DQuiver3d(np,pscope,color,px,fr);

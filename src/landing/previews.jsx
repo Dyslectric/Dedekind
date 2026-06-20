@@ -802,7 +802,7 @@ function tutOrbitAttractorScene(){
   pts.props.kind="points";pts.props.mode="recursive";
   pts.props.recInit="0.1, 0.1";
   pts.props.recStep="sin(-1.4*y[n-1]) + 1.6*cos(-1.4*x[n-1]), sin(1.6*x[n-1]) + 0.7*cos(1.6*y[n-1])";
-  pts.props.recCount="4000";pts.props.drawLines=false;pts.props.radius="1.4";
+  pts.props.recCount="1500";pts.props.drawLines=false;pts.props.radius="1.6";
   pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
