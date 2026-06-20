@@ -357,6 +357,87 @@ function wavyTorusScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[p.id]:p,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
 
+// A gallery of four implicit surfaces, each its own equation→transformer→camera
+// chain: an animated quasicrystal, the morphing Barth sextic, the Whitney
+// umbrella, and a 5-fold torus ring. Mirrors a saved selection; the polynomials
+// are kept verbatim so the singular structure resolves correctly. Two of the
+// chains carry their own `s` animator (independent, since scope is per-consumer).
+function implicitGalleryScene(){
+  const project=makeProjectNode("preview");
+  const scene={[project.id]:project};
+  const add=(n)=>{ scene[n.id]=n; return n; };
+
+  // helper: build one equation→transformer→camera chain, with an optional animator
+  const chain=(opts)=>{
+    const y=opts.y;
+    let animId=null;
+    if(opts.anim){
+      const a=add(makeNode("animator",{x:-220,y}));
+      a.label=opts.anim.label; a.name="s"; a.value=0;
+      Object.assign(a.props, opts.anim.props); a.playing=true;
+      animId=a.id;
+    }
+    const eq=add(makeNode("equation",{x:60,y}));
+    eq.label=opts.label; eq.color=opts.color;
+    eq.props.dims="3d"; eq.props.lhs=opts.lhs; eq.props.rhs="0";
+    eq.props.varA="x"; eq.props.varB="y"; eq.props.varC="z";
+    if(animId) eq.attachments=[animId];
+    const tr=add(makeNode("transformer",{x:320,y}));
+    tr.label=opts.trLabel; tr.color=opts.color; tr.props.mode="graph";
+    Object.assign(tr.props, opts.dom);
+    tr.props.colorMode=opts.colorMode; tr.props.colorShift=opts.colorShift||"0";
+    tr.attachments=[eq.id];
+    const cam=add(previewCam(makeNode("camera3d",{x:600,y})));
+    cam.label=opts.camLabel;
+    Object.assign(cam.props, opts.cam);
+    cam.props.spin="loop"; cam.props.spinPeriod=opts.spinPeriod||"28";
+    cam.attachments=[tr.id];
+    return cam.id;
+  };
+
+  const camId=chain({
+    y:140, label:"Quasicrystal", trLabel:"Trippy", camLabel:"trippy", color:"#9b5cff",
+    anim:{label:"flow", props:{min:"0",max:"6.2832",period:"24",loop:"loop",step:""}},
+    lhs:"cos(8*x+s)*cos(2*y) + cos(2*y+s)*cos(2*z) + cos(2*z+s)*cos(2*x) + 0.6*(cos(3*x)+cos(3*y)+cos(3*z))",
+    dom:{aMin:"-10",aMax:"10",bMin:"-3.4",bMax:"3.4",cMin:"-10",cMax:"10",res:"240"},
+    colorMode:"normal", colorShift:"0.2",
+    cam:{orbTheta:"-29.449",orbPhi:"1.445",orbRadius:"27.82",bgOverride:true,bgColor:"#05030f",showGrid:false,showAxes:false},
+    spinPeriod:"30",
+  });
+
+  chain({
+    y:360, label:"Barth Sextic", trLabel:"Depth", camLabel:"barth", color:"#ff6ec7",
+    anim:{label:"morph", props:{min:"-1",max:"1",period:"16",loop:"pingpong",step:""}},
+    lhs:"4*((1.6180339887)^2*x^2 - y^2)*((1.6180339887)^2*y^2 - z^2)*((1.6180339887)^2*z^2 - x^2) - (1 + 2*1.6180339887)*(x^2 + y^2 + z^2 - (1+0.25*s))^2",
+    dom:{aMin:"-2.2",aMax:"2.2",bMin:"-2.2",bMax:"2.2",cMin:"-2.2",cMax:"2.2",res:"260"},
+    colorMode:"gradient",
+    cam:{orbTheta:"-2.25",orbPhi:"1.515",orbRadius:"4.9",bgOverride:true,bgColor:"#05030f",showGrid:false,showAxes:false},
+    spinPeriod:"28",
+  });
+
+  chain({
+    y:560, label:"Whitney Umbrella", trLabel:"Whitney", camLabel:"whitney", color:"#7ad7ff",
+    lhs:"x^2 - y^2*z",
+    dom:{aMin:"-2",aMax:"2",bMin:"-2",bMax:"2",cMin:"-0.5",cMax:"2.5",res:"260"},
+    colorMode:"gradient",
+    cam:{targetZ:"1",orbTheta:"-3.675",orbPhi:"0.86",orbRadius:"7",bgOverride:true,bgColor:"#06080f",showGrid:false,showAxes:false},
+    spinPeriod:"26",
+  });
+
+  chain({
+    y:760, label:"Torus Ring (5)", trLabel:"Torus Ring", camLabel:"ring", color:"#ffcf6e",
+    lhs:"((sqrt((x-(1.60000))^2 + (y-(0.00000))^2) - 1)^2 + z^2 - 0.1024) * ((sqrt((x-(0.49443))^2 + (y-(1.52169))^2) - 1)^2 + z^2 - 0.1024) * ((sqrt((x-(-1.29443))^2 + (y-(0.94046))^2) - 1)^2 + z^2 - 0.1024) * ((sqrt((x-(-1.29443))^2 + (y-(-0.94046))^2) - 1)^2 + z^2 - 0.1024) * ((sqrt((x-(0.49443))^2 + (y-(-1.52169))^2) - 1)^2 + z^2 - 0.1024)",
+    dom:{aMin:"-3",aMax:"3",bMin:"-3",bMax:"3",cMin:"-0.6",cMax:"0.6",res:"300"},
+    colorMode:"gradient",
+    cam:{orbTheta:"-3.86",orbPhi:"0.955",orbRadius:"5.0274",bgOverride:true,bgColor:"#07060e",showGrid:true,showAxes:true},
+    spinPeriod:"30",
+  });
+
+  // camId points at the first (quasicrystal) camera for any embedded-preview use;
+  // the #demo=implicit editor route shows the full four-surface graph.
+  return {scene, camId, animated:true};
+}
+
 // Register the new scenes alongside the originals.
 Object.assign(SCENES, {
   spheretorus: sphereTorusScene,
@@ -367,6 +448,7 @@ Object.assign(SCENES, {
   glyphspiral: recursiveGlyphScene,
   wavytorus: wavyTorusScene,
   clebsch: clebschScene,
+  implicit: implicitGalleryScene,
 });
 
 // Build the editable node-map for a given demo kind (drops the project's
