@@ -182,9 +182,19 @@ function Landing({ onOpen, closing }){
         <section className="dk-accel">
           <div className="dk-wrap">
             <div className="dk-accel-grid">
-              <div className="dk-accel-art">
-                <LivePreview kind="gyroid"/>
-                <div className="dk-cap">gyroid · ray-marched</div>
+              <div className="dk-accel-art-stack">
+                <div className="dk-accel-tile">
+                  <LivePreview kind="gyroid"/>
+                  <div className="dk-cap">gyroid · ray-marched</div>
+                </div>
+                <div className="dk-accel-tile">
+                  <LivePreview kind="barth"/>
+                  <div className="dk-cap">Barth sextic · 65 nodes</div>
+                </div>
+                <div className="dk-accel-tile">
+                  <LivePreview kind="whitney"/>
+                  <div className="dk-cap">Whitney umbrella · pinch point</div>
+                </div>
               </div>
               <div className="dk-accel-copy">
                 <div className="dk-eyebrow">Acceleration</div>
@@ -431,6 +441,8 @@ const CSS = `
 .dk-accel{padding:72px 0;border-top:1px solid var(--dk-line);border-bottom:1px solid var(--dk-line);background:radial-gradient(1200px 400px at 50% -10%,rgba(91,156,246,.07),transparent),linear-gradient(180deg,#10131e,#0d0f18);}
 .dk-accel-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:34px;align-items:center;}
 .dk-accel-art{border:1px solid var(--dk-line);border-radius:13px;overflow:hidden;background:linear-gradient(180deg,#10131e,#0d0f18);aspect-ratio:3/4;position:relative;box-shadow:0 24px 60px -38px #000;}
+.dk-accel-art-stack{display:flex;flex-direction:column;gap:14px;}
+.dk-accel-tile{border:1px solid var(--dk-line);border-radius:13px;overflow:hidden;background:linear-gradient(180deg,#10131e,#0d0f18);aspect-ratio:16/10;position:relative;box-shadow:0 24px 60px -38px #000;}
 .dk-accel-art2{aspect-ratio:3/4;}
 .dk-accel-copy{padding:0 6px;}
 .dk-accel-copy h2{font-family:var(--dk-disp);font-weight:600;font-size:clamp(22px,2.6vw,30px);letter-spacing:-.02em;margin:10px 0 0;}

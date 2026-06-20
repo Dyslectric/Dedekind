@@ -212,6 +212,42 @@ function implicitGyroidScene(){
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
 }
+function barthScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="barth";
+  cam.props.orbRadius="4.9";cam.props.orbTheta="-2.25";cam.props.orbPhi="1.515";
+  cam.props.spin="loop";cam.props.spinPeriod="28";
+  // morph animator slides the sphere term so the 65 nodes pulse through singular configs
+  const anim=makeNode("animator",{x:40,y:320});anim.name="s";anim.value=0;
+  anim.props.min="-1";anim.props.max="1";anim.props.period="16";anim.props.loop="pingpong";anim.playing=true;
+  const eq=makeNode("equation",{x:360,y:160});eq.label="Barth Sextic";eq.color="#ff6ec7";
+  eq.props.dims="3d";
+  eq.props.lhs="4*((1.6180339887)^2*x^2 - y^2)*((1.6180339887)^2*y^2 - z^2)*((1.6180339887)^2*z^2 - x^2) - (1 + 2*1.6180339887)*(x^2 + y^2 + z^2 - (1+0.25*s))^2";
+  eq.props.rhs="0";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  eq.attachments=[anim.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="Depth";tr.color="#ff6ec7";
+  tr.props.mode="graph";
+  tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-2.2";tr.props.cMax="2.2";
+  tr.props.res="240";tr.props.colorMode="gradient";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+function whitneyScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="whitney";
+  cam.props.orbRadius="7";cam.props.orbTheta="-3.675";cam.props.orbPhi="0.86";cam.props.targetZ="1";
+  cam.props.spin="loop";cam.props.spinPeriod="26";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="Whitney Umbrella";eq.color="#7ad7ff";
+  eq.props.dims="3d";
+  eq.props.lhs="x^2 - y^2*z";eq.props.rhs="0";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="Whitney";tr.color="#7ad7ff";
+  tr.props.mode="graph";
+  tr.props.aMin="-2";tr.props.aMax="2";tr.props.bMin="-2";tr.props.bMax="2";tr.props.cMin="-0.5";tr.props.cMax="2.5";
+  tr.props.res="240";tr.props.colorMode="gradient";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
 function implicitChmutovScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="chmutov";
@@ -449,6 +485,8 @@ Object.assign(SCENES, {
   wavytorus: wavyTorusScene,
   clebsch: clebschScene,
   implicit: implicitGalleryScene,
+  barth: barthScene,
+  whitney: whitneyScene,
 });
 
 // Build the editable node-map for a given demo kind (drops the project's
