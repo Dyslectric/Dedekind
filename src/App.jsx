@@ -16,7 +16,7 @@ import { makeDemoProject } from "./landing/previews.jsx";
 // open a striking scene from the address bar with no setup.
 function demoKindFromHash(hash){
   if(hash==="demo") return "clebsch";
-  const m = /^demo=([a-z0-9_]+)$/i.exec(hash||"");
+  const m = /^demo=([a-z0-9_-]+)$/i.exec(hash||"");
   return m ? m[1] : null;
 }
 import { setUISetting } from "./core/uisettings.js";

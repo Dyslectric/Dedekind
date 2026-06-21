@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { LivePreview } from "../landing/previews.jsx";
+import { RAWGEOM_GALLERY } from "../landing/rawgeom-showcase.jsx";
 import { safeEval } from "../core/math.js";
 import { parsePointSeq } from "../geometry/parse.js";
 import { exprToGLSL, GLSL_UNIFORM_PREFIX } from "../geometry/glsl.js";
@@ -184,6 +185,43 @@ function FpsBench(){
   </div>;
 }
 
+// ── 5. Raw-geometry showcase gallery ─────────────────────────────────────────
+// A live gallery of the rawGeom benchmark scenes. Each tile is a real WebGL
+// viewport rendering a high-poly, fully RGB-colored raw-geometry surface, the
+// rawGeom JIT + Gouraud path under load. Click one to expand it large.
+function RawGeomGallery(){
+  const [big, setBig] = useState(null);   // expanded kind, or null
+  const cats = [...new Set(RAWGEOM_GALLERY.map(g=>g.cat))];
+  return <div>
+    <Note>Each tile is a live, animated, high-resolution raw-geometry surface with
+      full per-vertex RGB (and alpha) coloring — the rawGeom JIT + Gouraud path
+      under real load. Click a tile to blow it up. Open any full-screen via its
+      demo hash, e.g. <code>#demo=raw-trefoil</code>. These are the heaviest scenes
+      the app builds from raw primitives; if anything stutters, this is where it
+      shows.</Note>
+    {big && <div style={{margin:"12px 0"}}>
+      <button style={S.btn} onClick={()=>setBig(null)}>← back to gallery</button>
+      <div style={{width:"100%", height:380, marginTop:10, borderRadius:10, overflow:"hidden", border:"1px solid #1a1e38"}}>
+        <LivePreview kind={big}/>
+      </div>
+    </div>}
+    {!big && cats.map(cat=>(
+      <div key={cat} style={{marginTop:14}}>
+        <div style={{...S.muted, textTransform:"uppercase", letterSpacing:0.5, fontSize:11, marginBottom:6}}>{cat}</div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:10}}>
+          {RAWGEOM_GALLERY.filter(g=>g.cat===cat).map(g=>(
+            <button key={g.kind} onClick={()=>setBig(g.kind)}
+              style={{padding:0, border:"1px solid #1a1e38", borderRadius:10, overflow:"hidden", background:"#0a0c18", cursor:"pointer", textAlign:"left"}}>
+              <div style={{width:"100%", height:130}}><LivePreview kind={g.kind}/></div>
+              <div style={{padding:"6px 9px", fontSize:12.5, color:"#aab6d4"}}>{g.name}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>;
+}
+
 // ── shell ────────────────────────────────────────────────────────────────────
 function Benchmarks(){
   return <div style={S.page}>
@@ -195,6 +233,7 @@ function Benchmarks(){
       <Section title="2 · Compute (CPU)">{<ComputeBench/>}</Section>
       <Section title="3 · WebGL context lifecycle">{<ContextStress/>}</Section>
       <Section title="4 · Live render FPS">{<FpsBench/>}</Section>
+      <Section title="5 · Raw-geometry showcase">{<RawGeomGallery/>}</Section>
       <p style={S.foot}>Leave with the back button or by clearing the <code>#bench</code> hash.</p>
     </div>
   </div>;

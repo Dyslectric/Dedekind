@@ -5,6 +5,7 @@ import { resolveNum } from "../core/math.js";
 import { buildTheme } from "../theme/presets.js";
 import { ViewportSwitch, useIsMobile } from "../components/Viewport.jsx";
 import { serializeProject } from "../core/serialize.js";
+import { RAWGEOM_SHOWCASE } from "./rawgeom-showcase.jsx";
 
 // Load a demo's editable graph into the full editor: write it to the URL hash
 // (the same channel a working-session save uses) and reload so the editor boots
@@ -1112,6 +1113,11 @@ function tutTorusLevelScene(){
 }
 
 // Register tutorial scenes alongside the rest.
+// Raw-geometry showcase / benchmark scenes (mathematical, organic, architectural,
+// fractal) — registered as ordinary preview kinds so #bench and direct hashes can
+// render them.
+Object.assign(SCENES, RAWGEOM_SHOWCASE);
+
 Object.assign(SCENES, {
   "tut-fn-only": tutFnOnlyScene,
   "tut-fn-surface": tutFnSurfaceScene,
