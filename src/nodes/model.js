@@ -59,26 +59,26 @@ function makeNode(type,pos){
     animator:{label:"Anim",name:"t",value:0,props:{min:"0",max:"1",period:"4",loop:"bounce",step:""},playing:false,attachments:[]},
     fnDef:   {label:"f(x)",name:"f",props:{params:"x",expr:"x^2"},attachments:[]},
     domain:  {label:"Domain",props:{kind:"interval",var:"x",aMin:"-5",aMax:"5",bMin:"-5",bMax:"5",cMin:"-3",cMax:"3",res:"300",resB:"30",resC:"5"},attachments:[]},
-    point:   {label:"Point",color:nextColor(),props:{x:"0",y:"0",z:"0",radius:"0.08"},attachments:[]},
-    pointSeq:{label:"Pt Seq",color:nextColor(),props:{points:"0, 0\n1, 1\n2, 0\n3, 1\n4, 0",radius:"4",drawLines:true},attachments:[]},
-    curve3d: {label:"Curve3D",color:nextColor(),props:{exprX:"cos(t)",exprY:"sin(t)",exprZ:"t/4",tMin:"0",tMax:"2*pi",res:"300"},attachments:[]},
-    fn1d:    {label:"y(x)",color:nextColor(),props:{expr:"sin(x)",xMin:"-5",xMax:"5",res:"300"},attachments:[]},
-    surf3d:  {label:"z(x,y)",color:nextColor(),props:{expr:"sin(x)*cos(y)",xMin:"-4",xMax:"4",yMin:"-4",yMax:"4",res:"40"},attachments:[]},
-    paramsurf:{label:"P-Surf",color:nextColor(),props:{exprX:"cos(u)*sin(v)",exprY:"sin(u)*sin(v)",exprZ:"cos(v)",uMin:"0",uMax:"2*pi",vMin:"0",vMax:"pi",uRes:"40",vRes:"30"},attachments:[]},
-    plane:   {label:"Plane",color:nextColor(),props:{centerX:"0",centerY:"0",centerZ:"0",normalX:"0",normalY:"1",normalZ:"0",size:"8"},attachments:[]},
-    quiver2d:{label:"Quiver2D",color:nextColor(),props:{exprX:"-y",exprY:"x",gridN:"14",xMin:"-4",xMax:"4",yMin:"-4",yMax:"4",normalize:true},attachments:[]},
-    quiver3d:{label:"Quiver3D",color:nextColor(),props:{exprX:"-y",exprY:"x",exprZ:"0.3*z",gridN:"5",xMin:"-3",xMax:"3",yMin:"-3",yMax:"3",zMin:"-3",zMax:"3",normalize:true},attachments:[]},
+    point:   {label:"Point",color:"__AUTO__",props:{x:"0",y:"0",z:"0",radius:"0.08"},attachments:[]},
+    pointSeq:{label:"Pt Seq",color:"__AUTO__",props:{points:"0, 0\n1, 1\n2, 0\n3, 1\n4, 0",radius:"4",drawLines:true},attachments:[]},
+    curve3d: {label:"Curve3D",color:"__AUTO__",props:{exprX:"cos(t)",exprY:"sin(t)",exprZ:"t/4",tMin:"0",tMax:"2*pi",res:"300"},attachments:[]},
+    fn1d:    {label:"y(x)",color:"__AUTO__",props:{expr:"sin(x)",xMin:"-5",xMax:"5",res:"300"},attachments:[]},
+    surf3d:  {label:"z(x,y)",color:"__AUTO__",props:{expr:"sin(x)*cos(y)",xMin:"-4",xMax:"4",yMin:"-4",yMax:"4",res:"40"},attachments:[]},
+    paramsurf:{label:"P-Surf",color:"__AUTO__",props:{exprX:"cos(u)*sin(v)",exprY:"sin(u)*sin(v)",exprZ:"cos(v)",uMin:"0",uMax:"2*pi",vMin:"0",vMax:"pi",uRes:"40",vRes:"30"},attachments:[]},
+    plane:   {label:"Plane",color:"__AUTO__",props:{centerX:"0",centerY:"0",centerZ:"0",normalX:"0",normalY:"1",normalZ:"0",size:"8"},attachments:[]},
+    quiver2d:{label:"Quiver2D",color:"__AUTO__",props:{exprX:"-y",exprY:"x",gridN:"14",xMin:"-4",xMax:"4",yMin:"-4",yMax:"4",normalize:true},attachments:[]},
+    quiver3d:{label:"Quiver3D",color:"__AUTO__",props:{exprX:"-y",exprY:"x",exprZ:"0.3*z",gridN:"5",xMin:"-3",xMax:"3",yMin:"-3",yMax:"3",zMin:"-3",zMax:"3",normalize:true},attachments:[]},
     // flow: integrates a vector-field fnMap along trajectories seeded by a
     // paramSpace. Wire an fnMap (output dim = field dimensionality) and a
     // paramSpace (the seed manifold) into it. A degree-1 seed space yields a
     // stream surface (or streamlines); a degree-2 seed space yields a volume.
-    flow:    {label:"Flow",color:nextColor(),props:{
+    flow:    {label:"Flow",color:"__AUTO__",props:{
       steps:"500", stepSize:"0.02",
       output:"surface",          // "surface" | "lines" (degree-1 seeds); volume auto for degree-2
       volSlices:"6",
       gradient:false, gradA:"#5b9cf6", gradB:"#f74fa0",
     },attachments:[]},
-    glyphField:{label:"Glyphs",color:nextColor(),props:{
+    glyphField:{label:"Glyphs",color:"__AUTO__",props:{
       pairs:"-2, 0, 0 | 0, 1, 0\n0, 0, 0 | 1, 0.5, 0\n2, 0, 0 | 0, -1, 0",
       arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff"},attachments:[]},
 
@@ -86,7 +86,7 @@ function makeNode(type,pos){
     // scalarFn: a scalar-valued function of `dims` spatial inputs.
     //   dims 1 → y(x) curve, dims 2 → z(x,y) surface, dims 3 → f(x,y,z) sampled
     //   as a value-coloured point cloud.
-    scalarFn:{label:"f(x)",color:nextColor(),props:{
+    scalarFn:{label:"f(x)",color:"__AUTO__",props:{
       dims:"1",
       expr:"sin(x)",
       xMin:"-5",xMax:"5",yMin:"-4",yMax:"4",zMin:"-3",zMax:"3",
@@ -95,7 +95,7 @@ function makeNode(type,pos){
     },attachments:[]},
     // paramSpace: a parameterized manifold of `degree` 1 (curve), 2 (surface),
     // or 3 (volume), mapped into 3-D Euclidean space.
-    paramSpace:{label:"Curve",color:nextColor(),props:{
+    paramSpace:{label:"Curve",color:"__AUTO__",props:{
       degree:"1",
       exprX:"cos(t)",exprY:"sin(t)",exprZ:"t/4",
       tMin:"0",tMax:"2*pi",res:"300",
@@ -115,7 +115,7 @@ function makeNode(type,pos){
     // Each (kind, mode) pair has its own dedicated input field(s) so the authoring
     // form is explicit rather than auto-detected from text syntax. normalize.js
     // assembles these into the canonical text the parsers consume.
-    points:{label:"Points",color:nextColor(),props:{
+    points:{label:"Points",color:"__AUTO__",props:{
       kind:"points",            // points | glyphs
       mode:"list",              // list | index | recursive
       useColor:false,           // extra trailing color slot in each tuple
@@ -160,7 +160,7 @@ function makeNode(type,pos){
     // Coordinates may reference wired scalars and fnDefs, so primitives express
     // against arbitrary dependency functions. Every vertex can be colored by a
     // per-vertex scalar (colorExpr) mapped through the lo→hi ramp (Gouraud).
-    rawGeom:{label:"Raw Geometry",color:nextColor(),props:{
+    rawGeom:{label:"Raw Geometry",color:"__AUTO__",props:{
       prim:"segments", src:"index",
       // ── list data ──
       rawPoints:"0, 0, 0\n1, 1, 0\n-1, 1, 0",
@@ -190,7 +190,7 @@ function makeNode(type,pos){
     // fnMap: a pure map ℝ^inDim → ℝ^outDim. Inputs are the canonical symbols
     // x,y,z,w (first `inDim` of them). Outputs are out0..out3. inDim and outDim
     // each range 1–4. It does not plot on its own — it feeds a transformer.
-    fnMap:{label:"map",color:nextColor(),props:{
+    fnMap:{label:"map",color:"__AUTO__",props:{
       inDim:"1", outDim:"1",
       out0:"sin(x)", out1:"x", out2:"0", out3:"0",
     },attachments:[]},
@@ -199,7 +199,7 @@ function makeNode(type,pos){
     //   dims "3d" — relation in x,y,z → surface via marching cubes
     // Optional wired scalars/functions are in scope. Wire it into a transformer
     // to render; the transformer's domain box sets the sampling region.
-    equation:{label:"equation",color:nextColor(),props:{
+    equation:{label:"equation",color:"__AUTO__",props:{
       dims:"2d", lhs:"x^2 + y^2", rhs:"4", varA:"x", varB:"y", varC:"z",
     },attachments:[]},
     // transformer: renders a wired fnMap over a domain.
@@ -209,7 +209,7 @@ function makeNode(type,pos){
     //     (the quiver generalization, 2d→2d / 2d→3d / 3d→3d).
     //   domainSrc "inline" — min/max per input dim + resolution.
     //   domainSrc "param"  — sample points come from a wired paramSpace.
-    transformer:{label:"Transformer",color:nextColor(),props:{
+    transformer:{label:"Transformer",color:"__AUTO__",props:{
       mode:"graph",
       // graph axis assignment: where input k and output k live in world space.
       // values: "x" | "y" | "z" | "none". Output defaults to z, the up axis, so
@@ -229,7 +229,15 @@ function makeNode(type,pos){
       colorMode:"off", colorExpr:"out0", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
     },attachments:[]},
   };
-  return{id:uid(),type,pos:pos||{x:300+Math.random()*180,y:120+Math.random()*180},...defs[type]};
+  // Build only the selected type's entry into a node. The defs literal assigns a
+  // placeholder color so the palette cursor is NOT advanced for every colored type
+  // on each makeNode call (it previously burned ~14 colors per node); resolve the
+  // sentinel to a real palette color here, consuming exactly one — and only when
+  // the selected type actually carries a color.
+  const def=defs[type];
+  const node={id:uid(),type,pos:pos||{x:300+Math.random()*180,y:120+Math.random()*180},...def};
+  if(node.color==="__AUTO__") node.color=nextColor();
+  return node;
 }
 
 // Project node with default theme/palette — shared by blank and demo scenes.
