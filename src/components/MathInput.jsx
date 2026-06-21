@@ -24,18 +24,40 @@ function numberColor(inputBg){
 // Prettify a token stream for the preview line (× · superscripts · Greek).
 const GREEK={pi:"π",tau:"τ",phi:"φ",theta:"θ",alpha:"α",beta:"β",gamma:"γ",lambda:"λ",mu:"μ",omega:"ω",sigma:"σ",delta:"δ",rho:"ρ",epsilon:"ε"};
 const SUP={"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻","+":"⁺","(":"⁽",")":"⁾","n":"ⁿ","x":"ˣ"};
+// Canonical math spacing, so the preview reads evenly regardless of how the user
+// spaced the source. Binary +,−,·,/ get a thin space either side; a unary sign
+// hugs its operand; parentheses and commas hug (no stray gaps). Without this the
+// preview just echoed source whitespace, so "x^2-y^2" and "a + b" looked
+// inconsistently cramped or loose.
+const THIN=" ";   // U+2009 THIN SPACE
 function prettyPreview(str){
   if(!str) return "";
-  const toks=tokenizeMath(str); let out=""; 
+  const toks=tokenizeMath(str).filter(t=>t.t!=="ws");
+  let out="";
+  let lastVal=false;   // did the previous emitted token end a value? (distinguishes binary vs unary +/−)
   for(let i=0;i<toks.length;i++){
     const tk=toks[i];
-    if(tk.t==="ident"&&GREEK[tk.v]){ out+=GREEK[tk.v]; continue; }
-    if(tk.t==="op"&&tk.v==="*"){ out+="·"; continue; }
-    if(tk.t==="op"&&tk.v==="^"){
-      // superscript the following number/ident/paren-group if simple
-      const nx=toks[i+1];
-      if(nx&&(nx.t==="num"||nx.t==="ident")&&[...nx.v].every(ch=>SUP[ch])){ out+=[...nx.v].map(ch=>SUP[ch]).join(""); i++; continue; }
-      out+="^"; continue;
+    if(tk.t==="ident"){ out+=GREEK[tk.v]||tk.v; lastVal=true; continue; }
+    if(tk.t==="num"||tk.t==="index"){ out+=tk.v; lastVal=true; continue; }
+    if(tk.t==="op"){
+      if(tk.v==="^"){
+        const nx=toks[i+1];
+        if(nx&&(nx.t==="num"||nx.t==="ident")&&[...nx.v].every(ch=>SUP[ch])){ out+=[...nx.v].map(ch=>SUP[ch]).join(""); i++; lastVal=true; continue; }
+        out+="^"; lastVal=false; continue;
+      }
+      if(tk.v==="+"||tk.v==="-"){
+        const sym = tk.v==="-" ? "−" : "+";          // U+2212 typographic minus
+        out += lastVal ? (THIN+sym+THIN) : sym;       // binary spaced, unary hugs
+        lastVal=false; continue;
+      }
+      if(tk.v==="*"){ out+=THIN+"·"+THIN; lastVal=false; continue; }
+      if(tk.v==="/"){ out+=THIN+"/"+THIN; lastVal=false; continue; }
+      if(tk.v==="%"){ out+=THIN+"mod"+THIN; lastVal=false; continue; }
+      if(tk.v===","){ out+=","+THIN; lastVal=false; continue; }
+      if(tk.v==="("){ out+="("; lastVal=false; continue; }
+      if(tk.v===")"){ out+=")"; lastVal=true; continue; }
+      if(tk.v==="|"){ out+="|"; continue; }
+      out+=tk.v; lastVal=false; continue;
     }
     out+=tk.v;
   }
