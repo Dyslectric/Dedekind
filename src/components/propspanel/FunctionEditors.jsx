@@ -116,35 +116,8 @@ export function ScalarFnEditor({ node, scope, onChange }){
     {dims==="2"&&<Sec title="Display">
       <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        Draws grid lines over the surface. Turning it off renders a single shaded mesh — faster for dense or animated surfaces.
+        Draws grid lines over the surface. Turning it off renders a single shaded mesh — faster for dense or animated surfaces. For per-pixel lighting and materials, render the function through an <strong style={{color:TYPE_META.transformer.tc}}>fnMap → Transformer</strong> (graph mode) and use its Shading section.
       </div>
-      <PR label="shading">
-        <select value={node.props.shading||"classic"} onChange={e=>set("shading",e.target.value==="classic"?"":e.target.value)} style={{...S.inp,width:"100%"}}>
-          <option value="classic">Classic (flat directional)</option>
-          <option value="lit">Lit (per-pixel Blinn-Phong)</option>
-        </select>
-      </PR>
-      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        Lit shades per fragment with a key light and a specular highlight, using exact analytic surface normals (computed from the symbolic derivatives of <em>f</em>) where possible, falling back to screen-space normals otherwise. Highlights track the true surface, not the mesh facets.
-      </div>
-    </Sec>}
-    {dims==="2"&&(node.props.shading==="lit")&&<Sec title="Material (lit)">
-      <div style={{fontSize:12.5,color:ui.uiFaint,marginBottom:6,lineHeight:1.5}}>
-        Per-fragment expressions over the domain <em>x, y</em> plus any wired scalars — wire an <strong>animator t</strong> and the material animates with no rebuild. Leave a field blank to keep the default.
-      </div>
-      <PR label="colour"><XF v={node.props.matColor||""} sc={scope} onChange={v=>set("matColor",v)} placeholder="scalar, e.g. sin(3x)·cos(3y)"/></PR>
-      {node.props.matColor&&<>
-        <PR label="ramp low"><ColorRow v={node.props.matColorLo||"#3a6aff"} onChange={v=>set("matColorLo",v)}/></PR>
-        <PR label="ramp high"><ColorRow v={node.props.matColorHi||"#ff5ea8"} onChange={v=>set("matColorHi",v)}/></PR>
-        <PR label="min"><EI v={node.props.matColorMin??""} sc={scope} onChange={v=>set("matColorMin",v)} placeholder="-1"/></PR>
-        <PR label="max"><EI v={node.props.matColorMax??""} sc={scope} onChange={v=>set("matColorMax",v)} placeholder="1"/></PR>
-        <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>
-          The colour expression is mapped across [min, max] onto the ramp (no auto-fit on the GPU, so set the range).
-        </div>
-      </>}
-      <PR label="specular ×"><XF v={node.props.matSpec||""} sc={scope} onChange={v=>set("matSpec",v)} placeholder="multiplies highlight, e.g. step(0,sin(8x))"/></PR>
-      <PR label="emission"><XF v={node.props.matEmit||""} sc={scope} onChange={v=>set("matEmit",v)} placeholder="adds glow, e.g. 0.5+0.5·sin(x-t)"/></PR>
-      {node.props.matEmit&&<PR label="glow colour"><ColorRow v={node.props.matEmitColor||"#ffffff"} onChange={v=>set("matEmitColor",v)}/></PR>}
     </Sec>}
   </>;
 }

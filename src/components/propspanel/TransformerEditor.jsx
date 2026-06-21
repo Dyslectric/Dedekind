@@ -2,7 +2,7 @@ import { useUI } from "../../theme/tokens.jsx";
 import { resolveNum } from "../../core/math.js";
 import { TYPE_META } from "../../nodes/model.js";
 import { EI } from "../MathInput.jsx";
-import { Sec, PR, Toggle } from "../primitives.jsx";
+import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
 
 // transformer — renders a wired fnMap over a domain (function plot or vector
 // field), or an implicit equation as a curve/surface. The bulk of the panel's
@@ -205,6 +205,48 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
           : <>For a 2-input graph surface. Off renders a single shaded mesh (GPU-accelerated) — faster for dense or animated maps.</>}
       </div>
     </Sec>}
+    {((mode==="graph"&&inDim===2)||mode==="spherical")&&<Sec title="Shading">
+      <PR label="mode">
+        <select value={node.props.shading||"classic"} onChange={e=>set("shading",e.target.value==="classic"?"":e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="classic">Classic (flat directional)</option>
+          <option value="lit">Lit (per-pixel Blinn-Phong)</option>
+        </select>
+      </PR>
+      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+        Lit shades per fragment with a key light and specular highlight. For a height graph (inputs→X,Y, an output→Z) it uses exact analytic normals from the symbolic derivatives of the mapped output; otherwise it falls back to screen-space normals.
+      </div>
+    </Sec>}
+    {((mode==="graph"&&inDim===2)||mode==="spherical")&&(node.props.shading==="lit")&&(()=>{
+      const cmode=node.props.matColorMode||"off";
+      return <Sec title="Material (lit)">
+        <div style={{fontSize:12.5,color:ui.uiFaint,marginBottom:6,lineHeight:1.5}}>
+          Per-fragment expressions over the domain <em>x, y</em> (the map's two inputs) plus any wired scalars — wire an <strong>animator t</strong> and the material animates with no rebuild.
+        </div>
+        <PR label="colour">
+          <select value={cmode} onChange={e=>set("matColorMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+            <option value="off">Flat (node colour)</option>
+            <option value="ramp">Ramp (scalar → two colours)</option>
+            <option value="rgb">RGB (three expressions)</option>
+          </select>
+        </PR>
+        {cmode==="ramp"&&<>
+          <PR label="value"><EI v={node.props.matColor||""} sc={scope} onChange={v=>set("matColor",v)} placeholder="scalar, e.g. sin(3x)·cos(3y)"/></PR>
+          <PR label="low"><ColorRow v={node.props.matColorLo||"#3a6aff"} onChange={v=>set("matColorLo",v)}/></PR>
+          <PR label="high"><ColorRow v={node.props.matColorHi||"#ff5ea8"} onChange={v=>set("matColorHi",v)}/></PR>
+          <PR label="min"><EI v={node.props.matColorMin??""} sc={scope} onChange={v=>set("matColorMin",v)} placeholder="-1"/></PR>
+          <PR label="max"><EI v={node.props.matColorMax??""} sc={scope} onChange={v=>set("matColorMax",v)} placeholder="1"/></PR>
+        </>}
+        {cmode==="rgb"&&<>
+          <PR label="R"><EI v={node.props.matR||""} sc={scope} onChange={v=>set("matR",v)} placeholder="0..1, e.g. 0.5+0.5·sin(x)"/></PR>
+          <PR label="G"><EI v={node.props.matG||""} sc={scope} onChange={v=>set("matG",v)} placeholder="0..1, e.g. 0.5+0.5·cos(y)"/></PR>
+          <PR label="B"><EI v={node.props.matB||""} sc={scope} onChange={v=>set("matB",v)} placeholder="0..1, e.g. 0.5+0.5·sin(x+y)"/></PR>
+          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Each channel is clamped to 0..1. All three are needed; any blank falls back to the flat colour.</div>
+        </>}
+        <PR label="specular ×"><EI v={node.props.matSpec||""} sc={scope} onChange={v=>set("matSpec",v)} placeholder="multiplies highlight"/></PR>
+        <PR label="emission"><EI v={node.props.matEmit||""} sc={scope} onChange={v=>set("matEmit",v)} placeholder="adds glow, e.g. 0.5+0.5·sin(x-t)"/></PR>
+        {node.props.matEmit&&<PR label="glow colour"><ColorRow v={node.props.matEmitColor||"#ffffff"} onChange={v=>set("matEmitColor",v)}/></PR>}
+      </Sec>;
+    })()}
     {(()=>{
       // Coloring is active when some output is bound to the Color target.
       const ci=(()=>{ for(let k=0;k<outDim;k++){ if((node.props[`outAxis${k}`]||"")==="color") return k; } return -1; })();

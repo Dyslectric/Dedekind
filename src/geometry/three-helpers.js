@@ -152,7 +152,8 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     const analytic = !!(shade.fx && shade.fy);   // both derivatives transpiled
     const specExpr = shade.specExpr || null;
     const emitExpr = shade.emitExpr || null;
-    const needXY = analytic || colored || !!specExpr || !!emitExpr;
+    const rgb = (shade.rgb && shade.rgb.length===3) ? shade.rgb : null;   // [r,g,b] GLSL → albedo
+    const needXY = analytic || colored || !!rgb || !!specExpr || !!emitExpr;
     litVert = `
       ${decls}
       varying vec3 vViewPos; varying vec2 vDomain; varying float vOk;
@@ -195,7 +196,9 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         vec3 H = normalize(L + V);
         float spe = pow(max(dot(N,H), 0.0), uShine);
         float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
-        ${colored
+        ${rgb
+          ? `vec3 albedo = clamp(vec3((${rgb[0]}),(${rgb[1]}),(${rgb[2]})), 0.0, 1.0);`
+          : colored
           ? `float _cv = (${opts.colorBody}); float _sp=(uCMax-uCMin); float _t=(abs(_sp)<1e-12)?0.0:clamp((_cv-uCMin)/_sp,0.0,1.0); vec3 albedo=mix(uColorLo,uColorHi,_t);`
           : "vec3 albedo = uColor;"}
         vec3 col = uAmb*albedo + uDif*dif*albedo + uSpe*specMul*spe*vec3(1.0);

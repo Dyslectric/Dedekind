@@ -234,6 +234,39 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     if(g==null) return null;           // unsupported expr → caller uses CPU path
     outGLSL[k]=g;
   }
+  // ── Lit shading + material on the transformer (per the design: shading is a
+  // plot parameter of the renderer, not of the map). Reads the domain (x,y) — the
+  // map's two inputs. Analytic normals come from the output bound to z, but only
+  // for the canonical height graph (inputs→x,y, an output→z); other axis bindings
+  // use the screen-space fallback. Material color is mode "ramp" (scalar→two
+  // colours) or "rgb" (three expressions). All optional; default off.
+  const ax2=new Set(["x","y"]);
+  let matOpts=null;
+  if(tp.shading==="lit"){
+    let fxG=null,fyG=null;
+    const zIdx=outAx.findIndex(a=>a==="z");
+    if(inAx[0]==="x" && inAx[1]==="y" && zIdx>=0 && zIdx<outDim){
+      const fxs=derivativeExpr(outs[zIdx]||"0","x"), fys=derivativeExpr(outs[zIdx]||"0","y");
+      if(fxs) fxG=exprToGLSL(fxs,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable);
+      if(fys) fyG=exprToGLSL(fys,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable);
+    }
+    const specG=tp.matSpec?exprToGLSL(tp.matSpec,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
+    const emitG=tp.matEmit?exprToGLSL(tp.matEmit,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
+    const shade={ fx:fxG, fy:fyG, specExpr:specG, emitExpr:emitG, emitColor:tp.matEmitColor };
+    const mode=tp.matColorMode||"off";
+    if(mode==="rgb"){
+      const r=tp.matR?exprToGLSL(tp.matR,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
+      const g=tp.matG?exprToGLSL(tp.matG,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
+      const b=tp.matB?exprToGLSL(tp.matB,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
+      if(r&&g&&b) shade.rgb=[r,g,b];
+      matOpts={ shade };
+    } else if(mode==="ramp" && tp.matColor){
+      const cG=exprToGLSL(tp.matColor,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable);
+      matOpts = cG
+        ? { colorBody:cG, colorLo:new THREE.Color(hexToThree(tp.matColorLo||"#3a6aff")), colorHi:new THREE.Color(hexToThree(tp.matColorHi||"#ff5ea8")), cmin:resolveNum(tp.matColorMin,scope,-1), cmax:resolveNum(tp.matColorMax,scope,1), shade }
+        : { shade };
+    } else { matOpts={ shade }; }
+  }
   if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
   for(let k=0;k<outDim;k++){
     const ax=AX[outAx[k]]; if(ax==null) continue;   // skip color/none/unbound
@@ -255,7 +288,8 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     }
     // if color expr can't transpile, fall back to flat-colored GPU surface
   }
-  return assembleSurfGPU(bodyP, [...uniforms], ascope, color, res, res, tp.showWire!==false, colorOpts, null, tp.wireOnly===true);
+  return assembleSurfGPU(bodyP, [...uniforms], ascope, color, res, res, tp.showWire!==false,
+    tp.shading==="lit" ? matOpts : colorOpts, null, tp.wireOnly===true);
 }
 
 function buildFn1dGPU(p, scope, color){

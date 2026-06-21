@@ -249,7 +249,7 @@ function geomSignature(node, scope){
       return `raw|${c}|${p.prim}|${p.src||"list"}|${resolved}${colSig}${aSig}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.normalize?1:0}|${p.lenMode||""}|${p.showWire!==false?1:0}|${isIdx?scopeSig(node,scope):""}`;
     }
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
-    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
+    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|sh:${p.shading||""}|${p.matColorMode||""}|${p.matColor||""}|${p.matR||""}|${p.matG||""}|${p.matB||""}|${p.matColorLo||""}|${p.matColorHi||""}|${p.matColorMin||""}|${p.matColorMax||""}|${p.matSpec||""}|${p.matEmit||""}|${p.matEmitColor||""}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
       // For a transpilable implicit equation (GPU raymarch), the wired sliders/
       // animators become live shader uniforms — they must NOT invalidate the
       // geometry cache, or every animated frame triggers a full CPU rebuild
@@ -415,7 +415,7 @@ function nodeExprText(node){
     p.out0,p.out1,p.out2,p.out3,p.data,p.colorExpr,p.colorMin,p.colorMax,p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,
     p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig,
     p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA,
-    p.matColor,p.matSpec,p.matEmit];
+    p.matColor,p.matSpec,p.matEmit,p.matR,p.matG,p.matB];
   return fields.filter(e=>typeof e==="string"&&e.length).join("\u0001");
 }
 // Extract the set of free variable names appearing in a node's expressions

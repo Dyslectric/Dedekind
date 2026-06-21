@@ -510,54 +510,63 @@ function vivianiScene(){
 // f_x,f_y), so it stays smooth and tracks the true surface as it animates — no
 // faceting, independent of grid resolution. Drop res low in the editor to see
 // the silhouette coarsen while the shading stays smooth.
+// Helper: a lit graph surface authored the design-correct way — an fnMap (the
+// pure map z = f(x,y)) wired into a transformer (graph mode) that carries the
+// plot + shading parameters. `o.mat` patches material props onto the transformer;
+// `o.extraDeps` are extra fnMap dependencies (e.g. a helper fnDef); `o.period`
+// adds an animator t wired into the fnMap.
+function litGraphScene(o){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1120,y:120}));cam.label=o.label;
+  cam.props.orbRadius=o.orbRadius||"11";cam.props.orbTheta="0.7";cam.props.orbPhi=o.orbPhi||"1.0";
+  if(o.spin){ cam.props.spin="loop"; cam.props.spinPeriod=o.spin; }
+  const col=o.color||"#5b9cf6";
+  const fn=makeNode("fnMap",{x:380,y:160});fn.label=o.fnLabel||"f(x,y)";fn.color=col;
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0=o.expr;
+  const tr=makeNode("transformer",{x:720,y:160});tr.label=o.trLabel||"graph · lit";tr.color=col;
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  const r=o.range||"4.5";
+  tr.props.aMin="-"+r;tr.props.aMax=r;tr.props.bMin="-"+r;tr.props.bMax=r;tr.props.res=o.res||"64";
+  tr.props.showWire=false;tr.props.shading="lit";
+  Object.assign(tr.props, o.mat||{});
+  const scene={[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr};
+  const fnDeps=[];
+  for(const d of (o.extraDeps||[])){ scene[d.id]=d; fnDeps.push(d.id); }
+  let animated=false;
+  if(o.period){
+    const a=makeNode("animator",{x:40,y:320});a.name="t";a.value=0;
+    a.props.min="0";a.props.max="6.283";a.props.period=o.period;a.props.loop="loop";a.playing=true;
+    scene[a.id]=a; fnDeps.push(a.id); animated=true;
+  }
+  fn.attachments=fnDeps; tr.attachments=[fn.id]; cam.attachments=[tr.id];
+  return {scene, camId:cam.id, animated};
+}
+
+// LIT SHADING + ANALYTIC NORMALS: an animated ripple. The highlight is the exact
+// analytic normal (from the symbolic derivative of the mapped output), so it
+// stays smooth and tracks the moving surface — drop res in the editor to see the
+// silhouette coarsen while shading stays smooth.
 function litRippleScene(){
-  const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="lit ripple · analytic normals";
-  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
-  const anim=makeNode("animator",{x:40,y:320});anim.name="t";anim.value=0;
-  anim.props.min="0";anim.props.max="6.283";anim.props.period="7";anim.props.loop="loop";anim.playing=true;
-  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="z = sin(r·1.6 − t)";fn.color="#5b9cf6";
-  fn.props.dims="2";fn.props.expr="sin(sqrt(x^2+y^2)*1.6 - t)*0.9";
-  fn.props.xMin="-4.5";fn.props.xMax="4.5";fn.props.yMin="-4.5";fn.props.yMax="4.5";
-  fn.props.res="64";fn.props.showWire=false;fn.props.shading="lit";
-  fn.attachments=[anim.id];cam.attachments=[fn.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn},camId:cam.id,animated:true};
+  return litGraphScene({ label:"lit ripple · analytic normals", expr:"sin(sqrt(x^2+y^2)*1.6 - t)*0.9",
+    fnLabel:"z = sin(r·1.6 − t)", trLabel:"graph · lit", color:"#5b9cf6", range:"4.5", res:"64", period:"7" });
 }
-
-// LIT SHADING on curvature: a monkey saddle, slowly spinning, so the specular
-// highlight sweeps across the analytic surface and reads its true curvature.
+// LIT SHADING on curvature: a slowly spinning monkey saddle; the specular
+// highlight sweeps the analytic surface and reads its true curvature.
 function litSaddleScene(){
-  const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="lit saddle";
-  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";
-  cam.props.spin="loop";cam.props.spinPeriod="26";
-  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="z = x³ − 3xy²";fn.color="#c761f7";
-  fn.props.dims="2";fn.props.expr="(x^3 - 3*x*y^2)*0.16";
-  fn.props.xMin="-2.4";fn.props.xMax="2.4";fn.props.yMin="-2.4";fn.props.yMax="2.4";
-  fn.props.res="80";fn.props.showWire=false;fn.props.shading="lit";
-  cam.attachments=[fn.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn},camId:cam.id,animated:false};
+  return litGraphScene({ label:"lit saddle", expr:"(x^3 - 3*x*y^2)*0.16", fnLabel:"z = x³ − 3xy²",
+    color:"#c761f7", range:"2.4", res:"80", orbRadius:"9", orbPhi:"0.95", spin:"26" });
 }
-
-// fnDef GPU INLINING + lit: the surface is COMPOSED from a helper bump(r), so it
-// would have fallen to the CPU before; now the helper is inlined into the shader
-// and it renders on the GPU. Lit shading uses the screen-space normal fallback
-// here (mathjs can't symbolically differentiate a user function), which is the
-// documented behavior for composed surfaces.
+// fnDef GPU INLINING + lit: the map is COMPOSED from a helper bump(r). Before the
+// inlining work this fell to the CPU; now the helper is inlined into the shader.
+// Lit uses the screen-space normal fallback (mathjs can't differentiate a user
+// function) — the documented behavior for composed surfaces.
 function composedSurfaceScene(){
-  const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="composed surface (GPU-inlined)";
-  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
-  cam.props.spin="loop";cam.props.spinPeriod="30";
   const bump=makeNode("fnDef",{x:120,y:320});bump.name="bump";bump.color="#a6e3a1";
   bump.props.params="r";bump.props.expr="exp(-r^2)";
-  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="z = Σ bump(…)";fn.color="#a6e3a1";
-  fn.props.dims="2";
-  fn.props.expr="bump(hypot(x-1.4,y)) + bump(hypot(x+1.4,y)) + 0.7*bump(hypot(x,y-1.4))";
-  fn.props.xMin="-4";fn.props.xMax="4";fn.props.yMin="-4";fn.props.yMax="4";
-  fn.props.res="72";fn.props.showWire=false;fn.props.shading="lit";
-  fn.attachments=[bump.id];cam.attachments=[fn.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[bump.id]:bump,[fn.id]:fn},camId:cam.id,animated:false};
+  return litGraphScene({ label:"composed surface (GPU-inlined)",
+    expr:"bump(hypot(x-1.4,y)) + bump(hypot(x+1.4,y)) + 0.7*bump(hypot(x,y-1.4))",
+    fnLabel:"z = Σ bump(…)", color:"#a6e3a1", range:"4", res:"72", orbRadius:"9", spin:"30",
+    extraDeps:[bump] });
 }
 
 // INTERSECTION CURVE: the Steinmetz bicylinder — two perpendicular unit
@@ -600,52 +609,35 @@ function spherePlaneScene(){
 // checkerboard albedo on a lit surface. Vertex-interpolated colour would smear
 // the checker; evaluating per fragment keeps the edges sharp.
 function matCheckerScene(){
-  const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="material · checker albedo";
-  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="28";
-  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="lit + colour expr";fn.color="#5b9cf6";
-  fn.props.dims="2";fn.props.expr="0.5*sin(x)*cos(y)";
-  fn.props.xMin="-3.2";fn.props.xMax="3.2";fn.props.yMin="-3.2";fn.props.yMax="3.2";
-  fn.props.res="96";fn.props.showWire=false;fn.props.shading="lit";
-  fn.props.matColor="sign(sin(2.4*x))*sign(sin(2.4*y))";
-  fn.props.matColorLo="#16213a";fn.props.matColorHi="#ffd166";fn.props.matColorMin="-1";fn.props.matColorMax="1";
-  cam.attachments=[fn.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn},camId:cam.id,animated:false};
+  return litGraphScene({ label:"material · checker albedo", expr:"0.5*sin(x)*cos(y)",
+    fnLabel:"z = ½ sin(x)cos(y)", color:"#5b9cf6", range:"3.2", res:"96", spin:"28", orbRadius:"9",
+    mat:{ matColorMode:"ramp", matColor:"sign(sin(2.4*x))*sign(sin(2.4*y))",
+          matColorLo:"#16213a", matColorHi:"#ffd166", matColorMin:"-1", matColorMax:"1" } });
 }
 
-// MATERIAL: an animated colour expression tracking the wave — the material reads
-// the animator t as a live uniform, so the colour sweeps with no geometry rebuild.
+// MATERIAL: an animated ramp colour tracking the wave — the material reads the
+// animator t, so the colour sweeps with the surface.
 function matRingsScene(){
-  const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="material · animated colour";
-  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
-  const anim=makeNode("animator",{x:40,y:320});anim.name="t";anim.value=0;
-  anim.props.min="0";anim.props.max="6.283";anim.props.period="6";anim.props.loop="loop";anim.playing=true;
-  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="lit + matColor(t)";fn.color="#5b9cf6";
-  fn.props.dims="2";fn.props.expr="sin(sqrt(x^2+y^2)*1.4 - t)*0.8";
-  fn.props.xMin="-4.5";fn.props.xMax="4.5";fn.props.yMin="-4.5";fn.props.yMax="4.5";
-  fn.props.res="64";fn.props.showWire=false;fn.props.shading="lit";
-  fn.props.matColor="sin(sqrt(x^2+y^2)*1.4 - t)";
-  fn.props.matColorLo="#1b3a8f";fn.props.matColorHi="#ff5ea8";fn.props.matColorMin="-1";fn.props.matColorMax="1";
-  fn.attachments=[anim.id];cam.attachments=[fn.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn},camId:cam.id,animated:true};
+  return litGraphScene({ label:"material · animated colour", expr:"sin(sqrt(x^2+y^2)*1.4 - t)*0.8",
+    fnLabel:"z = sin(r·1.4 − t)", color:"#5b9cf6", range:"4.5", res:"64", period:"6",
+    mat:{ matColorMode:"ramp", matColor:"sin(sqrt(x^2+y^2)*1.4 - t)",
+          matColorLo:"#1b3a8f", matColorHi:"#ff5ea8", matColorMin:"-1", matColorMax:"1" } });
 }
 
-// MATERIAL: additive emission — glow bands sweep across a dark lit dome. Emission
-// is added after lighting (it ignores the light), so the bands self-illuminate.
+// MATERIAL (RGB mode): the colour is three independent expressions, a full colour
+// field rather than a single gradient — here a smooth domain-coloured ramp.
+function matRgbScene(){
+  return litGraphScene({ label:"material · RGB colour field", expr:"0.4*sin(x)*sin(y)",
+    fnLabel:"z = ⅖ sin(x)sin(y)", color:"#5b9cf6", range:"3.14", res:"96", spin:"30", orbRadius:"9",
+    mat:{ matColorMode:"rgb", matR:"0.5+0.5*sin(x)", matG:"0.5+0.5*cos(y)", matB:"0.5+0.5*sin(x+y)" } });
+}
+
+// MATERIAL: additive emission — glow bands sweep a dark lit dome. Emission is
+// added after lighting, so the bands self-illuminate.
 function matGlowScene(){
-  const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="material · emission glow";
-  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";
-  const anim=makeNode("animator",{x:40,y:320});anim.name="t";anim.value=0;
-  anim.props.min="0";anim.props.max="6.283";anim.props.period="5";anim.props.loop="loop";anim.playing=true;
-  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="lit + emission(t)";fn.color="#16203a";
-  fn.props.dims="2";fn.props.expr="exp(-(x^2+y^2)*0.16)*1.6";
-  fn.props.xMin="-4";fn.props.xMax="4";fn.props.yMin="-4";fn.props.yMax="4";
-  fn.props.res="72";fn.props.showWire=false;fn.props.shading="lit";
-  fn.props.matEmit="pow(max(0.0, sin(2.5*(x+y) - t)), 3.0)";fn.props.matEmitColor="#5be0c0";
-  fn.attachments=[anim.id];cam.attachments=[fn.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn},camId:cam.id,animated:true};
+  return litGraphScene({ label:"material · emission glow", expr:"exp(-(x^2+y^2)*0.16)*1.6",
+    fnLabel:"z = e^(−0.16 r²)", color:"#16203a", range:"4", res:"72", period:"5", orbRadius:"9", orbPhi:"0.95",
+    mat:{ matEmit:"pow(max(0.0, sin(2.5*(x+y) - t)), 3.0)", matEmitColor:"#5be0c0" } });
 }
 
 // Register the new scenes alongside the originals.
@@ -669,6 +661,7 @@ Object.assign(SCENES, {
   "sphere-plane": spherePlaneScene,
   "mat-checker": matCheckerScene,
   "mat-rings": matRingsScene,
+  "mat-rgb": matRgbScene,
   "mat-glow": matGlowScene,
 });
 
