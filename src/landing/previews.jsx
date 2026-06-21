@@ -863,6 +863,154 @@ function tutRawGouraudScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g},camId:cam.id,animated:false};
 }
 
+// ── helper: a 2D curve driven by a fnMap whose expression references sliders ──
+// builds slider nodes from specs [{name,label,value,min,max,step}], a fnMap with
+// the given output expression(s), a transformer, and a camera. mode "graph"
+// (y=f(x)) or "param" (x=out0, y=out1 over t). Returns the scene object.
+function _sliderCurve(opts){
+  const { label, specs, out0, out1, mode="graph", aMin=-6, aMax=6, ortho=4, oy="0", ox="0", color="#7aa2f7" } = opts;
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1180,y:120}));cam.label=label;cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize=String(ortho);cam.props.planeOx=ox;cam.props.planeOy=oy;
+  const scene={[project.id]:project,[cam.id]:cam};
+  const sliders=specs.map((s,k)=>{
+    const nd=makeNode("slider",{x:-40,y:-40+k*96});nd.name=s.name;nd.label=s.label;nd.value=s.value;
+    nd.props.min=String(s.min);nd.props.max=String(s.max);nd.props.step=String(s.step);
+    scene[nd.id]=nd; return nd;
+  });
+  const fn=makeNode("fnMap",{x:380,y:160});fn.label=label;fn.color=color;
+  fn.props.inDim="1";fn.props.outDim=mode==="param"?"2":"1";
+  fn.props.out0=out0; if(out1!=null) fn.props.out1=out1;
+  fn.attachments=sliders.map(s=>s.id);
+  scene[fn.id]=fn;
+  const tr=makeNode("transformer",{x:760,y:160});tr.label="curve";tr.color=color;
+  if(mode==="param"){ tr.props.mode="graph";tr.props.inAxis0="none";tr.props.inAxis1="none";tr.props.outAxis0="x";tr.props.outAxis1="y"; }
+  else { tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y"; }
+  tr.props.aMin=String(aMin);tr.props.aMax=String(aMax);tr.props.res="400";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  scene[tr.id]=tr;
+  return {scene,camId:cam.id,animated:false};
+}
+
+// ALGEBRAIC — the general conic Ax²+Bxy+Cy²+Dx+Ey+F=0 as a 3D level set sliced
+// flat, morphing through ellipse, parabola, and hyperbola as the coefficients
+// move. The discriminant B²−4AC decides the type.
+function tutConicZooScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1180,y:120}));cam.label="A·x² + B·xy + C·y² + D·x + E·y + F = 0";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.4";
+  const specs=[
+    {name:"A",label:"A · x²",value:1,min:-2,max:2,step:0.05},
+    {name:"B",label:"B · xy",value:0.6,min:-3,max:3,step:0.05},
+    {name:"C",label:"C · y²",value:1.5,min:-2,max:2,step:0.05},
+    {name:"D",label:"D · x",value:0,min:-3,max:3,step:0.05},
+    {name:"E",label:"E · y",value:0,min:-3,max:3,step:0.05},
+    {name:"F",label:"F · 1",value:-2.5,min:-4,max:4,step:0.05},
+  ];
+  const scene={[project.id]:project,[cam.id]:cam};
+  const sliders=specs.map((s,k)=>{ const nd=makeNode("slider",{x:-40,y:-40+k*92});nd.name=s.name;nd.label=s.label;nd.value=s.value;nd.props.min=String(s.min);nd.props.max=String(s.max);nd.props.step=String(s.step);scene[nd.id]=nd;return nd; });
+  const eq=makeNode("equation",{x:380,y:170});eq.label="conic";eq.color="#f7768e";
+  eq.props.dims="2d";eq.props.varA="x";eq.props.varB="y";
+  eq.props.lhs="A*x^2 + B*x*y + C*y^2 + D*x + E*y + F";eq.props.rhs="0";
+  eq.attachments=sliders.map(s=>s.id);scene[eq.id]=eq;
+  const tr=makeNode("transformer",{x:760,y:170});tr.label="curve";tr.color="#f7768e";
+  tr.props.mode="graph";tr.props.aMin="-4.5";tr.props.aMax="4.5";tr.props.bMin="-4.5";tr.props.bMax="4.5";tr.props.res="260";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];scene[tr.id]=tr;
+  return {scene,camId:cam.id,animated:false};
+}
+
+// ANALYTIC — a harmonograph: two damped sinusoids per axis trace the looping
+// figures a pendulum-driven drawing table makes. Sliders for the frequencies,
+// phase, and decay. Built as a paramSpace curve in t.
+function tutHarmonographScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1180,y:120}));cam.label="a harmonograph";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.0";
+  const specs=[
+    {name:"fx",label:"fx · x freq",value:3,min:1,max:8,step:1},
+    {name:"fy",label:"fy · y freq",value:2,min:1,max:8,step:1},
+    {name:"ph",label:"φ · phase",value:0.5,min:0,max:3.14159,step:0.02},
+    {name:"d", label:"d · decay",value:0.12,min:0,max:0.6,step:0.01},
+  ];
+  const scene={[project.id]:project,[cam.id]:cam};
+  const sliders=specs.map((s,k)=>{ const nd=makeNode("slider",{x:-40,y:-40+k*96});nd.name=s.name;nd.label=s.label;nd.value=s.value;nd.props.min=String(s.min);nd.props.max=String(s.max);nd.props.step=String(s.step);scene[nd.id]=nd;return nd; });
+  const ps=makeNode("paramSpace",{x:420,y:160});ps.label="harmonograph";ps.color="#7dcfff";ps.props.degree="1";
+  ps.props.exprX="exp(-d*t)*sin(fx*t)";
+  ps.props.exprY="exp(-d*t)*sin(fy*t + ph)";
+  ps.props.exprZ="0";ps.props.tMin="0";ps.props.tMax="62.83";ps.props.res="1200";
+  ps.attachments=sliders.map(s=>s.id);scene[ps.id]=ps;
+  cam.attachments=[ps.id];
+  return {scene,camId:cam.id,animated:false};
+}
+
+// DIFFERENTIAL — a curve and its osculating circle. A bump function whose width
+// and height slide; the circle of curvature at the apex grows and shrinks,
+// radius = 1/κ. Shows curvature as a tangible radius.
+function tutOsculatingScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1180,y:120}));cam.label="curve and its circle of curvature";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.6";cam.props.planeOy="0.6";
+  const specs=[
+    {name:"a",label:"a · height",value:1.2,min:0.2,max:2.5,step:0.05},
+    {name:"w",label:"w · width",value:1,min:0.4,max:3,step:0.05},
+  ];
+  const scene={[project.id]:project,[cam.id]:cam};
+  const sliders=specs.map((s,k)=>{ const nd=makeNode("slider",{x:-40,y:0+k*96});nd.name=s.name;nd.label=s.label;nd.value=s.value;nd.props.min=String(s.min);nd.props.max=String(s.max);nd.props.step=String(s.step);scene[nd.id]=nd;return nd; });
+  // curve y = a*exp(-(x/w)^2). At x=0: y=a, y''=-2a/w². κ = |y''| = 2a/w²,
+  // radius R = 1/κ = w²/(2a). Circle center at (0, a - R).
+  const fn=makeNode("fnMap",{x:380,y:60});fn.label="bump";fn.color="#9ece6a";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="a*exp(-(x/w)^2)";
+  fn.attachments=sliders.map(s=>s.id);scene[fn.id]=fn;
+  const tr=makeNode("transformer",{x:760,y:60});tr.label="curve";tr.color="#9ece6a";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";tr.props.aMin="-3";tr.props.aMax="3";tr.props.res="400";
+  tr.attachments=[fn.id];scene[tr.id]=tr;
+  // osculating circle as a parametric raw-ish curve via paramSpace
+  const circ=makeNode("paramSpace",{x:760,y:300});circ.label="osculating circle";circ.color="#f7768e";circ.props.degree="1";
+  circ.props.exprX="(w^2/(2*a))*cos(t)";
+  circ.props.exprY="(a - w^2/(2*a)) + (w^2/(2*a))*sin(t)";
+  circ.props.exprZ="0";circ.props.tMin="0";circ.props.tMax="6.2832";circ.props.res="200";
+  circ.attachments=sliders.map(s=>s.id);scene[circ.id]=circ;
+  cam.attachments=[tr.id,circ.id];
+  return {scene,camId:cam.id,animated:false};
+}
+
+// DYNAMICS — driven damped oscillator response. The steady-state amplitude of
+// x'' + 2ζω₀x' + ω₀²x = F cos(ωt) as a function of drive frequency ω, with the
+// resonance peak sliding as damping and natural frequency change.
+function tutResonanceScene(){
+  return _sliderCurve({
+    label:"resonance: amplitude vs drive frequency",
+    specs:[
+      {name:"w0",label:"ω₀ · natural freq",value:2,min:0.5,max:4,step:0.05},
+      {name:"z", label:"ζ · damping",value:0.08,min:0.02,max:1,step:0.01},
+      {name:"F", label:"F · drive",value:1,min:0.2,max:3,step:0.05},
+    ],
+    mode:"graph",
+    // amplitude A(ω) = F / sqrt((ω₀²−ω²)² + (2ζω₀ω)²), x-axis is ω
+    out0:"F / sqrt((w0^2 - x^2)^2 + (2*z*w0*x)^2)",
+    aMin:0, aMax:6, ortho:3.2, oy:"1.6", color:"#bb9af7",
+  });
+}
+
+// EDITOR — a pure wiring page: one expression fed by many sliders, showing how a
+// single curve responds to a whole panel of live parameters. A general cubic
+// y = a x³ + b x² + c x + d with all four coefficients on sliders.
+function tutLiveParamsScene(){
+  return _sliderCurve({
+    label:"one curve, four live parameters",
+    specs:[
+      {name:"a",label:"a · x³",value:0.3,min:-1,max:1,step:0.02},
+      {name:"b",label:"b · x²",value:0,min:-2,max:2,step:0.05},
+      {name:"c",label:"c · x",value:-1,min:-3,max:3,step:0.05},
+      {name:"d",label:"d · 1",value:0,min:-3,max:3,step:0.05},
+    ],
+    mode:"graph",
+    out0:"a*x^3 + b*x^2 + c*x + d",
+    aMin:-4, aMax:4, ortho:5, color:"#e0af68",
+  });
+}
+
+
 // Taylor series of eˣ: drag N and the polynomial chases the exponential, matching
 // it over a widening interval. Like sin, eˣ is entire — the series converges for
 // every x.
@@ -949,6 +1097,11 @@ Object.assign(SCENES, {
   "tut-raw-glyphs": tutRawGlyphsScene,
   "tut-raw-gouraud": tutRawGouraudScene,
   "tut-raw-torus": tutRawTorusScene,
+  "tut-conic-zoo": tutConicZooScene,
+  "tut-harmonograph": tutHarmonographScene,
+  "tut-osculating": tutOsculatingScene,
+  "tut-resonance": tutResonanceScene,
+  "tut-live-params": tutLiveParamsScene,
   "tut-taylor-exp": tutTaylorExpScene,
   "tut-taylor-radius": tutTaylorRadiusScene,
   "tut-torus-level": tutTorusLevelScene,

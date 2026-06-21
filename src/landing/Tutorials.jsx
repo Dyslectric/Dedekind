@@ -97,6 +97,14 @@ const SECTIONS = [
           { heading: "Putting it together", body: "This twisted torus is everything at once. Six sliders feed a small stack of functions: RR ripples the major radius, W twists the tube as it goes around, and SX, SY, SZ turn the two angles into a surface point. Four more functions, CR, CG, CB, and CA, give each vertex a red, green, blue, and alpha value, so the color is set by three independent channels rather than a single ramp, with transparency breathing around the tube. Two raw nodes tile the whole M×M lattice into triangles, each one calling those functions through the index expressions. Open it and drag q to rebraid the tube, p to change the lobes, or rewrite any colour function to repaint the surface. The whole pipeline, lattices, dependency functions, three-channel colour, and alpha, lives in one readable graph.", kind: "tut-raw-torus" },
         ],
       },
+      {
+        slug: "live-parameters",
+        title: "Live parameters",
+        summary: "A slider is just a number you can grab. Wire several into one expression and the whole curve becomes something you steer by hand.",
+        steps: [
+          { heading: "A panel of sliders, one curve", body: "Every name in an expression that is not a built-in can come from a slider. Here a single cubic, y = a·x³ + b·x² + c·x + d, draws its four coefficients from four sliders. Grab any of them in the plot and pull: a bends the tails in opposite directions, b tilts the symmetry, c sets the slope through the middle, d lifts the whole curve. Nothing is recomputed by hand, the curve is the live image of the four numbers. This is the core loop of the whole tool: put the parts of a formula on sliders, then explore the formula by moving them.", kind: "tut-live-params" },
+        ],
+      },
     ],
   },
   {
@@ -152,6 +160,14 @@ const SECTIONS = [
           { heading: "One equation, three surfaces", body: "The central quadrics are all variations of x² + y² + s·z² = 1. When s is positive the surface closes up into an ellipsoid; at s = 0 the z-term vanishes and it becomes an infinite cylinder; when s is negative it opens into a one-sheet hyperboloid, the cooling-tower shape. Drag s through zero and watch one equation pass through all three. The sign of a single coefficient decides the entire character of the surface.", kind: "tut-quadric-morph" },
           { heading: "The saddle", body: "Not every quadric is closed or symmetric. The hyperbolic paraboloid z = x² − y² curves upward in one direction and downward in the perpendicular one, making the saddle, or Pringle, shape. It is the standard example of a surface with no global maximum or minimum, and despite its curvature it is doubly ruled: through every point run two straight lines lying entirely on the surface.", kind: "tut-quadric-saddle" },
           { heading: "The cone", body: "Between the one-sheet and two-sheet hyperboloids sits the cone x² + y² = z², the degenerate quadric where the surface pinches to a single point at the origin. It is the boundary case of the family, the moment a hyperboloid's waist closes to nothing. Slicing a cone with planes, incidentally, is exactly how the ancient Greeks first defined the ellipse, parabola, and hyperbola.", kind: "tut-quadric-cone" },
+        ],
+      },
+      {
+        slug: "the-conic-zoo",
+        title: "The conic zoo",
+        summary: "Every ellipse, parabola, and hyperbola is one equation with six coefficients. Slide them and watch one curve become all of them.",
+        steps: [
+          { heading: "One equation, every conic", body: "The general conic is A·x² + B·xy + C·y² + D·x + E·y + F = 0. Those six numbers contain every ellipse, parabola, and hyperbola, plus their degenerate cases of crossed and parallel lines. With six sliders on the plot you can steer the whole family by hand. The type is decided by the discriminant B² − 4AC: negative gives an ellipse, zero a parabola, positive a hyperbola. Set A = C = 1 with everything else zero for a circle, then raise B past 2 and the closed curve splits open into a hyperbola as the discriminant crosses zero. The cross term B rotates the axes; D and E slide the center; F sets the size.", kind: "tut-conic-zoo" },
         ],
       },
     ],
@@ -210,6 +226,14 @@ const SECTIONS = [
           { heading: "Roses", body: "In polar coordinates a point is set by an angle θ and a radius r. The curve r = cos(k·θ) traces a rose: as the angle sweeps once around, the radius swells and shrinks, drawing petals. The count follows a simple rule, odd k gives k petals and even k gives 2k, so dragging the slider between, say, 3 and 4 jumps the flower from three petals to eight. A single cosine becomes a garden.", kind: "tut-polar-rose" },
           { heading: "Cardioids and limaçons", body: "Add a constant to the radius and you get the limaçon family, r = a + cos(θ). At a = 1 it is the cardioid, a heart-shaped curve with a single cusp. Drag a above 1 and the cusp smooths into a dimple; drag it below 1 and an inner loop appears, the curve crossing itself. The offset a tunes the whole family, which shows up wherever one circle rolls around another.", kind: "tut-polar-cardioid" },
           { heading: "Into three dimensions", body: "The same idea extends to spherical coordinates, where two angles and a radius locate a point in space. The transformer's spherical mode draws r = f(θ,φ): a constant radius gives a plain sphere, and letting the angles modulate the radius pushes it out into bumps and lobes. Drag the bump count and the sphere ripples like a sea urchin. Polar thinking scales up as cleanly as it works in the plane.", kind: "tut-spherical" },
+        ],
+      },
+      {
+        slug: "the-harmonograph",
+        title: "The harmonograph",
+        summary: "A pair of decaying sine waves, one per axis, traces the looping figures a pendulum-driven drawing machine makes. Four sliders set the whole dance.",
+        steps: [
+          { heading: "Two oscillations at right angles", body: "A harmonograph is a Victorian drawing machine: pendulums swing a pen along x and y at the same time, and the slow decay of their swings turns simple oscillation into an intricate spiral. Here x(t) = e^(−d·t)·sin(fx·t) and y(t) = e^(−d·t)·sin(fy·t + φ). The two frequency sliders set how many times the pen crosses in each direction, so a frequency ratio like 3:2 closes into a tidy braided loop while nearby ratios drift and never quite repeat. The phase φ rotates the figure and opens or closes its lobes, and the decay d controls how tightly the curve spirals inward. This is the parametric cousin of the Lissajous figure, with damping added to make it spiral rather than retrace.", kind: "tut-harmonograph" },
         ],
       },
     ],
@@ -290,6 +314,14 @@ const SECTIONS = [
         steps: [
           { heading: "The sign of curvature", body: "At each point a surface bends by some amount in every direction. Multiply the sharpest and gentlest of those bendings together and you get the Gaussian curvature, whose sign tells you the local shape. On this torus the outer rim domes outward in both directions, giving positive curvature (blue); the inner rim saddles, curving up one way and down the other, giving negative curvature (pink); and the top and bottom circles, where the colour crosses over, have zero. One surface holds all three signs at once.", kind: "tut-gauss-curvature" },
           { heading: "Elliptic, parabolic, hyperbolic", body: "The sign sorts every surface point into three types. Drag k through the surface z = x² + k·y². With k positive the point is elliptic, a bowl curving the same way in all directions, with positive Gaussian curvature. At k = 0 it is parabolic, a trough flat along one direction, with zero curvature. With k negative it is hyperbolic, a saddle with negative curvature. Almost every point of every surface is one of these three, and the type is a local invariant you cannot flatten away.", kind: "tut-point-types" },
+        ],
+      },
+      {
+        slug: "the-circle-of-curvature",
+        title: "The circle of curvature",
+        summary: "Curvature is an abstract number until you draw it. The osculating circle is the curve's best-fitting circle at a point, and its radius is exactly one over the curvature.",
+        steps: [
+          { heading: "Curvature you can measure", body: "How sharply a curve bends at a point is captured by a single number, the curvature κ. The cleanest way to feel it is the osculating circle: the unique circle that hugs the curve at that point, matching its position, its tangent, and its bending. Its radius is exactly 1/κ, so a gently bending curve has a big circle and a sharp turn has a tiny one. Here the curve is a bump, y = a·e^(−(x/w)²), and the circle is drawn at its apex. Drag w to make the bump wider and the circle swells; drag a to make it taller and sharper and the circle shrinks into the peak. At the top of this bump the curvature works out to 2a/w², so the radius is w²/2a, which is exactly what you watch the circle do as you slide the two knobs.", kind: "tut-osculating" },
         ],
       },
     ],
@@ -380,6 +412,14 @@ const SECTIONS = [
         steps: [
           { heading: "The butterfly", body: "The logistic map is chaos in discrete steps; the Lorenz system is chaos in continuous flow. Its three equations, x′ = 10(y−x), y′ = x(28−z)−y, z′ = xy − (8/3)z, came from a stripped-down model of atmospheric convection. A single trajectory, integrated forward, never repeats and never settles, yet it is drawn forever to a definite shape: two spiral wings the path weaves between unpredictably. This is the Lorenz attractor, the butterfly that gave chaos theory its name and its slogan that small causes can have large effects. Watch the trajectory draw itself, jumping between the wings with no pattern you can predict.", kind: "tut-lorenz" },
           { heading: "Another shape entirely", body: "Different equations fold space differently, and produce different attractors. The Rössler system, x′ = −y−z, y′ = x + 0.2y, z′ = 0.2 + z(x−5.7), is simpler than Lorenz, with only one nonlinear term, yet it is also chaotic. Its trajectory spirals outward in a nearly flat band, then periodically lifts up and folds back to the center, a stretch-and-fold that is the essential mechanism of chaos. Where Lorenz has two wings, Rössler has one spiral with a fold.", kind: "tut-rossler" },
+        ],
+      },
+      {
+        slug: "resonance",
+        title: "Resonance",
+        summary: "Push a damped oscillator at the right frequency and it answers with a huge swing. The resonance curve shows that answer as a function of how fast you push.",
+        steps: [
+          { heading: "The resonance peak", body: "Drive a damped oscillator, a mass on a spring, a tuned circuit, a swing being pushed, with a force that oscillates at frequency ω, and after the transients die away it settles into a steady oscillation. The amplitude of that response is A(ω) = F / √((ω₀² − ω²)² + (2ζω₀ω)²), and plotting it against the drive frequency ω gives the resonance curve. It peaks sharply when ω is near the natural frequency ω₀: push at the right rate and a small force produces a large swing. Drag ω₀ and the whole peak slides along the axis, since that is the frequency the system wants to move at. Drag the damping ζ and watch the peak's character change completely, light damping gives a tall narrow spike, a system that rings, while heavy damping flattens it into a broad gentle hump that barely responds. This single curve governs everything from a radio tuning to a bridge swaying in the wind.", kind: "tut-resonance" },
         ],
       },
     ],

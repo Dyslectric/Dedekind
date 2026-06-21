@@ -612,9 +612,9 @@ function build2DImplicitGPU(tNode, eqNode, pscope, color, fr){
   const frag=`precision highp float;
     ${decls}
     uniform vec3 uColor; varying vec2 vAb;
-    float F(float ${varA}, float ${varB}){ return ${g}; }
+    float _dedekind_field_(float ${varA}, float ${varB}){ return ${g}; }
     void main(){
-      float f=F(vAb.x, vAb.y);
+      float f=_dedekind_field_(vAb.x, vAb.y);
       // screen-space gradient magnitude of f → constant-width line
       float w=fwidth(f);
       if(w<1e-12){ discard; }
