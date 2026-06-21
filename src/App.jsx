@@ -32,6 +32,8 @@ import { lazy, Suspense } from "react";
 // chunk and never ships to normal visitors (only downloads on the #bench route).
 const Benchmarks = lazy(()=>import("./bench/Benchmarks.jsx").then(m=>({default:m.Benchmarks})));
 const isBenchHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "bench";
+const RawShowcases = lazy(()=>import("./landing/RawShowcases.jsx").then(m=>({default:m.RawShowcases})));
+const isRawShowcasesHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "raw-showcases";
 
 // ── Share page ───────────────────────────────────────────────────────────────
 // Renders a single camera from a shared payload. `camIdOverride` lets the mobile
@@ -828,6 +830,7 @@ export default function App(){
   // Benchmark harness (#bench): gated before any hook so the rules of hooks hold
   // (this component returns early and runs no hooks of its own on the bench path).
   if(isBenchHash(window.location.hash)) return <Suspense fallback={<div style={{minHeight:"100vh",background:"#070810"}}/>}><Benchmarks/></Suspense>;
+  if(isRawShowcasesHash(window.location.hash)) return <Suspense fallback={<div style={{minHeight:"100vh",background:"#070810"}}/>}><RawShowcases/></Suspense>;
   return <MainApp/>;
 }
 
