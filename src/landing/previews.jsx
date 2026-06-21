@@ -475,6 +475,33 @@ function implicitGalleryScene(){
   return {scene, camId, animated:true};
 }
 
+// Viviani's curve: the intersection of two implicit SURFACES. A sphere of radius
+// 2 and a cylinder of radius 1 tangent to the sphere's axis meet in a figure-eight
+// space curve. Two 3D equations wired into one transformer draw the curve
+// {F=0}∩{G=0} directly (no parametrization). The two faint surfaces are drawn
+// alongside so the curve reads as where they cross.
+function vivianiScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:160}));cam.label="Viviani's curve";
+  cam.props.orbRadius="7.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.05";
+  cam.props.spin="loop";cam.props.spinPeriod="30";
+  // sphere x²+y²+z² = 4
+  const sph=makeNode("equation",{x:360,y:120});sph.label="sphere";sph.color="#5b9cf6";
+  sph.props.dims="3d";sph.props.lhs="x^2 + y^2 + z^2";sph.props.rhs="4";
+  sph.props.varA="x";sph.props.varB="y";sph.props.varC="z";
+  // cylinder (x−1)² + y² = 1
+  const cyl=makeNode("equation",{x:360,y:300});cyl.label="cylinder";cyl.color="#52d47e";
+  cyl.props.dims="3d";cyl.props.lhs="(x-1)^2 + y^2";cyl.props.rhs="1";
+  cyl.props.varA="x";cyl.props.varB="y";cyl.props.varC="z";
+  // intersection curve transformer (both equations wired)
+  const tr=makeNode("transformer",{x:740,y:210});tr.label="∩ curve";tr.color="#ffd479";
+  tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-2.2";tr.props.cMax="2.2";
+  tr.props.res="96";
+  tr.attachments=[sph.id,cyl.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[sph.id]:sph,[cyl.id]:cyl,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
 // Register the new scenes alongside the originals.
 Object.assign(SCENES, {
   spheretorus: sphereTorusScene,
@@ -488,6 +515,7 @@ Object.assign(SCENES, {
   implicit: implicitGalleryScene,
   barth: barthScene,
   whitney: whitneyScene,
+  viviani: vivianiScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────
@@ -575,6 +603,25 @@ function tutSphereSliderScene(){
   tr.props.res="120";tr.props.colorMode="normal";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[r.id]:r,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step 4: two surfaces meet in a curve. A sphere and a cylinder, each its own
+// equation, wired into one transformer: it draws {F=0}∩{G=0} directly — Viviani's
+// figure-eight space curve, which no single lhs=rhs could express.
+function tutIntersectionScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:160}));cam.label="sphere ∩ cylinder";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.05";cam.props.spin="loop";cam.props.spinPeriod="30";
+  const sph=makeNode("equation",{x:360,y:120});sph.label="sphere";sph.color="#5b9cf6";
+  sph.props.dims="3d";sph.props.lhs="x^2 + y^2 + z^2";sph.props.rhs="4";
+  sph.props.varA="x";sph.props.varB="y";sph.props.varC="z";
+  const cyl=makeNode("equation",{x:360,y:300});cyl.label="cylinder";cyl.color="#52d47e";
+  cyl.props.dims="3d";cyl.props.lhs="(x-1)^2 + y^2";cyl.props.rhs="1";
+  cyl.props.varA="x";cyl.props.varB="y";cyl.props.varC="z";
+  const tr=makeNode("transformer",{x:740,y:210});tr.label="∩ curve";tr.color="#ffd479";
+  tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-2.2";tr.props.cMax="2.2";
+  tr.props.res="96";
+  tr.attachments=[sph.id,cyl.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[sph.id]:sph,[cyl.id]:cyl,[tr.id]:tr},camId:cam.id,animated:false};
 }
 // Quadric morph: x² + y² + s·z² = 1. One slider sweeps the whole family of
 // central quadrics — s>0 gives an ellipsoid/sphere, s=0 a cylinder, s<0 a
@@ -1149,6 +1196,7 @@ Object.assign(SCENES, {
   "tut-taylor-exp": tutTaylorExpScene,
   "tut-taylor-radius": tutTaylorRadiusScene,
   "tut-torus-level": tutTorusLevelScene,
+  "tut-intersection-curve": tutIntersectionScene,
   "tut-const-curve": tutConstCurveScene,
   "tut-slider-curve": tutSliderCurveScene,
   "tut-animator-curve": tutAnimatorCurveScene,

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
 import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU } from "./builders.js";
-import { marchingSquares, marchingCubes } from "./implicit.js";
+import { marchingSquares, marchingCubes, intersectionCurve3d } from "./implicit.js";
 import { buildImplicitRaymarch } from "./implicit-raymarch.js";
 
 // ── Transformer: render a pure map (fnMap) over a domain ─────────────────────
@@ -150,19 +150,33 @@ function placeGraph(tp, inVec, outVec, inDim, outDim){
 // Map a math triple [X,Y,Z] → three.js position (x, z, y).
 function toWorld(m){ return [m[0], m[2], m[1]]; }
 
-function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
+function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode2=null, scopeF=null, scopeG=null){
   const tp=tNode.props||{};
 
   // ── Implicit equation node ──
   // 2D: draw the curve lhs=rhs over the inline domain box (marching squares).
   // 3D: draw the surface lhs=rhs over the inline 3D box (marching cubes).
+  // Two 3D equations wired together: draw their intersection CURVE {F=0}∩{G=0}.
   if(eqNode){
     const is3d = (eqNode.props.dims||"2d")==="3d";
+    const eq2is3d = eqNode2 && (eqNode2.props.dims||"2d")==="3d";
     const aMin=resolveNum(tp.aMin,scope,-5), aMax=resolveNum(tp.aMax,scope,5);
     const bMin=resolveNum(tp.bMin,scope,-5), bMax=resolveNum(tp.bMax,scope,5);
 
     if(is3d){
       const cMin=resolveNum(tp.cMin,scope,-3), cMax=resolveNum(tp.cMax,scope,3);
+
+      // Intersection curve of two surfaces. Resolution drives the marching-cubes
+      // grid the curve is carved from, so the same box/res controls cost (O(res³)
+      // field eval); keep it modest. This is a CPU mesh-derived curve — animated
+      // sliders rebuild it (no GPU uniform path).
+      if(eq2is3d){
+        const ir=Math.max(8,Math.min(160,Math.round(resolveNum(tp.res,scope,64))));
+        const segs=intersectionCurve3d(eqNode, scopeF||scope, eqNode2, scopeG||scope,
+          aMin,aMax, bMin,bMax, cMin,cMax, ir);
+        if(!segs.length) return [];
+        return buildSegments3d(segs, color);
+      }
       // Prefer GPU ray marching: it renders the level set directly in a fragment
       // shader (no mesh extraction, no field readback), crisp at any zoom. Falls
       // back to the marching-cubes mesh when the expression can't transpile to GLSL.

@@ -271,27 +271,29 @@ function plotSignature(node, p, scope, nodes, animVals){
     let eqRaymarch=false;   // equation wired AND transpilable → GPU uniform path
     const structScopes=[];
     const animV=animVals||{};
+    const eqDeps=[];
     for(const depId of (node.attachments||[])){
       const dep=nodes[depId]; if(!dep) continue;
       if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
-      else if(dep.type==="equation"){
-        const q=dep.props; eqSig=`eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`;
-        eqRaymarch=eqTranspiles(dep);
-        const eqScope=resolveScope(dep.id,nodes,animV);
-        structScopes.push(eqScope);
-        // For the MESH fallback (non-transpilable), the equation is sampled on the
-        // CPU, so the scalar VALUES it references must be in the signature or an
-        // animated mesh surface would never rebuild. scopeSig on the transformer
-        // can't see them (they live in the equation's expression, not the
-        // transformer's), so fold them in here. For the raymarch path we skip this
-        // — those scalars are live uniforms and must NOT invalidate the cache.
-        if(!eqRaymarch){
-          const eqNodeForSig={ props:{ expr:`${q.lhs} ${q.rhs}` }, type:"__eqvals" };
-          eqSig += "|vals:" + scopeSig(eqNodeForSig, eqScope);
-        }
-      }
+      else if(dep.type==="equation"){ eqDeps.push(dep); structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="points"){ const q=dep.props; paramSig=`pts|${q.kind}|${q.mode}|${q.listPoints}|${q.idxPoint}|${q.idxCount}|${q.recInit}|${q.recStep}|${q.recCount}|${q.listGlyphs}|${q.idxGlyph}|${q.idxGlyphCount}|${q.recGlyphInit}|${q.recGlyphStep}|${q.recGlyphCount}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+    }
+    if(eqDeps.length){
+      // A single transpilable equation rides the GPU raymarch path: its scalars are
+      // live uniforms and must NOT enter the signature. TWO equations are an
+      // intersection curve (CPU mesh-derived), so values always fold in — an
+      // animated slider must rebuild the curve.
+      eqRaymarch = eqDeps.length===1 && eqTranspiles(eqDeps[0]);
+      for(const dep of eqDeps){
+        const q=dep.props;
+        eqSig += `eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC};`;
+        if(!eqRaymarch){
+          const eqScope=resolveScope(dep.id,nodes,animV);
+          const eqNodeForSig={ props:{ expr:`${q.lhs} ${q.rhs}` }, type:"__eqvals" };
+          eqSig += "vals:" + scopeSig(eqNodeForSig, eqScope) + ";";
+        }
+      }
     }
     pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__eqRaymarch:eqRaymarch};
     sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);

@@ -200,11 +200,11 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       objs=buildScalarVolume(p,scope,node.color||"#6df");
     }
     if(node.type==="transformer"){
-      let fnNode=null, paramNode=null, eqNode=null;
+      let fnNode=null, paramNode=null, eqNode=null, eqNode2=null;
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
         if(dep.type==="fnMap" && !fnNode) fnNode=dep;
-        else if(dep.type==="equation" && !eqNode) eqNode=dep;
+        else if(dep.type==="equation"){ if(!eqNode) eqNode=dep; else if(!eqNode2) eqNode2=dep; }
         else if(dep.type==="paramSpace" && !paramNode) paramNode=dep;
       }
       // Each structural input (fnMap / equation / paramSpace) owns its own
@@ -215,10 +215,15 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       const animV=animVals||{};
       const fnSc    = fnNode    ? resolveScope(fnNode.id, nodes, animV)    : null;
       const eqSc    = eqNode    ? resolveScope(eqNode.id, nodes, animV)    : null;
+      const eqSc2   = eqNode2   ? resolveScope(eqNode2.id, nodes, animV)   : null;
       const paramSc = paramNode ? resolveScope(paramNode.id, nodes, animV) : null;
       const tScope={...scope,
-        ...(paramSc||{}), ...(eqSc||{}), ...(fnSc||{})};
-      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode);
+        ...(paramSc||{}), ...(eqSc||{}), ...(eqSc2||{}), ...(fnSc||{})};
+      // Per-equation scopes for the intersection path so two equations referencing
+      // same-named scalars evaluate against their own wiring, not the merged scope.
+      const scopeF = eqNode  ? {...scope, ...(paramSc||{}), ...(fnSc||{}), ...(eqSc||{})}  : tScope;
+      const scopeG = eqNode2 ? {...scope, ...(paramSc||{}), ...(fnSc||{}), ...(eqSc2||{})} : tScope;
+      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG);
     }
     if(node.type==="pointSeq"){
       let pts, cols;

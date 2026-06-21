@@ -14,16 +14,22 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
   const mode=node.props.mode||"graph";
   const deps=(node.attachments||[]).map(id=>nodes[id]).filter(Boolean);
   const fnNode=deps.find(d=>d.type==="fnMap");
-  const eqNode=deps.find(d=>d.type==="equation");
+  const eqNodes=deps.filter(d=>d.type==="equation");
+  const eqNode=eqNodes[0];
+  const eqNode2=eqNodes[1];
   // ── Implicit transformer (equation wired) ──
   if(eqNode){
     const eq3d=(eqNode.props.dims||"2d")==="3d";
+    const eq2_3d=eqNode2 && (eqNode2.props.dims||"2d")==="3d";
+    const intersect = eq3d && eq2_3d;   // two 3D surfaces → intersection curve
     const va=(eqNode.props.varA||"x").trim()||"x";
     const vb=(eqNode.props.varB||"y").trim()||"y";
     const vc=(eqNode.props.varC||"z").trim()||"z";
     return <>
       <div style={{fontSize:14,color:TYPE_META.equation.tc,marginBottom:8,lineHeight:1.5,padding:"6px 8px",background:TYPE_META.equation.tc+"15",borderRadius:5,border:`1px solid ${TYPE_META.equation.tc}33`}}>
-        Implicit {eq3d?"surface":"curve"} from <strong>{eqNode.label}</strong>: drawing <em>{eqNode.props.lhs} = {eqNode.props.rhs}</em> over the sampling box below ({va}→a, {vb}→b{eq3d?`, ${vc}→c`:""}).
+        {intersect
+          ? <>Intersection curve of <strong>{eqNode.label}</strong> and <strong>{eqNode2.label}</strong>: drawing <em>{eqNode.props.lhs} = {eqNode.props.rhs}</em> ∩ <em>{eqNode2.props.lhs} = {eqNode2.props.rhs}</em> over the sampling box below.</>
+          : <>Implicit {eq3d?"surface":"curve"} from <strong>{eqNode.label}</strong>: drawing <em>{eqNode.props.lhs} = {eqNode.props.rhs}</em> over the sampling box below ({va}→a, {vb}→b{eq3d?`, ${vc}→c`:""}).{eqNode2&&!intersect?<> (Wire a second <strong>3D</strong> equation to draw an intersection curve; the current second equation is 2D and is ignored.)</>:null}</>}
       </div>
       <Sec title="Sampling box">
         {[[`${va}₀`,"aMin"],[`${va}₁`,"aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
@@ -34,7 +40,7 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
           Resolution is the grid divisions per axis; higher is smoother but slower{eq3d?" (cost grows cubically for surfaces — keep it modest)":""}. Updates live as you drag wired sliders.
         </div>
       </Sec>
-      {eq3d&&<Sec title="Display">
+      {eq3d&&!intersect&&<Sec title="Display">
         <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>
         <PR label="coloring">
           <select value={node.props.colorMode||"flat"} onChange={e=>set("colorMode",e.target.value)} style={{...S.inp,width:"100%"}}>

@@ -130,7 +130,64 @@ function marchingSquares(eqNode, scope, aMin, aMax, bMin, bMax, res){
   return segs;
 }
 
-export { marchingSquares, marchingCubes };
+export { marchingSquares, marchingCubes, intersectionCurve3d };
+
+// ── Intersection curve of two implicit surfaces ──────────────────────────────
+// Given two equation nodes F (lhs=rhs) and G (lhs=rhs), both in 3D, extract the
+// curve {F=0} ∩ {G=0} over the sampling box. We first triangulate F=0 with
+// marching cubes, then walk every triangle and find where G crosses zero on it:
+// G sampled at the three vertices is treated as linear over the triangle, so it
+// crosses on exactly 0 or 2 edges, giving one segment per crossed triangle. This
+// is "marching squares on the F mesh" — the standard way to intersect two level
+// sets without solving the coupled system directly.
+//
+// F is evaluated against scopeF (its own wired scalars), G against scopeG, so two
+// equations that happen to reference same-named sliders don't collide. Returns
+// segments [[ [x,y,z],[x,y,z] ], …] in math (varA,varB,varC) order, ready for
+// buildSegments3d (which bakes the world swap).
+function intersectionCurve3d(eqF, scopeF, eqG, scopeG, xMin,xMax, yMin,yMax, zMin,zMax, res){
+  const { positions } = marchingCubes(eqF, scopeF, xMin,xMax, yMin,yMax, zMin,zMax, res);
+  if(!positions.length) return [];
+
+  const pg = eqG.props || {};
+  const gA=(pg.varA||"x").trim()||"x";
+  const gB=(pg.varB||"y").trim()||"y";
+  const gC=(pg.varC||"z").trim()||"z";
+  const gExpr=`(${pg.lhs ?? "0"}) - (${pg.rhs ?? "0"})`;
+  const compiledG=compileExpr(gExpr);
+  if(!compiledG) return [];
+
+  // F's marched vertex carries math components (varA, varB, varC) = world axes
+  // (a→X, b→Y, c→Z). Bind G's three variables to those same axis positions so
+  // both surfaces live in one frame (consistent with the single-equation path).
+  const sc={...scopeG};
+  const evalG=(p)=>{
+    sc[gA]=p[0]; sc[gB]=p[1]; sc[gC]=p[2];
+    let v; try{ v=compiledG.evaluate(sc); }catch{ v=NaN; }
+    return (typeof v==="number" && isFinite(v)) ? v : NaN;
+  };
+  const lerp=(a,b,t)=>[a[0]+t*(b[0]-a[0]), a[1]+t*(b[1]-a[1]), a[2]+t*(b[2]-a[2])];
+
+  const segs=[];
+  for(let t=0; t+8<positions.length; t+=9){
+    const v0=[positions[t],   positions[t+1], positions[t+2]];
+    const v1=[positions[t+3], positions[t+4], positions[t+5]];
+    const v2=[positions[t+6], positions[t+7], positions[t+8]];
+    const g0=evalG(v0), g1=evalG(v1), g2=evalG(v2);
+    if(!(isFinite(g0)&&isFinite(g1)&&isFinite(g2))) continue;
+    const pts=[];
+    const edge=(a,b,ga,gb)=>{
+      if((ga>0)!==(gb>0)){
+        const d=ga-gb;
+        const tt=Math.abs(d)<1e-12?0.5:ga/d;
+        pts.push(lerp(a,b,tt<0?0:tt>1?1:tt));
+      }
+    };
+    edge(v0,v1,g0,g1); edge(v1,v2,g1,g2); edge(v2,v0,g2,g0);
+    if(pts.length===2) segs.push([pts[0],pts[1]]);
+  }
+  return segs;
+}
 
 // ── Marching cubes: extract the implicit surface F(x,y,z)=0 ───────────────────
 // Evaluates F = lhs - rhs over a 3D grid spanning [xMin..xMax]×[yMin..yMax]×
