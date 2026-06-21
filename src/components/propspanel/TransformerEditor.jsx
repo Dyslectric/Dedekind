@@ -78,26 +78,48 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
         // Render style is a single explicit toggle for the whole map.
         //   function — outputs are POSITIONS (curve/surface graphed)
         //   vector   — outputs are arrow DIRECTIONS seeded at input points
+        //   polar    — input is angle θ, output is radius r → (r cosθ, r sinθ)
+        //   spherical— inputs are angles θ,φ, output is radius r → sphere point
         // Coloring is independent: bind any one output to the Color target
         // in the assignment section below.
-        const cur = mode==="field" ? "vector" : "function";
-        const pick=(v)=> set2({mode: v==="vector" ? "field" : "graph"});
+        const cur = mode==="field" ? "vector" : (mode==="polar"||mode==="spherical") ? mode : "function";
+        const pick=(v)=> set2({mode: v==="vector" ? "field" : v==="function" ? "graph" : v});
+        // Polar reads ONE input as θ; spherical reads TWO inputs as θ,φ. Only offer
+        // each when the wired map has the matching input dimension, so you can't
+        // select a mode the map can't feed. (The render paths also guard on inDim,
+        // so an out-of-spec combination simply draws nothing.)
+        const polarOk = inDim===1, sphericalOk = inDim===2;
         return <>
           <PR label="render">
             <select value={cur} onChange={e=>pick(e.target.value)} style={{...S.inp,width:"100%"}}>
               <option value="function">function plot — outputs are positions</option>
               <option value="vector">vector field — outputs are arrow directions</option>
+              {(polarOk||cur==="polar")&&<option value="polar" disabled={!polarOk}>polar — input θ, output radius r = f(θ){polarOk?"":" (needs 1 input)"}</option>}
+              {(sphericalOk||cur==="spherical")&&<option value="spherical" disabled={!sphericalOk}>spherical — inputs θ,φ, output radius r = f(θ,φ){sphericalOk?"":" (needs 2 inputs)"}</option>}
             </select>
           </PR>
           <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
             {cur==="function"
-              ? <>Each output bound to X/Y/Z places that coordinate; {inDim===1?"1 input → curve":inDim===2?"2 inputs → surface":"3 inputs → solid point cloud"}. Bind an output to <em>Color</em> for a gradient.</>
+              ? <>Each output bound to X/Y/Z places that coordinate; {inDim===1?"1 input → curve":inDim===2?"2 inputs → surface":"3 inputs → solid point cloud"}. Bind an output to <em>Color</em> for a gradient. {inDim===1&&<>Switch the map to polar to read the input as an angle instead.</>}{inDim===2&&<>Switch the map to spherical to read the two inputs as angles instead.</>}</>
+              : cur==="polar"
+              ? <>The input is read as an angle θ and the first output as a radius r, plotting r = f(θ) as a polar curve. Set the θ range below (e.g. 0 to 2π).{!polarOk&&<> <strong>This map has {inDim} inputs; polar needs exactly 1.</strong></>}</>
+              : cur==="spherical"
+              ? <>Two inputs are read as angles θ (azimuth) and φ (polar), the first output as a radius r, drawing the surface r = f(θ,φ). Set θ to 0…2π and φ to 0…π.{!sphericalOk&&<> <strong>This map has {inDim} inputs; spherical needs exactly 2.</strong></>}</>
               : <>Draws an arrow at each input sample; outputs bound to X/Y/Z form the arrow vector. Bind an output to <em>Color</em> for a gradient.</>}
           </div>
         </>;
       })()}
     </Sec>
-    {fnNode&&(()=>{
+    {fnNode&&(mode==="polar"||mode==="spherical")&&(
+      <Sec title="Coordinate roles">
+        <div style={{fontSize:13,color:ui.uiMuted,lineHeight:1.6}}>
+          {mode==="polar"
+            ? <>This mode fixes the roles, so there is nothing to bind: the <em>input</em> is the angle θ and <em>out0</em> is the radius r. The point is drawn at (r·cosθ, r·sinθ). Set the θ range in <em>Domain</em> below.</>
+            : <>This mode fixes the roles: the two <em>inputs</em> are the angles θ (azimuth) and φ (polar), and <em>out0</em> is the radius r. The point is drawn at (r·sinφ·cosθ, r·sinφ·sinθ, r·cosφ). Set the θ and φ ranges in <em>Domain</em> below.</>}
+        </div>
+      </Sec>
+    )}
+    {fnNode&&mode!=="polar"&&mode!=="spherical"&&(()=>{
       // Per-output binding targets with STEAL semantics: choosing a target
       // already held by another output moves it (old holder → none). X/Y/Z
       // and Color are each unique across outputs; "—" is unbounded.
@@ -169,10 +191,12 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
       {inDim>=4&&[["w0","dMin"],["w1","dMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
       <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
     </Sec>
-    {mode==="graph"&&inDim===2&&<Sec title="Display">
+    {((mode==="graph"&&inDim===2)||mode==="spherical")&&<Sec title="Display">
       <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        For a 2-input graph surface. Off renders a single shaded mesh (GPU-accelerated) — faster for dense or animated maps.
+        {mode==="spherical"
+          ? <>For the spherical surface. Off renders a single shaded mesh (GPU-accelerated) — faster for dense or animated maps.</>
+          : <>For a 2-input graph surface. Off renders a single shaded mesh (GPU-accelerated) — faster for dense or animated maps.</>}
       </div>
     </Sec>}
     {(()=>{

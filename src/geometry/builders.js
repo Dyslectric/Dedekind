@@ -52,17 +52,30 @@ function buildSurfGPU(kind, p, scope, color){
     : { uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax };
   return assembleSurfGPU(bodyP, [...uniforms], scope, color, ures, vres, showWire,
     null, { uDomU:[umin,umax], uDomV:[vmin,vmax],
-            expr:domExpr, defs:{ uMin:umin, uMax:umax, vMin:vmin, vMax:vmax } });
+            expr:domExpr, defs:{ uMin:umin, uMax:umax, vMin:vmin, vMax:vmax } }, p.wireOnly===true);
 }
 // Given a GLSL body that sets `vec3 P` (math-order x,y,z) from grid coords d∈[0,1]²,
 // build the unit grid geometry + fill/wire shader meshes. Shared by analytic
 // surfaces and GPU-accelerated graph-mode transformers. `colorOpts` (optional):
 // { colorBody, colorLo, colorHi, cmin, cmax } enables per-vertex gradient fill.
-function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colorOpts, domain){
+function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colorOpts, domain, wireOnly){
   const geo = new THREE.PlaneGeometry(1,1, ures-1, vres-1);
   const arr = geo.attributes.position.array;
   for(let i=0;i<arr.length;i+=3){ arr[i]+=0.5; arr[i+1]+=0.5; arr[i+2]=0; }
   geo.attributes.position.needsUpdate = true;
+  // Wire-only: render the grid lines alone, no shaded fill. Used to draw a line
+  // FAMILY (e.g. a tangent-line sweep) where the isolines are the content and a
+  // solid sheet would bury them. The wire gets full opacity here since there is
+  // no fill behind it.
+  if(wireOnly){
+    const matW = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain);
+    matW.uniforms.uColor.value = new THREE.Color(hexToThree(color));
+    matW.transparent = true; matW.opacity = 0.5;
+    const w = new THREE.Mesh(geo, matW);
+    w.frustumCulled = false;
+    w._gpuSurface = { uNames, domain: domain||null };
+    return [w];
+  }
   const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts, domain);
   const mesh = new THREE.Mesh(geo, matFill);
   // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
@@ -87,6 +100,31 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   wire._gpuSurface = { uNames, domain: domain||null };
   return [mesh, wire];
 }
+// GPU-accelerated SPHERICAL transformer: a 2-input map r = f(θ,φ) drawn as a
+// surface, with vertex positions computed in the shader. θ (=x grid coord) is the
+// azimuth and φ (=y) the polar angle; out0 is the radius. The point is placed at
+// (r·sinφ·cosθ, r·sinφ·sinθ, r·cosφ) in math order — the surface shader applies
+// the math→three swap itself. Returns null (→ CPU buildSurf) if out0 can't
+// transpile to GLSL. This is the parallel-friendly case worth accelerating: every
+// vertex is independent, so the whole grid evaluates in one shader pass.
+function buildTransformerSphericalGPU(tp, outs, scope, color){
+  const aMin=resolveNum(tp.aMin,scope,0),aMax=resolveNum(tp.aMax,scope,6.2832);
+  const bMin=resolveNum(tp.bMin,scope,0),bMax=resolveNum(tp.bMax,scope,3.14159);
+  const res=Math.max(2,Math.min(512,Math.round(resolveNum(tp.res,scope,40))));
+  const uniforms=new Set();
+  // radius from out0, in terms of grid symbols x=θ, y=φ
+  const rG=exprToGLSL(outs[0]||"0", new Set(["x","y"]), uniforms);
+  if(rG==null) return null;
+  // grid coords _gd.x∈[0,1]→θ (x), _gd.y∈[0,1]→φ (y); then place the spherical
+  // point. `_r` holds the radius once so the expression is evaluated a single time.
+  const bodyP = `x = ${_glslNum(aMin)} + _gd.x*${_glslNum(aMax-aMin)};
+                 y = ${_glslNum(bMin)} + _gd.y*${_glslNum(bMax-bMin)};
+                 float _r = ${rG};
+                 float _sp = sin(y);
+                 vec3 P = vec3(_r*_sp*cos(x), _r*_sp*sin(x), _r*cos(y));`;
+  return assembleSurfGPU(bodyP, [...uniforms], scope, color, res, res, tp.showWire!==false);
+}
+
 // GPU-accelerated graph-mode transformer with TWO inputs → a surface.
 // The two input axes sweep a grid (a,b) ∈ [aMin,aMax]×[bMin,bMax], mapped to the
 // map's input symbols x=a, y=b. Each world axis (X,Y,Z math-order) is filled by
@@ -140,7 +178,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     }
     // if color expr can't transpile, fall back to flat-colored GPU surface
   }
-  return assembleSurfGPU(bodyP, [...uniforms], scope, color, res, res, tp.showWire!==false, colorOpts);
+  return assembleSurfGPU(bodyP, [...uniforms], scope, color, res, res, tp.showWire!==false, colorOpts, null, tp.wireOnly===true);
 }
 
 function buildFn1dGPU(p, scope, color){
@@ -682,5 +720,5 @@ function buildScalarVolume(p, scope, color){
 }
 
 export {
-  buildSurfGPU, buildTransformerGraphGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
+  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
 };

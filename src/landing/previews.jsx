@@ -575,6 +575,178 @@ function tutSphereSliderScene(){
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[r.id]:r,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
 }
+// Quadric morph: x² + y² + s·z² = 1. One slider sweeps the whole family of
+// central quadrics — s>0 gives an ellipsoid/sphere, s=0 a cylinder, s<0 a
+// one-sheet hyperboloid. The same degree-2 equation, three different surfaces.
+function tutQuadricMorphScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="drag s: ellipsoid ↔ hyperboloid";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="36";
+  const s=makeNode("slider",{x:40,y:320});s.name="s";s.label="s · z² coefficient";s.value=1;
+  s.props.min="-1.5";s.props.max="1.5";s.props.step="0.01";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="x² + y² + s·z² = 1";eq.color="#9b8cff";
+  eq.props.dims="3d";eq.props.lhs="x^2 + y^2 + s*z^2";eq.props.rhs="1";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  eq.attachments=[s.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#9b8cff";
+  tr.props.mode="graph";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";tr.props.cMin="-3";tr.props.cMax="3";
+  tr.props.res="140";tr.props.colorMode="normal";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+// The hyperbolic paraboloid z = x² − y²: the saddle, a doubly-ruled quadric that
+// curves up one way and down the other. The classic Pringle.
+function tutQuadricSaddleScene(){
+  return _implicitScene("hyperbolic paraboloid (saddle)","z","x^2 - y^2",2.2,"normal",6.5);
+}
+
+// The cone x² + y² = z²: the boundary case between the one- and two-sheet
+// hyperboloids, where the surface pinches to a single point.
+function tutQuadricConeScene(){
+  return _implicitScene("a cone","x^2 + y^2","z^2",2.2,"normal",6.5);
+}
+
+// A polar rose r = cos(k·θ), drawn with the transformer's native polar mode: the
+// fnMap is just r = cos(k·θ), and polar mode places it at (r cosθ, r sinθ). The
+// petal count is a slider: odd k gives k petals, even k gives 2k.
+function tutPolarRoseScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="r = cos(k·θ)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.2";
+  const k=makeNode("slider",{x:20,y:320});k.name="k";k.label="k · petals";k.value=3;
+  k.props.min="1";k.props.max="8";k.props.step="1";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="r(θ) = cos(k·θ)";fn.color="#ff5ea8";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="cos(k*x)";fn.attachments=[k.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="polar curve";tr.color="#ff5ea8";
+  tr.props.mode="polar";tr.props.aMin="0";tr.props.aMax="6.2832";tr.props.res="600";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[k.id]:k,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// A cardioid/limaçon r = a + cos(θ) via polar mode; the offset a turns the
+// cardioid into the family of limaçons (inner loop when a < 1).
+function tutPolarCardioidScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="r = a + cos(θ)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.4";cam.props.planeOx="0.3";
+  const a=makeNode("slider",{x:20,y:320});a.name="a";a.label="a · offset";a.value=1;
+  a.props.min="0.3";a.props.max="2";a.props.step="0.01";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="r(θ) = a + cos(θ)";fn.color="#ff9e64";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="a + cos(x)";fn.attachments=[a.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="polar curve";tr.color="#ff9e64";
+  tr.props.mode="polar";tr.props.aMin="0";tr.props.aMax="6.2832";tr.props.res="600";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// A spherical surface r = 1 + 0.18·sin(mθ)·sin(nφ): a bumpy sphere drawn with the
+// transformer's spherical mode, where the radius is modulated by the two angles.
+function tutPolarSpiralScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="r = 1 + bumps(θ,φ)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="4.2";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="32";
+  const m=makeNode("slider",{x:20,y:320});m.name="m";m.label="m · azimuth bumps";m.value=6;
+  m.props.min="1";m.props.max="10";m.props.step="1";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="r(θ,φ)";fn.color="#5ad1e6";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="1 + 0.18*sin(m*x)*sin(4*y)";fn.attachments=[m.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="spherical";tr.color="#5ad1e6";
+  tr.props.mode="spherical";tr.props.aMin="0";tr.props.aMax="6.2832";tr.props.bMin="0";tr.props.bMax="3.14159";
+  tr.props.res="80";tr.props.colorMode="normal";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[m.id]:m,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+// Transformer modes — the same transformer node reads its inputs three ways.
+// Graph mode: a fnMap of two inputs becomes a height surface z = f(x,y).
+function tutModeGraphScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="graph mode: z = f(x,y)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="34";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="f(x,y)";fn.color="#5b9cf6";fn.props.inDim="2";fn.props.outDim="1";
+  fn.props.out0="cos(x)*sin(y)";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#5b9cf6";
+  tr.props.mode="graph";tr.props.aMin="-3.1";tr.props.aMax="3.1";tr.props.bMin="-3.1";tr.props.bMax="3.1";
+  tr.props.res="120";tr.props.colorMode="normal";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+// Parametric mode: a paramSpace traces a path from a single parameter t.
+function tutModeParamScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="parametric mode: a curve in t";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="8";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="30";
+  const ps=makeNode("paramSpace",{x:520,y:160});ps.label="helix";ps.color="#5be0c0";
+  ps.props.degree="1";ps.props.exprX="cos(t)";ps.props.exprY="sin(t)";ps.props.exprZ="0.16*t";
+  ps.props.tMin="0";ps.props.tMax="18.85";ps.props.res="500";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:true};
+}
+
+// Field mode: a fnMap of two outputs becomes an arrow at every sample point.
+function tutModeFieldScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="field mode: a vector at each point";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.props.inDim="2";fn.props.outDim="2";
+  fn.props.out0="-y";fn.props.out1="x";
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="field";tr.color="#ffb454";
+  tr.props.mode="field";tr.props.inAxis0="x";tr.props.inAxis1="y";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
+  tr.props.res="15";tr.props.arrowLen="0.3";tr.props.normalize=true;
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Taylor series of eˣ: drag N and the polynomial chases the exponential, matching
+// it over a widening interval. Like sin, eˣ is entire — the series converges for
+// every x.
+function tutTaylorExpScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag N: Taylor of eˣ";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="4";cam.props.planeOx="0";cam.props.planeOy="3";
+  const N=makeNode("slider",{x:20,y:320});N.name="N";N.label="N · terms";N.value=3;
+  N.props.min="0";N.props.max="12";N.props.step="1";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="Taylor eˣ";fn.color="#a6e3a1";
+  fn.props.inDim="1";fn.props.outDim="1";
+  fn.props.out0="summation(x^j / factorial(j), j, 0, N)";
+  fn.attachments=[N.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";
+  tr.props.aMin="-4";tr.props.aMax="3";tr.props.res="240";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Radius of convergence: the geometric series Σxʲ equals 1/(1−x), but only for
+// |x| < 1. Drag N and the partial sums hug the true curve inside the unit
+// interval while blowing up outside it — the series has a hard wall at x = ±1.
+function tutTaylorRadiusScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag N: a radius of convergence";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";cam.props.planeOx="0";cam.props.planeOy="1.5";
+  const N=makeNode("slider",{x:20,y:320});N.name="N";N.label="N · terms";N.value=6;
+  N.props.min="0";N.props.max="24";N.props.step="1";
+  // partial sum of the geometric series
+  const fn=makeNode("fnMap",{x:360,y:120});fn.label="Σ xʲ";fn.color="#ffcf6e";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="summation(x^j, j, 0, N)";fn.attachments=[N.id];
+  const tr=makeNode("transformer",{x:700,y:120});tr.label="partial sum";tr.color="#ffcf6e";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";
+  tr.props.aMin="-1.4";tr.props.aMax="0.95";tr.props.res="240";
+  tr.attachments=[fn.id];
+  // the true limit 1/(1-x) for comparison
+  const fn2=makeNode("fnMap",{x:360,y:300});fn2.label="1/(1−x)";fn2.color="#5b9cf6";
+  fn2.props.inDim="1";fn2.props.outDim="1";fn2.props.out0="1/(1 - x)";
+  const tr2=makeNode("transformer",{x:700,y:300});tr2.label="limit";tr2.color="#5b9cf6";
+  tr2.props.mode="graph";tr2.props.inAxis0="x";tr2.props.outAxis0="y";
+  tr2.props.aMin="-1.4";tr2.props.aMax="0.95";tr2.props.res="240";
+  tr2.attachments=[fn2.id];
+  cam.attachments=[tr2.id,tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[fn.id]:fn,[tr.id]:tr,[fn2.id]:fn2,[tr2.id]:tr2},camId:cam.id,animated:false};
+}
+
 // Step 3: a genuine variety. A torus level set, the next step up in complexity
 // from a sphere, still a single readable equation.
 function tutTorusLevelScene(){
@@ -599,6 +771,17 @@ Object.assign(SCENES, {
   "tut-fn-field": tutFnFieldScene,
   "tut-sphere": tutSphereScene,
   "tut-sphere-slider": tutSphereSliderScene,
+  "tut-quadric-morph": tutQuadricMorphScene,
+  "tut-quadric-saddle": tutQuadricSaddleScene,
+  "tut-quadric-cone": tutQuadricConeScene,
+  "tut-polar-rose": tutPolarRoseScene,
+  "tut-polar-cardioid": tutPolarCardioidScene,
+  "tut-spherical": tutPolarSpiralScene,
+  "tut-mode-graph": tutModeGraphScene,
+  "tut-mode-param": tutModeParamScene,
+  "tut-mode-field": tutModeFieldScene,
+  "tut-taylor-exp": tutTaylorExpScene,
+  "tut-taylor-radius": tutTaylorRadiusScene,
   "tut-torus-level": tutTorusLevelScene,
   "tut-const-curve": tutConstCurveScene,
   "tut-slider-curve": tutSliderCurveScene,
@@ -639,6 +822,14 @@ Object.assign(SCENES, {
   "tut-integral-area": tutIntegralAreaScene,
   "tut-frame-tube": tutFrameTubeScene,
   "tut-frame-moving": tutFrameMovingScene,
+  "tut-tangent-line": tutTangentLineScene,
+  "tut-tangent-plane": tutTangentPlaneScene,
+  "tut-tangent-bundle": tutTangentBundleScene,
+  "tut-frenet": tutFrenetScene,
+  "tut-geodesic-sphere": tutGeodesicSphereScene,
+  "tut-geodesic-compare": tutGeodesicCompareScene,
+  "tut-gauss-curvature": tutGaussCurvatureScene,
+  "tut-point-types": tutPointTypesScene,
   "tut-combine-inputs": tutCombineInputsScene,
   "tut-curve-family": tutCurveFamilyScene,
   "tut-taylor": tutTaylorScene,
@@ -1260,6 +1451,263 @@ function tutFrameMovingScene(){
   mark.props.drawLines=false;mark.props.radius="0.13";mark.attachments=[s.id];
   const cam3=cam;cam3.attachments=[curve.id,mark.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[curve.id]:curve,[mark.id]:mark,[s.id]:s},camId:cam.id,animated:true};
+}
+
+// ── Tangent spaces and the tangent bundle ──
+
+// A tangent LINE to a plane curve: the parabola y=x² with its tangent at a point
+// you drag. The tangent is the best straight-line approximation at that point.
+function tutTangentLineScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="tangent line at x = a";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";cam.props.planeOy="2";
+  const a=makeNode("slider",{x:20,y:340});a.name="a";a.label="a · contact point";a.value=0.8;
+  a.props.min="-2";a.props.max="2";a.props.step="0.01";
+  // the parabola
+  const fn=makeNode("fnMap",{x:360,y:120});fn.label="y = x²";fn.color="#7ad7ff";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="x^2";
+  const tr=makeNode("transformer",{x:700,y:120});tr.label="curve";tr.color="#7ad7ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";tr.props.aMin="-2.4";tr.props.aMax="2.4";tr.props.res="200";
+  tr.attachments=[fn.id];
+  // tangent line through (a, a²) with slope 2a: a 2-point segment over i=0..1
+  // x = a-1 + 2i, y = a² + 2a(x-a). At i=0: x=a-1; at i=1: x=a+1.
+  const tan=makeNode("points",{x:360,y:300});tan.label="tangent";tan.color="#ffcf6e";
+  tan.props.kind="points";tan.props.mode="index";
+  tan.props.idxPoint="a - 1 + 2*i, a*a + 2*a*((a-1+2*i) - a), 0";tan.props.idxCount="2";
+  tan.props.drawLines=true;tan.props.radius="0";tan.attachments=[a.id];
+  // the point of tangency
+  const pt=makeNode("points",{x:360,y:440});pt.label="contact";pt.color="#ff5ea8";
+  pt.props.kind="points";pt.props.mode="index";pt.props.idxPoint="a, a*a, 0";pt.props.idxCount="1";
+  pt.props.drawLines=false;pt.props.radius="5";pt.attachments=[a.id];
+  cam.attachments=[tr.id,tan.id,pt.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[fn.id]:fn,[tr.id]:tr,[tan.id]:tan,[pt.id]:pt},camId:cam.id,animated:false};
+}
+
+// A tangent PLANE on a surface: the saddle z=x²−y² with its tangent plane at a
+// point you drag. The plane touches at one point and is the linear approximation.
+function tutTangentPlaneScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="tangent plane on a saddle";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="6.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="38";
+  const a=makeNode("slider",{x:20,y:320});a.name="a";a.label="a · base x";a.value=0.7;
+  a.props.min="-1.3";a.props.max="1.3";a.props.step="0.01";
+  const b=makeNode("slider",{x:20,y:400});b.name="b";b.label="b · base y";b.value=0.5;
+  b.props.min="-1.3";b.props.max="1.3";b.props.step="0.01";
+  // the saddle surface z = x² − y²
+  const surf=makeNode("paramsurf",{x:520,y:120});surf.label="z = x²−y²";surf.color="#9b8cff";
+  surf.props.exprX="u";surf.props.exprY="v";surf.props.exprZ="u*u - v*v";
+  surf.props.uMin="-1.5";surf.props.uMax="1.5";surf.props.vMin="-1.5";surf.props.vMax="1.5";
+  surf.props.uRes="40";surf.props.vRes="40";
+  // tangent plane at (a,b): z = a²−b² + 2a(x−a) − 2b(y−b). Parameterize a small
+  // patch in (u,v) around the base point, u,v ∈ [-0.6,0.6].
+  const plane=makeNode("paramsurf",{x:520,y:320});plane.label="tangent plane";plane.color="#ffcf6e";
+  plane.props.exprX="a + u";plane.props.exprY="b + v";
+  plane.props.exprZ="(a*a - b*b) + 2*a*u - 2*b*v";
+  plane.props.uMin="-0.6";plane.props.uMax="0.6";plane.props.vMin="-0.6";plane.props.vMax="0.6";
+  plane.props.uRes="2";plane.props.vRes="2";plane.attachments=[a.id,b.id];
+  const pt=makeNode("points",{x:520,y:460});pt.label="contact";pt.color="#ff5ea8";
+  pt.props.kind="points";pt.props.mode="index";pt.props.idxPoint="a, b, a*a - b*b";pt.props.idxCount="1";
+  pt.props.drawLines=false;pt.props.radius="0.07";pt.attachments=[a.id,b.id];
+  cam.attachments=[surf.id,plane.id,pt.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b,[surf.id]:surf,[plane.id]:plane,[pt.id]:pt},camId:cam.id,animated:true};
+}
+
+// The tangent BUNDLE of a circle, drawn as the family of tangent LINES. At angle
+// θ the fiber is the full tangent line base + L·(tangent direction); sweeping θ
+// over the circle and L over the fiber sweeps a sheet that fills the exterior.
+// Rendered as a wireframe surface viewed top-down: each constant-θ line is one
+// tangent line, and they crowd (brighten) near the circle and thin out beyond it.
+function tutTangentBundleScene(){
+  const project=makeProjectNode("preview");
+  // a 3D camera looking straight down gives a clean 2D view while letting the
+  // wireframe surface (the line family) render.
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="the tangent bundle fills the exterior";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7.2";cam.props.orbTheta="0";cam.props.orbPhi="0.04";cam.props.spin="off";
+  cam.props.showAxes=false;cam.props.showGrid=false;
+  // map (u=θ, v=L) → planar point P = base(θ) + L·tangent(θ), z=0
+  //   base = (cosθ, sinθ),  tangent = (−sinθ, cosθ)
+  // A paramsurf lets us set uRes high (many tangent lines) and vRes=2 (just the
+  // two fiber endpoints). With only 2 rows there are no interior constant-L rings
+  // to chord across the circle; the only cross-lines are the two far outer edges,
+  // and every constant-θ isoline is one tangent line, staying outside (r=√(1+L²)).
+  const surf=makeNode("paramsurf",{x:520,y:160});surf.label="tangent lines";surf.color="#ffb454";
+  surf.props.exprX="cos(u) - v*sin(u)";
+  surf.props.exprY="sin(u) + v*cos(u)";
+  surf.props.exprZ="0";
+  surf.props.uMin="0";surf.props.uMax="6.2832";surf.props.vMin="-2.6";surf.props.vMax="2.6";
+  surf.props.uRes="200";surf.props.vRes="2";
+  surf.props.showWire=true;surf.props.wireOnly=true;
+  // the base circle itself, drawn bright on top
+  const circle=makeNode("paramSpace",{x:340,y:340});circle.label="circle";circle.color="#7ad7ff";
+  circle.props.degree="1";circle.props.exprX="cos(t)";circle.props.exprY="sin(t)";circle.props.exprZ="0";
+  circle.props.tMin="0";circle.props.tMax="6.2832";circle.props.res="240";
+  cam.attachments=[surf.id,circle.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[surf.id]:surf,[circle.id]:circle},camId:cam.id,animated:false};
+}
+
+// ── The Frenet frame ──
+
+// The moving TNB frame: tangent, normal, binormal as three orthonormal arrows
+// riding along a helix. Drag/animate s and the frame turns as the curve twists.
+function tutFrenetScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="the Frenet frame (T, N, B)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const s=makeNode("animator",{x:40,y:340});s.name="s";s.value=0;
+  s.props.min="0";s.props.max="18.85";s.props.period="13";s.props.loop="loop";s.playing=true;
+  // helix r(t)=(cos t, sin t, t/3)
+  const curve=makeNode("paramSpace",{x:300,y:80});curve.label="helix";curve.color="#7ad7ff";
+  curve.props.degree="1";curve.props.exprX="cos(t)";curve.props.exprY="sin(t)";curve.props.exprZ="t/3";
+  curve.props.tMin="0";curve.props.tMax="18.85";curve.props.res="320";
+  // c=1/3, |r'|=sqrt(1+1/9)=sqrt(10)/3≈1.0541. T=(-sin,cos,1/3)/|r'|.
+  // N=(-cos,-sin,0). B=T×N. Base point P=(cos s, sin s, s/3). Arrow length L=0.7.
+  const P="cos(s), sin(s), s/3";
+  const L=0.7, sp=Math.sqrt(1+1/9); // |r'|
+  // T components
+  const Tx=`(-sin(s))/${sp}`, Ty=`(cos(s))/${sp}`, Tz=`(1/3)/${sp}`;
+  // N components
+  const Nx="(-cos(s))", Ny="(-sin(s))", Nz="0";
+  // B = T × N
+  const Bx=`((${Ty})*(${Nz}) - (${Tz})*(${Ny}))`;
+  const By=`((${Tz})*(${Nx}) - (${Tx})*(${Nz}))`;
+  const Bz=`((${Tx})*(${Ny}) - (${Ty})*(${Nx}))`;
+  const arrow=(name,col,vx,vy,vz)=>{
+    const n=makeNode("points",{x:300,y:200});n.label=name;n.color=col;
+    n.props.kind="points";n.props.mode="index";
+    n.props.idxPoint=`cos(s) + i*${L}*(${vx}), sin(s) + i*${L}*(${vy}), s/3 + i*${L}*(${vz})`;
+    n.props.idxCount="2";n.props.drawLines=true;n.props.radius="0";n.attachments=[s.id];
+    return n;
+  };
+  const Tn=arrow("T",  "#ff5ea8", Tx,Ty,Tz);
+  const Nn=arrow("N",  "#5be0c0", Nx,Ny,Nz);
+  const Bn=arrow("B",  "#ffcf6e", Bx,By,Bz);
+  const mark=makeNode("points",{x:300,y:440});mark.label="point";mark.color="#ffffff";
+  mark.props.kind="points";mark.props.mode="index";mark.props.idxPoint=P;mark.props.idxCount="1";
+  mark.props.drawLines=false;mark.props.radius="0.09";mark.attachments=[s.id];
+  cam.attachments=[curve.id,Tn.id,Nn.id,Bn.id,mark.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[curve.id]:curve,[Tn.id]:Tn,[Nn.id]:Nn,[Bn.id]:Bn,[mark.id]:mark},camId:cam.id,animated:true};
+}
+
+// ── Geodesics ──
+
+// A geodesic on the sphere is a great circle. Show it as the straightest path
+// between two MARKED points: a faint globe, endpoints A and B, the great-circle
+// arc joining them, and a marker that travels the arc so it reads as a path.
+function tutGeodesicSphereScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="the straightest path from A to B";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="4.2";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="44";
+  // a faint, coarse wireframe globe so the arc reads clearly on top of it
+  const fn=makeNode("fnMap",{x:300,y:60});fn.label="unit sphere";fn.color="#3d6fb4";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="1";
+  const tr=makeNode("transformer",{x:620,y:60});tr.label="globe";tr.color="#3d6fb4";
+  tr.props.mode="spherical";tr.props.aMin="0";tr.props.aMax="6.2832";tr.props.bMin="0";tr.props.bMax="3.14159";
+  tr.props.res="18";tr.props.showWire=true;
+  // two endpoints on the sphere. A and B are unit vectors; the geodesic is the
+  // great-circle arc between them, drawn via slerp over s∈[0,1].
+  const A=[Math.cos(0.5)*Math.cos(-1.1), Math.cos(0.5)*Math.sin(-1.1), Math.sin(0.5)];
+  const B=[Math.cos(0.95)*Math.cos(1.2), Math.cos(0.95)*Math.sin(1.2), Math.sin(0.95)];
+  const dot=A[0]*B[0]+A[1]*B[1]+A[2]*B[2], Om=Math.acos(Math.max(-1,Math.min(1,dot))), sOm=Math.sin(Om);
+  const w0=`sin((1-t)*${Om})/${sOm}`, w1=`sin(t*${Om})/${sOm}`;
+  const arc=makeNode("paramSpace",{x:300,y:240});arc.label="geodesic arc";arc.color="#ffcf6e";
+  arc.props.degree="1";
+  arc.props.exprX=`${w0}*(${A[0]}) + ${w1}*(${B[0]})`;
+  arc.props.exprY=`${w0}*(${A[1]}) + ${w1}*(${B[1]})`;
+  arc.props.exprZ=`${w0}*(${A[2]}) + ${w1}*(${B[2]})`;
+  arc.props.tMin="0";arc.props.tMax="1";arc.props.res="200";
+  // endpoint dots A and B
+  const ends=makeNode("points",{x:300,y:380});ends.label="A, B";ends.color="#ff5ea8";
+  ends.props.kind="points";ends.props.mode="index";
+  ends.props.idxPoint=`(i<0.5)*(${A[0]}) + (i>0.5)*(${B[0]}), (i<0.5)*(${A[1]}) + (i>0.5)*(${B[1]}), (i<0.5)*(${A[2]}) + (i>0.5)*(${B[2]})`;
+  ends.props.idxCount="2";ends.props.drawLines=false;ends.props.radius="0.08";
+  // a marker that travels the geodesic
+  const s=makeNode("animator",{x:40,y:470});s.name="s";s.value=0;
+  s.props.min="0";s.props.max="1";s.props.period="6";s.props.loop="bounce";s.playing=true;
+  const ws0=`sin((1-s)*${Om})/${sOm}`, ws1=`sin(s*${Om})/${sOm}`;
+  const mover=makeNode("points",{x:300,y:520});mover.label="traveler";mover.color="#ffffff";
+  mover.props.kind="points";mover.props.mode="index";
+  mover.props.idxPoint=`${ws0}*(${A[0]}) + ${ws1}*(${B[0]}), ${ws0}*(${A[1]}) + ${ws1}*(${B[1]}), ${ws0}*(${A[2]}) + ${ws1}*(${B[2]})`;
+  mover.props.idxCount="1";mover.props.drawLines=false;mover.props.radius="0.06";mover.attachments=[s.id];
+  cam.attachments=[tr.id,arc.id,ends.id,mover.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[arc.id]:arc,[ends.id]:ends,[mover.id]:mover,[s.id]:s},camId:cam.id,animated:true};
+}
+
+// Geodesic vs the obvious route: between two points at the SAME latitude, the
+// constant-latitude path (pink) looks natural but is longer than the great-circle
+// arc (green), which bows toward the pole. Same two endpoints, two routes.
+function tutGeodesicCompareScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="great circle (green) beats latitude (pink)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="4.0";cam.props.orbTheta="0.5";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="44";
+  const fn=makeNode("fnMap",{x:300,y:60});fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="1";
+  const tr=makeNode("transformer",{x:620,y:60});tr.label="globe";tr.color="#3d6fb4";
+  tr.props.mode="spherical";tr.props.aMin="0";tr.props.aMax="6.2832";tr.props.bMin="0";tr.props.bMax="3.14159";
+  tr.props.res="18";tr.props.showWire=true;
+  // two points at latitude 0.7 (above the equator), longitudes ±1.2. The latitude
+  // path holds z constant; the great-circle arc between the same points is shorter.
+  const lat0=0.7, lon=1.2, c=Math.cos(lat0), z=Math.sin(lat0);
+  const lat=makeNode("paramSpace",{x:300,y:220});lat.label="latitude path";lat.color="#ff5ea8";
+  lat.props.degree="1";
+  lat.props.exprX=`${c}*cos(t)`;lat.props.exprY=`${c}*sin(t)`;lat.props.exprZ=`${z}`;
+  lat.props.tMin=`${-lon}`;lat.props.tMax=`${lon}`;lat.props.res="160";
+  // great-circle arc between the same endpoints A (t=-lon) and B (t=+lon)
+  const A=[c*Math.cos(-lon), c*Math.sin(-lon), z], B=[c*Math.cos(lon), c*Math.sin(lon), z];
+  const dot=A[0]*B[0]+A[1]*B[1]+A[2]*B[2], Om=Math.acos(Math.max(-1,Math.min(1,dot))), sOm=Math.sin(Om);
+  const w0=`sin((1-t)*${Om})/${sOm}`, w1=`sin(t*${Om})/${sOm}`;
+  const gc=makeNode("paramSpace",{x:300,y:360});gc.label="great-circle path";gc.color="#a6e3a1";
+  gc.props.degree="1";
+  gc.props.exprX=`${w0}*(${A[0]}) + ${w1}*(${B[0]})`;
+  gc.props.exprY=`${w0}*(${A[1]}) + ${w1}*(${B[1]})`;
+  gc.props.exprZ=`${w0}*(${A[2]}) + ${w1}*(${B[2]})`;
+  gc.props.tMin="0";gc.props.tMax="1";gc.props.res="200";
+  // the shared endpoints
+  const ends=makeNode("points",{x:300,y:500});ends.label="A, B";ends.color="#ffcf6e";
+  ends.props.kind="points";ends.props.mode="index";
+  ends.props.idxPoint=`(i<0.5)*(${A[0]}) + (i>0.5)*(${B[0]}), (i<0.5)*(${A[1]}) + (i>0.5)*(${B[1]}), (i<0.5)*(${A[2]}) + (i>0.5)*(${B[2]})`;
+  ends.props.idxCount="2";ends.props.drawLines=false;ends.props.radius="0.08";
+  cam.attachments=[tr.id,lat.id,gc.id,ends.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[lat.id]:lat,[gc.id]:gc,[ends.id]:ends},camId:cam.id,animated:true};
+}
+
+// ── Gaussian curvature and point types ──
+
+// Color a surface by the SIGN of its Gaussian curvature: a torus has positive
+// curvature on the outer rim (dome-like), negative on the inner (saddle-like),
+// and zero on the top and bottom circles. The classic gallery of point types.
+function tutGaussCurvatureScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="Gaussian curvature on a torus";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="34";
+  // torus (R=1.6, r=0.6). Gaussian curvature K = cos v / (r (R + r cos v)).
+  // Its SIGN is the sign of cos v: positive on the outside (|v|<π/2), negative
+  // inside. Color by cos(v) to show the sign directly.
+  const surf=makeNode("paramsurf",{x:520,y:160});surf.label="torus";surf.color="#9b8cff";
+  surf.props.exprX="(1.6 + 0.6*cos(v))*cos(u)";
+  surf.props.exprY="(1.6 + 0.6*cos(v))*sin(u)";
+  surf.props.exprZ="0.6*sin(v)";
+  surf.props.uMin="0";surf.props.uMax="6.2832";surf.props.vMin="0";surf.props.vMax="6.2832";
+  surf.props.uRes="120";surf.props.vRes="60";
+  surf.props.colorMode="gradient";surf.props.colorExpr="cos(v)";surf.props.colorLo="#ff5ea8";surf.props.colorHi="#5ad1e6";
+  surf.props.colorMin="-1";surf.props.colorMax="1";
+  cam.attachments=[surf.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[surf.id]:surf},camId:cam.id,animated:true};
+}
+
+// The three point types side by side via one slider: z = x² + k·y². k>0 elliptic
+// (bowl, K>0), k=0 parabolic (trough, K=0), k<0 hyperbolic (saddle, K<0). Drag k
+// through zero to pass between the three local shapes a surface can have.
+function tutPointTypesScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="elliptic ↔ parabolic ↔ hyperbolic";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const k=makeNode("slider",{x:20,y:340});k.name="k";k.label="k · second curvature";k.value=1;
+  k.props.min="-1.5";k.props.max="1.5";k.props.step="0.01";
+  const surf=makeNode("paramsurf",{x:520,y:160});surf.label="z = x² + k·y²";surf.color="#9b8cff";
+  surf.props.exprX="u";surf.props.exprY="v";surf.props.exprZ="u*u + k*v*v";
+  surf.props.uMin="-1.15";surf.props.uMax="1.15";surf.props.vMin="-1.15";surf.props.vMax="1.15";
+  surf.props.uRes="48";surf.props.vRes="48";surf.props.colorMode="normal";surf.attachments=[k.id];
+  cam.attachments=[surf.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[k.id]:k,[surf.id]:surf},camId:cam.id,animated:true};
 }
 
 // The editor: point sets and sequences ───────────────────────────────────────

@@ -72,6 +72,18 @@ const SECTIONS = [
           { heading: "Composing a path", body: "For a capstone, drive a parametric curve with sliders. A Lissajous figure sets x and y each to a sine with its own frequency, sin(a·t + φ) and sin(b·t). Drag the integer frequencies a and b to change how many lobes the figure has in each direction; the phase φ loops on its own so the figure continuously weaves through its shapes. Two sliders and an animator compose into an endlessly varied family of closed curves.", kind: "tut-combine-lissajous" },
         ],
       },
+      {
+        slug: "transformer-modes",
+        title: "Ways to read a map",
+        summary: "The transformer node takes a map and turns it into geometry, and it can read the same numbers several ways: as a height graph, a traced path, a field of arrows, or polar and spherical coordinates.",
+        steps: [
+          { heading: "As a graph", body: "The default reading is a graph: each input becomes a horizontal coordinate and each output a height, so a two-input map f(x,y) becomes the surface z = f(x,y). This is the picture you reach for first, a landscape whose height is the function's value. Everything else on this page is the same machinery pointed at a different geometry.", kind: "tut-mode-graph" },
+          { heading: "As a path", body: "Feed the transformer a one-parameter map and it traces a path instead, evaluating the map as the parameter sweeps and connecting the results. Here a helix climbs as its parameter advances. The same node that drew a surface now draws a curve, because the input is a single parameter rather than a pair of coordinates.", kind: "tut-mode-param" },
+          { heading: "As a field of arrows", body: "Switch to field mode and the outputs become directions rather than positions: the transformer draws an arrow at each sample point, pointing the way the map sends it. This is how a two-output map becomes a vector field, the raw material of the flows in the dynamics section. The arrows are normalized here so only direction shows.", kind: "tut-mode-field" },
+          { heading: "In polar coordinates", body: "Polar mode reads the input as an angle θ and the output as a radius, plotting r = f(θ). A map as simple as cos(k·θ) becomes a rose whose petal count you set with a slider: odd k gives k petals, even k gives twice as many. Curves that are awkward to write in x and y are often effortless in polar form.", kind: "tut-polar-rose" },
+          { heading: "In spherical coordinates", body: "Spherical mode takes the idea into three dimensions: two inputs are read as the angles θ and φ, the output as a radius, drawing the surface r = f(θ,φ). A constant radius gives a plain sphere; modulate it with the angles and the sphere grows bumps and lobes. Drag the bump count and watch the surface ripple.", kind: "tut-spherical" },
+        ],
+      },
     ],
   },
   {
@@ -119,6 +131,16 @@ const SECTIONS = [
           { heading: "Families of surfaces", body: "The same idea lifts to surfaces. A cubic surface with a parameter t in its constant term deforms as you drag, and at certain values of t the smooth surface develops nodes, the singular points from the earlier page. A family is the natural setting for singularities: they appear at isolated parameter values as the family passes through them. Watch the surface pinch as t crosses those values.", kind: "tut-surface-family" },
         ],
       },
+      {
+        slug: "quadric-surfaces",
+        title: "Quadric surfaces",
+        summary: "The degree-2 surfaces are the next step up from the plane: ellipsoids, hyperboloids, paraboloids, and cones. A handful of equations, classified by their signs, cover them all.",
+        steps: [
+          { heading: "One equation, three surfaces", body: "The central quadrics are all variations of x² + y² + s·z² = 1. When s is positive the surface closes up into an ellipsoid; at s = 0 the z-term vanishes and it becomes an infinite cylinder; when s is negative it opens into a one-sheet hyperboloid, the cooling-tower shape. Drag s through zero and watch one equation pass through all three. The sign of a single coefficient decides the entire character of the surface.", kind: "tut-quadric-morph" },
+          { heading: "The saddle", body: "Not every quadric is closed or symmetric. The hyperbolic paraboloid z = x² − y² curves upward in one direction and downward in the perpendicular one, making the saddle, or Pringle, shape. It is the standard example of a surface with no global maximum or minimum, and despite its curvature it is doubly ruled: through every point run two straight lines lying entirely on the surface.", kind: "tut-quadric-saddle" },
+          { heading: "The cone", body: "Between the one-sheet and two-sheet hyperboloids sits the cone x² + y² = z², the degenerate quadric where the surface pinches to a single point at the origin. It is the boundary case of the family, the moment a hyperboloid's waist closes to nothing. Slicing a cone with planes, incidentally, is exactly how the ancient Greeks first defined the ellipse, parabola, and hyperbola.", kind: "tut-quadric-cone" },
+        ],
+      },
     ],
   },
   {
@@ -160,9 +182,21 @@ const SECTIONS = [
       {
         slug: "approximating-functions",
         title: "Approximating a function",
-        summary: "A Taylor series builds a function out of polynomial terms. Drag the number of terms and watch a polynomial grow into a sine.",
+        summary: "A power series builds a function out of polynomial terms. Drag the number of terms and watch polynomials grow into sines and exponentials, and see where the trick breaks down.",
         steps: [
           { heading: "Add terms one at a time", body: "The Taylor series of sin(x) adds odd powers with alternating signs: x, then minus x³/6, then plus x⁵/120, and so on. Drag N to add terms. With one term the approximation is a straight line that only matches near zero; as you add terms the polynomial bends to follow the sine further out in both directions, matching it over a wider and wider range. This is the analytic idea made visible: an infinite sum of polynomial pieces reconstructing a function.", kind: "tut-taylor" },
+          { heading: "The same for eˣ", body: "The exponential has an even simpler series: 1 + x + x²/2 + x³/6 + ⋯, every power present, all signs positive. Drag N and the polynomial chases the exponential's steep climb, matching it over a widening interval. Like sine, eˣ is entire: its series converges to the function for every real x, no matter how far out you go.", kind: "tut-taylor-exp" },
+          { heading: "Where it breaks down", body: "Not every series works everywhere. The geometric series 1 + x + x² + x³ + ⋯ sums exactly to 1/(1−x), but only when |x| < 1. Drag N: inside the interval the partial sums (gold) snap onto the true curve (blue), but past x = 1 they fly off to infinity no matter how many terms you add. This is the radius of convergence, the hard boundary beyond which a power series stops meaning anything, even when the function it came from is perfectly well behaved.", kind: "tut-taylor-radius" },
+        ],
+      },
+      {
+        slug: "polar-curves",
+        title: "Polar curves",
+        summary: "Some curves are clumsy in x and y but effortless in polar form, where a point is given by an angle and a distance. The transformer's polar mode plots r = f(θ) directly.",
+        steps: [
+          { heading: "Roses", body: "In polar coordinates a point is set by an angle θ and a radius r. The curve r = cos(k·θ) traces a rose: as the angle sweeps once around, the radius swells and shrinks, drawing petals. The count follows a simple rule, odd k gives k petals and even k gives 2k, so dragging the slider between, say, 3 and 4 jumps the flower from three petals to eight. A single cosine becomes a garden.", kind: "tut-polar-rose" },
+          { heading: "Cardioids and limaçons", body: "Add a constant to the radius and you get the limaçon family, r = a + cos(θ). At a = 1 it is the cardioid, a heart-shaped curve with a single cusp. Drag a above 1 and the cusp smooths into a dimple; drag it below 1 and an inner loop appears, the curve crossing itself. The offset a tunes the whole family, which shows up wherever one circle rolls around another.", kind: "tut-polar-cardioid" },
+          { heading: "Into three dimensions", body: "The same idea extends to spherical coordinates, where two angles and a radius locate a point in space. The transformer's spherical mode draws r = f(θ,φ): a constant radius gives a plain sphere, and letting the angles modulate the radius pushes it out into bumps and lobes. Drag the bump count and the sphere ripples like a sea urchin. Polar thinking scales up as cleanly as it works in the plane.", kind: "tut-spherical" },
         ],
       },
     ],
@@ -201,11 +235,48 @@ const SECTIONS = [
         ],
       },
       {
+        slug: "tangent-spaces",
+        title: "Tangent spaces and the tangent bundle",
+        summary: "At every point of a smooth shape sits a flat space of directions: the tangent line to a curve, the tangent plane to a surface. Collecting one at every point gives the tangent bundle.",
+        steps: [
+          { heading: "The tangent line", body: "At a point on a curve, the tangent line is the straight line that best matches the curve there, sharing its slope. Drag the contact point along the parabola y = x² and the tangent rides with it, tilting to stay flush. Up close, a smooth curve and its tangent line are nearly indistinguishable; the tangent is the curve's linear approximation, the first thing calculus computes about it.", kind: "tut-tangent-line" },
+          { heading: "The tangent plane", body: "On a surface the tangent line becomes a tangent plane: the flat sheet that grazes the surface at one point and matches its slope in every direction. Drag the base point across this saddle and watch the plane tilt to follow. The plane touches at exactly one point and pulls away on both sides, because the saddle curves up one way and down the other. Every smooth surface has one of these at every point.", kind: "tut-tangent-plane" },
+          { heading: "The tangent bundle", body: "Now attach a tangent space to every point at once and let each one extend fully. At every point of the circle, the tangent line runs off in both directions, and the whole family of them sweeps out the entire region outside the circle, crowding bright where they bunch up against it and thinning as they fan outward. That swept region, every base point paired with its line of tangent directions, is the tangent bundle. It is the setting for everything that moves along the shape: velocities, vector fields, and flows all live in the tangent bundle, one tangent space per point. The circle itself, the envelope the lines never cross into, sits in the middle.", kind: "tut-tangent-bundle" },
+        ],
+      },
+      {
+        slug: "frenet-frame",
+        title: "The Frenet frame",
+        summary: "A space curve carries a natural set of three perpendicular axes at each point: tangent, normal, and binormal. Together they form a frame that turns as the curve bends and twists.",
+        steps: [
+          { heading: "Tangent, normal, binormal", body: "The Frenet frame attaches three unit vectors to each point of a curve. The tangent T points along the direction of travel; the normal N points the way the curve is turning; the binormal B = T × N completes a right-handed set, perpendicular to both. Watch the three arrows ride along the helix: they stay mutually perpendicular at every instant, a little coordinate system carried by the curve itself.", kind: "tut-frenet" },
+          { heading: "What the frame measures", body: "How the frame turns as it moves encodes the curve's shape entirely. The rate at which T swings toward N is the curvature, how sharply the curve bends; the rate at which B drifts is the torsion, how much the curve twists out of its plane. A curve with zero torsion stays flat; a helix has constant curvature and constant torsion, which is why its frame rotates so steadily. The two numbers, curvature and torsion, determine a space curve up to position.", kind: "tut-frenet" },
+        ],
+      },
+      {
         slug: "curvature-by-hand",
         title: "Curvature you can feel",
         summary: "Two sliders set how a surface bends in each direction. Drag them to move between a bowl, a dome, and a saddle.",
         steps: [
           { heading: "Bend it two ways", body: "The surface z = a·x² − b·y² bends by a along one axis and by b along the other. Drag a and b and watch the shape change character: with both positive you get a saddle, curving up one way and down the other; make them the same sign and it becomes a bowl or a dome. The sign and size of the two curvatures is exactly what differential geometry measures, and here you are setting them directly with your hands. Colored by normal so the bending reads clearly.", kind: "tut-curvature-feel" },
+        ],
+      },
+      {
+        slug: "geodesics",
+        title: "Geodesics",
+        summary: "A geodesic is the straightest possible path on a surface, the generalization of a straight line. On a sphere they are the great circles, the routes airplanes actually fly.",
+        steps: [
+          { heading: "The straightest path", body: "Pick two points A and B on a sphere and connect them by the straightest route the surface allows: a path that never veers left or right, only forward. That route is the gold arc, and the white marker traces it back and forth so you can see it as a journey. It lies on a great circle, the kind of circle whose plane slices through the sphere's center. On a curved surface this is what 'straight' has to mean, since no actual straight line stays on the sphere.", kind: "tut-geodesic-sphere" },
+          { heading: "Beating the obvious route", body: "Here are two points at the same latitude, joined two ways. The pink path follows that line of latitude, the route that looks natural on a globe. The green path is the great-circle geodesic between the same two endpoints, and even though it bows up toward the pole and looks like a detour, it is shorter. That is why long flights arc north instead of running due east: on a sphere the straightest path and the shortest path are the same great circle, and it is not the line that looks straight on a flat map.", kind: "tut-geodesic-compare" },
+        ],
+      },
+      {
+        slug: "gaussian-curvature",
+        title: "Gaussian curvature and point types",
+        summary: "Curvature has a sign. Where a surface domes outward it is positive, where it saddles it is negative, and the sign sorts every point of every surface into three kinds.",
+        steps: [
+          { heading: "The sign of curvature", body: "At each point a surface bends by some amount in every direction. Multiply the sharpest and gentlest of those bendings together and you get the Gaussian curvature, whose sign tells you the local shape. On this torus the outer rim domes outward in both directions, giving positive curvature (blue); the inner rim saddles, curving up one way and down the other, giving negative curvature (pink); and the top and bottom circles, where the colour crosses over, have zero. One surface holds all three signs at once.", kind: "tut-gauss-curvature" },
+          { heading: "Elliptic, parabolic, hyperbolic", body: "The sign sorts every surface point into three types. Drag k through the surface z = x² + k·y². With k positive the point is elliptic, a bowl curving the same way in all directions, with positive Gaussian curvature. At k = 0 it is parabolic, a trough flat along one direction, with zero curvature. With k negative it is hyperbolic, a saddle with negative curvature. Almost every point of every surface is one of these three, and the type is a local invariant you cannot flatten away.", kind: "tut-point-types" },
         ],
       },
     ],

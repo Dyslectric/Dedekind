@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
-import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU } from "./builders.js";
+import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU } from "./builders.js";
 import { marchingSquares, marchingCubes } from "./implicit.js";
 import { buildImplicitRaymarch } from "./implicit-raymarch.js";
 
@@ -247,6 +247,58 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode){
     const opts={ arrowLen:resolveNum(tp.arrowLen,scope,0.5), normalize:tp.normalize!==false, anim:"none", speed:1 };
     if(useColor) opts.cols=rampColors(cvals,tp,scope);
     return buildGlyphFieldGPU(pairs, color, opts);
+  }
+
+  // polar mode — interpret the input as an angle θ and the (first) output as a
+  // radius r, placing each sample at (r·cosθ, r·sinθ). A 1-input map draws the
+  // polar curve r = f(θ); coloring works as in graph mode.
+  if(tp.mode==="polar" && inDim===1){
+    const gradientP=colorOn(tp, outDim);
+    const n=dom.pts.length;
+    const pts=new Array(n); const vals=gradientP?new Array(n):null;
+    for(let i=0;i<n;i++){
+      const inVec=dom.pts[i];
+      const outVec=evalMap(outs,scope,inVec);
+      const th=inVec[0]??0, r=outVec[0]??0;
+      // math order [X,Y,Z]; buildCurve3d applies the world swap itself
+      pts[i]=[r*Math.cos(th), r*Math.sin(th), 0];
+      if(gradientP) vals[i]=colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i);
+    }
+    return buildCurve3d(pts, color, gradientP?rampColors(vals,tp,scope):null);
+  }
+
+  // spherical mode — interpret two inputs as angles (θ azimuth, φ polar) and the
+  // first output as a radius r, placing each sample at the spherical point
+  // (r·sinφ·cosθ, r·sinφ·sinθ, r·cosφ). A 2-input map draws the surface r = f(θ,φ).
+  if(tp.mode==="spherical" && inDim===2 && dom.grid){
+    const gradientS=colorOn(tp, outDim) && hasExplicitColorRange(tp);
+    // GPU fast path: the inline (θ,φ) grid is analytic, so evaluate every vertex
+    // in a shader. Only when the domain is the inline grid (a wired paramSpace
+    // supplies arbitrary points the shader can't reproduce) and no gradient is
+    // requested (the GPU spherical path renders flat-colored; gradient stays CPU).
+    if(!paramNode && !gradientS){
+      const gpu=buildTransformerSphericalGPU(tp, outs, scope, color);
+      if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
+    }
+    const nu=dom.nu, nv=dom.nv, rows=[], colRows=gradientS?[]:null, flatVals=gradientS?[]:null;
+    let idx=0;
+    for(let j=0;j<nv;j++){
+      const row=[], crow=gradientS?[]:null;
+      for(let i=0;i<nu;i++){
+        const inVec=dom.pts[idx++];
+        const outVec=evalMap(outs,scope,inVec);
+        const th=inVec[0]??0, ph=inVec[1]??0, r=outVec[0]??0;
+        const sp=Math.sin(ph);
+        row.push([r*sp*Math.cos(th), r*sp*Math.sin(th), r*Math.cos(ph)]);
+        if(gradientS){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
+      }
+      rows.push(row); if(gradientS) colRows.push(crow);
+    }
+    if(gradientS){
+      const flat=rampColors(flatVals,tp,scope);
+      let k=0; for(let j=0;j<nv;j++) for(let i=0;i<nu;i++) colRows[j][i]=flat[k++];
+    }
+    return buildSurf(rows, color, gradientS?colRows:null, tp.showWire!==false);
   }
 
   // graph mode

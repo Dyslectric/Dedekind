@@ -637,6 +637,38 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
     return mesh?[mesh]:[];
   }
 
+  // ── POLAR mode ──
+  // Input is read as angle θ, the first output as radius r; plot (r cosθ, r sinθ)
+  // in the ground plane, then project. Without this, a polar transformer fell
+  // through to the graph path and drew (θ, r) — i.e. looked just like a function.
+  if(tp.mode==="polar" && inDim===1){
+    const samples=transformerSamples(tp,paramNode,pscope,1);
+    const pts2d=samples.map(inVec=>{
+      const th=inVec[0]??0, r=evalOut(inVec)[0]??0;
+      const w=projectPt(fr, r*Math.cos(th), r*Math.sin(th), 0);
+      return isFinite(w[0])&&isFinite(w[1])?w:null;
+    });
+    return buildThickLine2D(pts2d, color, px(LINE_PX)/2);
+  }
+
+  // ── SPHERICAL mode ──
+  // Two inputs are angles θ,φ, the first output a radius r → spherical point,
+  // projected onto the plane. (Spherical is naturally 3-D; in a 2-D view this is
+  // its orthographic shadow.)
+  if(tp.mode==="spherical" && inDim===2){
+    const res=Math.max(2,Math.min(160,Math.round(resolveNum(tp.res,pscope,40))));
+    const aMin=resolveNum(tp.aMin,pscope,0),aMax=resolveNum(tp.aMax,pscope,6.2832);
+    const bMin=resolveNum(tp.bMin,pscope,0),bMax=resolveNum(tp.bMax,pscope,3.14159);
+    const xs=linspace(aMin,aMax,res), ys=linspace(bMin,bMax,res);
+    const rows2=[];
+    for(const ph of ys){ const row=[]; const sp=Math.sin(ph),cp=Math.cos(ph);
+      for(const th of xs){ const r=evalOut([th,ph,0])[0]??0;
+        const w=projectPt(fr, r*sp*Math.cos(th), r*sp*Math.sin(th), r*cp);
+        row.push(isFinite(w[0])&&isFinite(w[1])?w:null); }
+      rows2.push(row); }
+    return buildFilledGrid2D(rows2, color);
+  }
+
   // ── GRAPH mode ──
   // 1-input → a projected curve.
   if(inDim===1){

@@ -208,7 +208,7 @@ function geomSignature(node, scope){
       surfTranspiles(node) ? "" : `${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|`
     }${scopeSigFns(node,scope)}`;
     case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
-    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${
+    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${
       surfTranspiles(node) ? "" : `${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|`
     }${scopeSigFns(node,scope)}`;
     case "paramvol": return `pv|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${p.wMin}|${p.wMax}|${resolveNum(p.uRes,scope,14)}|${resolveNum(p.vRes,scope,14)}|${resolveNum(p.wRes,scope,14)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
@@ -216,7 +216,7 @@ function geomSignature(node, scope){
     case "plane": return `pl|${c}|${resolveNum(p.centerX,scope,0)}|${resolveNum(p.centerY,scope,0)}|${resolveNum(p.centerZ,scope,0)}|${resolveNum(p.normalX,scope,0)}|${resolveNum(p.normalY,scope,1)}|${resolveNum(p.normalZ,scope,0)}|${resolveNum(p.size,scope,8)}`;
     case "point": return `pt|${c}|${resolveNum(p.x,scope,0)}|${resolveNum(p.y,scope,0)}|${resolveNum(p.z,scope,0)}|${resolveNum(p.radius,scope,0.08)}`;
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
-    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
+    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
       // For a transpilable implicit equation (GPU raymarch), the wired sliders/
       // animators become live shader uniforms — they must NOT invalidate the
       // geometry cache, or every animated frame triggers a full CPU rebuild
