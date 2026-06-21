@@ -40,7 +40,22 @@ function NodeCanvas({ nodes, selected, selectionSet, onSelect, onMove, onMoveMan
   // fire when the user is "working in" the canvas, per the feature spec.
   const canvasFocusedRef=useRef(false);
   const[tick,setTick]=useState(0);
-  useEffect(()=>{let raf;const loop=()=>{if(Object.values(nodes).some(n=>n.type==="animator"&&n.playing))setTick(t=>t+1);raf=requestAnimationFrame(loop);};raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf);},[nodes,theme]);
+  // Refresh animated value labels on nodes while an animator plays. This forces a
+  // re-render of the canvas, so cap it at ~10Hz (the label only needs to look
+  // live, not update every frame) instead of bumping state every animation frame,
+  // which previously reconciled the whole node graph at display refresh rate.
+  useEffect(()=>{
+    let raf, last=0;
+    const TICK_MS=100;   // ~10Hz
+    const loop=(ts)=>{
+      if(Object.values(nodes).some(n=>n.type==="animator"&&n.playing) && ts-last>=TICK_MS){
+        last=ts; setTick(t=>t+1);
+      }
+      raf=requestAnimationFrame(loop);
+    };
+    raf=requestAnimationFrame(loop);
+    return()=>cancelAnimationFrame(raf);
+  },[nodes,theme]);
 
   const applyTransform=useCallback(()=>{const{panX,panY,zoom}=viewRef.current;if(gRef.current)gRef.current.setAttribute("transform",`translate(${panX},${panY}) scale(${zoom})`);},[]);
   const redrawEdges=useCallback((ns)=>{
