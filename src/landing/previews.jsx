@@ -502,6 +502,100 @@ function vivianiScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[sph.id]:sph,[cyl.id]:cyl,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// ── Demos for the new shading / GPU / intersection features ──────────────────
+// Each registers a hyphenated kind reachable at #demo=<kind>.
+
+// LIT SHADING + ANALYTIC NORMALS: an animated ripple in "lit" mode. The
+// highlight is computed per fragment from the EXACT analytic normal (symbolic
+// f_x,f_y), so it stays smooth and tracks the true surface as it animates — no
+// faceting, independent of grid resolution. Drop res low in the editor to see
+// the silhouette coarsen while the shading stays smooth.
+function litRippleScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="lit ripple · analytic normals";
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const anim=makeNode("animator",{x:40,y:320});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="7";anim.props.loop="loop";anim.playing=true;
+  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="z = sin(r·1.6 − t)";fn.color="#5b9cf6";
+  fn.props.dims="2";fn.props.expr="sin(sqrt(x^2+y^2)*1.6 - t)*0.9";
+  fn.props.xMin="-4.5";fn.props.xMax="4.5";fn.props.yMin="-4.5";fn.props.yMax="4.5";
+  fn.props.res="64";fn.props.showWire=false;fn.props.shading="lit";
+  fn.attachments=[anim.id];cam.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn},camId:cam.id,animated:true};
+}
+
+// LIT SHADING on curvature: a monkey saddle, slowly spinning, so the specular
+// highlight sweeps across the analytic surface and reads its true curvature.
+function litSaddleScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="lit saddle";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";
+  cam.props.spin="loop";cam.props.spinPeriod="26";
+  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="z = x³ − 3xy²";fn.color="#c761f7";
+  fn.props.dims="2";fn.props.expr="(x^3 - 3*x*y^2)*0.16";
+  fn.props.xMin="-2.4";fn.props.xMax="2.4";fn.props.yMin="-2.4";fn.props.yMax="2.4";
+  fn.props.res="80";fn.props.showWire=false;fn.props.shading="lit";
+  cam.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn},camId:cam.id,animated:false};
+}
+
+// fnDef GPU INLINING + lit: the surface is COMPOSED from a helper bump(r), so it
+// would have fallen to the CPU before; now the helper is inlined into the shader
+// and it renders on the GPU. Lit shading uses the screen-space normal fallback
+// here (mathjs can't symbolically differentiate a user function), which is the
+// documented behavior for composed surfaces.
+function composedSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="composed surface (GPU-inlined)";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  cam.props.spin="loop";cam.props.spinPeriod="30";
+  const bump=makeNode("fnDef",{x:120,y:320});bump.name="bump";bump.color="#a6e3a1";
+  bump.props.params="r";bump.props.expr="exp(-r^2)";
+  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="z = Σ bump(…)";fn.color="#a6e3a1";
+  fn.props.dims="2";
+  fn.props.expr="bump(hypot(x-1.4,y)) + bump(hypot(x+1.4,y)) + 0.7*bump(hypot(x,y-1.4))";
+  fn.props.xMin="-4";fn.props.xMax="4";fn.props.yMin="-4";fn.props.yMax="4";
+  fn.props.res="72";fn.props.showWire=false;fn.props.shading="lit";
+  fn.attachments=[bump.id];cam.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[bump.id]:bump,[fn.id]:fn},camId:cam.id,animated:false};
+}
+
+// INTERSECTION CURVE: the Steinmetz bicylinder — two perpendicular unit
+// cylinders x²+y²=1 ∩ x²+z²=1 meet in a pair of ellipses.
+function steinmetzScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:160}));cam.label="Steinmetz intersection";
+  cam.props.orbRadius="5.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  cam.props.spin="loop";cam.props.spinPeriod="26";
+  const cy1=makeNode("equation",{x:360,y:120});cy1.label="cylinder x²+y²";cy1.color="#5b9cf6";
+  cy1.props.dims="3d";cy1.props.lhs="x^2 + y^2";cy1.props.rhs="1";cy1.props.varA="x";cy1.props.varB="y";cy1.props.varC="z";
+  const cy2=makeNode("equation",{x:360,y:300});cy2.label="cylinder x²+z²";cy2.color="#52d47e";
+  cy2.props.dims="3d";cy2.props.lhs="x^2 + z^2";cy2.props.rhs="1";cy2.props.varA="x";cy2.props.varB="y";cy2.props.varC="z";
+  const tr=makeNode("transformer",{x:740,y:210});tr.label="∩ curve";tr.color="#ffd479";
+  tr.props.aMin="-1.4";tr.props.aMax="1.4";tr.props.bMin="-1.4";tr.props.bMax="1.4";tr.props.cMin="-1.4";tr.props.cMax="1.4";
+  tr.props.res="120";
+  tr.attachments=[cy1.id,cy2.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[cy1.id]:cy1,[cy2.id]:cy2,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// INTERSECTION CURVE: sphere ∩ plane = a circle. The second "surface" is the
+// plane z = 0.7 written as an equation, so the intersection is the latitude circle.
+function spherePlaneScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:160}));cam.label="sphere ∩ plane = circle";
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  cam.props.spin="loop";cam.props.spinPeriod="28";
+  const sph=makeNode("equation",{x:360,y:120});sph.label="sphere";sph.color="#5b9cf6";
+  sph.props.dims="3d";sph.props.lhs="x^2 + y^2 + z^2";sph.props.rhs="4";sph.props.varA="x";sph.props.varB="y";sph.props.varC="z";
+  const pln=makeNode("equation",{x:360,y:300});pln.label="plane z = 0.7";pln.color="#52d47e";
+  pln.props.dims="3d";pln.props.lhs="z";pln.props.rhs="0.7";pln.props.varA="x";pln.props.varB="y";pln.props.varC="z";
+  const tr=makeNode("transformer",{x:740,y:210});tr.label="∩ curve";tr.color="#ffd479";
+  tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-2.2";tr.props.cMax="2.2";
+  tr.props.res="96";
+  tr.attachments=[sph.id,pln.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[sph.id]:sph,[pln.id]:pln,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
 // Register the new scenes alongside the originals.
 Object.assign(SCENES, {
   spheretorus: sphereTorusScene,
@@ -516,6 +610,11 @@ Object.assign(SCENES, {
   barth: barthScene,
   whitney: whitneyScene,
   viviani: vivianiScene,
+  "lit-ripple": litRippleScene,
+  "lit-saddle": litSaddleScene,
+  "composed-surface": composedSurfaceScene,
+  steinmetz: steinmetzScene,
+  "sphere-plane": spherePlaneScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────
