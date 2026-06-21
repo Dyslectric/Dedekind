@@ -1,5 +1,5 @@
 import { catOf } from "./taxonomy.js";
-import { resolveNum, safeEval, makeFn } from "./math.js";
+import { resolveNum, safeEval, makeFn, splitTopLevel } from "./math.js";
 import * as math from "mathjs";
 import { exprToGLSL } from "../geometry/glsl.js";
 
@@ -231,7 +231,7 @@ function geomSignature(node, scope){
           const cnt=String(p.idxCount||"").split(/[,;]/).map(t=>resolveNum(t.trim(),scope,NaN)).join("x");
           resolved = String(f||"")+"|cnt:"+cnt;
         }
-        else resolved = String(f||"").split(/\n+/).map(line=>line.split("|").map(part=>part.split(",").map(t=>resolveNum(t.trim(),scope,NaN)).join(",")).join("|")).join(";");
+        else resolved = String(f||"").split(/\n+/).map(line=>line.split("|").map(part=>splitTopLevel(part).map(t=>resolveNum(t,scope,NaN)).join(",")).join("|")).join(";");
       }catch(e){ resolved=String(f||""); }
       const colSig = p.colorOn?`|col:${p.colorMode||"ramp"}:${p.colorExpr||""}|${p.colorR||""}|${p.colorG||""}|${p.colorB||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}`:"";
       const aSig = p.alphaOn?`|a:${p.colorA||""}`:"";

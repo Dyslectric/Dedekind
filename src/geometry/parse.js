@@ -1,4 +1,4 @@
-import { safeEval } from "../core/math.js";
+import { safeEval, splitTopLevel } from "../core/math.js";
 
 // ── Point sequence parser ────────────────────────────────────────────────────
 // Four input modes, auto-detected from the text:
@@ -36,7 +36,7 @@ function parsePointSeq(text, scope) {
 
   // Plain mode: one "x, y[, z]" per line.
   return trimmed.split("\n").map(line => {
-    const parts = line.split(",").map(s => s.trim()).filter(Boolean);
+    const parts = splitTopLevel(line).filter(Boolean);
     if (parts.length < 2) return null;
     const x = safeEval(parts[0], scope);
     const y = safeEval(parts[1], scope);
@@ -50,7 +50,7 @@ function parseRecursiveSeq(text, scope) {
   const lines = text.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("//"));
   if (lines.length < 2) return [];
 
-  const initParts = lines[0].split(",").map(s => s.trim());
+  const initParts = splitTopLevel(lines[0]);
   const x0 = safeEval(initParts[0], scope);
   const y0 = safeEval(initParts[1] || "0", scope);
   const z0 = safeEval(initParts[2] || "0", scope);
@@ -249,8 +249,8 @@ function parseGlyphField(text, scope){
     if(!line.trim()||line.trim().startsWith("//")) return null;
     const [posPart, vecPart] = line.split("|");
     if(!posPart||!vecPart) return null;
-    const p=posPart.split(",").map(s=>s.trim());
-    const v=vecPart.split(",").map(s=>s.trim());
+    const p=splitTopLevel(posPart);
+    const v=splitTopLevel(vecPart);
     const x=safeEval(p[0],scope), y=safeEval(p[1]||"0",scope), z=safeEval(p[2]||"0",scope);
     const vx=safeEval(v[0],scope), vy=safeEval(v[1]||"0",scope), vz=safeEval(v[2]||"0",scope);
     if([x,y,z,vx,vy,vz].some(n=>n==null||!isFinite(n))) return null;
@@ -261,8 +261,8 @@ function parseGlyphSeq(text, scope){
   const lines=text.split("\n").map(l=>l.trim()).filter(l=>l&&!l.startsWith("//"));
   if(lines.length<2) return [];
   const init=lines[0].split("|");
-  const ip=(init[0]||"").split(",").map(s=>s.trim());
-  const iv=(init[1]||"").split(",").map(s=>s.trim());
+  const ip=splitTopLevel(init[0]||"");
+  const iv=splitTopLevel(init[1]||"");
   const x0=safeEval(ip[0],scope), y0=safeEval(ip[1]||"0",scope), z0=safeEval(ip[2]||"0",scope);
   const vx0=safeEval(iv[0],scope), vy0=safeEval(iv[1]||"0",scope), vz0=safeEval(iv[2]||"0",scope);
   if([x0,y0,z0,vx0,vy0,vz0].some(n=>n==null)) return [];

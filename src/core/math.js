@@ -294,7 +294,27 @@ function makeFn(name, params, expr, sc) {
   return fn;
 }
 
+// Split a string on TOP-LEVEL delimiter chars only, so delimiters inside
+// parentheses/brackets — e.g. the comma in atan2(y, x) or hypot(a, b) — stay
+// intact. Coordinate/expression lists ("x, y, hypot(a,b)") MUST use this instead
+// of a naive String.split(delim), which would shred function calls and silently
+// drop or mis-evaluate the row. `delims` defaults to comma; pass "," or "|", etc.
+// Returns trimmed, non-cosmetic parts (an empty trailing field is preserved only
+// when there was real content, mirroring the prior splitCoords behavior).
+function splitTopLevel(s, delim = ",") {
+  const out = [];
+  let depth = 0, cur = "";
+  for (const ch of String(s)) {
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth--;
+    if (ch === delim && depth === 0) { out.push(cur.trim()); cur = ""; }
+    else cur += ch;
+  }
+  if (cur.trim().length || out.length) out.push(cur.trim());
+  return out;
+}
+
 export {
   math, parse,
-  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, linspace, makeFn
+  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, linspace, makeFn, splitTopLevel
 };

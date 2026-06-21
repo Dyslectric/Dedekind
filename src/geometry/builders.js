@@ -4,7 +4,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import { resolveNum, safeEval, linspace } from "../core/math.js";
+import { resolveNum, safeEval, linspace, splitTopLevel } from "../core/math.js";
 import { compileToJS } from "../core/jit.js";
 import { exprToGLSL, _glslNum } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
@@ -1008,19 +1008,9 @@ function sampleRawGeom(p, prim, scope){
 function clampRawCount(c){ if(c==null||!isFinite(c))return 1; return Math.max(1,Math.min(20000,Math.round(c))); }
 
 // Split a coordinate string on TOP-LEVEL commas only, so commas inside function
-// calls — e.g. h(x, y) or atan2(y, x) — stay intact. Without this, a part like
-// "a, b, h(x, y)" would wrongly split into four fields and break the h() call.
-function splitCoords(s){
-  const out=[]; let depth=0, cur="";
-  for(const ch of String(s)){
-    if(ch==="("||ch==="[") depth++;
-    else if(ch===")"||ch==="]") depth--;
-    if(ch==="," && depth===0){ out.push(cur.trim()); cur=""; }
-    else cur+=ch;
-  }
-  if(cur.trim().length||out.length) out.push(cur.trim());
-  return out;
-}
+// calls — e.g. h(x, y) or atan2(y, x) — stay intact. Thin wrapper over the shared
+// splitTopLevel in core/math.js (kept for the existing call sites in this file).
+function splitCoords(s){ return splitTopLevel(s); }
 
 // Back-compat: the 2D renderer imports parseRawRows for plain list parsing.
 function parseRawRows(text, prim, scope){

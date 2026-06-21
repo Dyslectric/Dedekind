@@ -17,6 +17,8 @@
 //              hasVectors=true  → glyphField (glyphs; `pairs` text)
 //              space "xy" zeroes the third component / projects to the plane.
 
+import { splitTopLevel } from "../core/math.js";
+
 function normDims(v, d){ const n=Math.round(Number(v)); return isFinite(n)?Math.max(1,Math.min(3,n)):d; }
 
 // Map a unified node → { type, props } in the legacy vocabulary. Non-unified
@@ -138,8 +140,8 @@ function projectGlyphTextToPlane(text){
     if(!line.trim()||line.trim().startsWith("//")) return line;
     const [pos,vec]=line.split("|");
     if(pos==null||vec==null) return line;
-    const pc=pos.split(",").map(s=>s.trim());
-    const vc=vec.split(",").map(s=>s.trim());
+    const pc=splitTopLevel(pos);
+    const vc=splitTopLevel(vec);
     const p2=[pc[0]??"0", pc[1]??"0"].join(", ");
     const v2=[vc[0]??"0", vc[1]??"0"].join(", ");
     return `${p2} | ${v2}`;
