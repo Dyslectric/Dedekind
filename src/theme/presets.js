@@ -80,6 +80,15 @@ const THEME_PRESETS = {
      uiInputText:"#1d1f24",uiInputBg:"#cdd0d4",uiInputBorder:mix("#9296a0","#cdd0d4",0.32),uiBtnText:"#2c2f35",
      uiBtnBg:"#c2c5ca",uiBtnBorder:mix("#9296a0","#c2c5ca",0.32),uiPanelBar:"#b8bcc0",uiDanger:"#a82424",uiGood:"#246e33"}),
 
+  // Blender-like: dark neutral grey chrome with a flat mid-grey 3D viewport,
+  // light-grey text and a blue highlight accent (Blender's "active/selected"
+  // blue). Node identity colours stay pastel since the panel bar is dark.
+  "Blender":  preset(
+    {canvasBg:"#1d1d1d",nodeBg:"#2b2b2b",bg2d:"#303030",grid2d:"#454545",axes2d:"#6e6e6e",label2d:"#a6a6a6",bg3d:"#3a3a3a",grid3d:"#4d4d4d",grid3d2:"#333333",overlayBg:"#2b2b2bdd",overlayBorder:"#4a4a4a",overlayText:"#b0b0b0"},
+    {uiHeading:"#e9e9e9",uiText:"#cfcfcf",uiMuted:"#9d9d9d",uiFaint:"#8c8c8c",uiAccent:"#5a86c4",
+     uiInputText:"#e4e4e4",uiInputBg:"#222222",uiInputBorder:mix("#555555","#222222",0.4),uiBtnText:"#cfcfcf",
+     uiBtnBg:"#303030",uiBtnBorder:mix("#555555","#303030",0.4),uiPanelBar:"#2b2b2b",uiDanger:"#e0584f",uiGood:"#6cbf6c"}),
+
   // Gruvbox Light (medium): warm beige backgrounds, dark text.
   "Gruvbox Light": preset(
     {canvasBg:"#d5c4a1",nodeBg:"#ebdbb2",bg2d:"#f2e5bc",grid2d:"#c8b692",axes2d:"#7c6f64",label2d:"#504945",bg3d:"#ebdbb2",grid3d:"#cdbb92",grid3d2:"#ddcca7",overlayBg:"#ebdbb2dd",overlayBorder:"#bdae93",overlayText:"#3c3836"},
