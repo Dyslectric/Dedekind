@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#24273a"/>
+      <stop offset="1" stop-color="#181926"/>
+    </linearGradient>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8aadf4"/>
+      <stop offset="0.5" stop-color="#c6a0f6"/>
+      <stop offset="1" stop-color="#f5bde6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g fill="none" stroke="#363a4f" stroke-width="1">
+    <path d="M0 158 H1200 M0 315 H1200 M0 472 H1200 M200 0 V630 M400 0 V630 M600 0 V630 M800 0 V630 M1000 0 V630"/>
+  </g>
+  <path d="M120 470 C 300 470, 320 200, 500 200 S 760 470, 940 200 1080 200 1080 200"
+        fill="none" stroke="url(#ac)" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="500" cy="200" r="12" fill="#8aadf4"/>
+  <circle cx="720" cy="335" r="12" fill="#c6a0f6"/>
+  <circle cx="940" cy="200" r="12" fill="#f5bde6"/>
+  <text x="96" y="300" font-family="'Space Grotesk',system-ui,sans-serif" font-size="92" font-weight="700" fill="#cad3f5">◈ Dedekind</text>
+  <text x="100" y="372" font-family="system-ui,sans-serif" font-size="38" fill="#a5adcb">node-graph math visualizer · 2D &amp; 3D</text>
+  <text x="100" y="424" font-family="system-ui,sans-serif" font-size="27" fill="#8087a2">surfaces · implicit equations · parametric · vector fields · flows</text>
+</svg>

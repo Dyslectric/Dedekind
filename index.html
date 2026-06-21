@@ -3,7 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dedekind</title>
+
+    <!-- ── SEO ──────────────────────────────────────────────────────────────
+         Client-only SPA, so this static head is what crawlers and social cards
+         read. Once a canonical domain is known, add an absolute
+         <link rel="canonical" href="https://DOMAIN/"> and set og:url, and switch
+         og:image/twitter:image to absolute URLs (social cards need an ABSOLUTE
+         image URL to render a thumbnail). Relative paths are used until then. -->
+    <title>Dedekind — node-graph math visualizer (2D &amp; 3D)</title>
+    <meta name="description" content="Wire nodes into a graph to render live 2D and 3D math: surfaces, implicit equations (GPU raymarched), parametric curves and surfaces, vector fields, flows, and point clouds. Runs entirely in your browser on React, three.js and mathjs." />
+    <meta name="keywords" content="math visualizer, 3D graphing, implicit surfaces, parametric surfaces, vector fields, node graph, WebGL, raymarching, mathjs, three.js, function plotter, level sets" />
+    <meta name="author" content="Dedekind" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#24273a" />
+    <meta name="color-scheme" content="dark light" />
+
+    <!-- Open Graph (Facebook, LinkedIn, Discord, …) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Dedekind" />
+    <meta property="og:title" content="Dedekind — node-graph math visualizer (2D &amp; 3D)" />
+    <meta property="og:description" content="Wire nodes into a graph to render live 2D and 3D math: surfaces, implicit equations, parametric curves and surfaces, vector fields, flows, and point clouds. Runs entirely in the browser." />
+    <meta property="og:image" content="./og-card.svg" />
+
+    <!-- Twitter / X card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Dedekind — node-graph math visualizer (2D &amp; 3D)" />
+    <meta name="twitter:description" content="Wire nodes into a graph to render live 2D and 3D math in the browser: surfaces, implicit equations, parametric curves, vector fields, flows, and point clouds." />
+    <meta name="twitter:image" content="./og-card.svg" />
+
+    <!-- Structured data: describe the app to search engines. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Dedekind",
+      "applicationCategory": "EducationalApplication",
+      "operatingSystem": "Any (modern web browser with WebGL2)",
+      "description": "Node-graph math visualizer (2D/3D) built on React, three.js and mathjs. Renders surfaces, implicit equations, parametric curves and surfaces, vector fields, flows and point clouds from a wired node graph.",
+      "browserRequirements": "Requires JavaScript and WebGL2",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
@@ -20,6 +61,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div style="max-width:640px;margin:12vh auto;padding:0 24px;color:#cad3f5;font-family:system-ui,sans-serif;line-height:1.6">
+        <h1 style="color:#8aadf4">Dedekind</h1>
+        <p>Dedekind is a node-graph math visualizer that renders 2D and 3D math
+        live in your browser: surfaces, implicit equations, parametric curves and
+        surfaces, vector fields, flows, and point clouds.</p>
+        <p>It needs JavaScript and WebGL2 to run. Please enable JavaScript.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/index.jsx"></script>
   </body>
 </html>

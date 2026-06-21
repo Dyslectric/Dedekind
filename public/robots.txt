@@ -1,0 +1,6 @@
+# Dedekind — allow all crawlers.
+User-agent: *
+Allow: /
+
+# Add an absolute Sitemap line here once a canonical domain is set, e.g.:
+# Sitemap: https://example.com/sitemap.xml
