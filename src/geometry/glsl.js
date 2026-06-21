@@ -57,8 +57,14 @@ function _glslPow(a, b, bNode){
 }
 
 // vars: Set of axis variable names (x,y / x / u,v). uniforms: Set collecting
-// referenced free scalar names. Returns GLSL string or null.
-function exprToGLSL(expr, vars, uniforms){
+// referenced free scalar names (always the ORIGINAL names, for scope lookup).
+// prefix: optional GLSL identifier prefix applied to emitted free-scalar symbols
+// so a user scalar named like a shader internal (a, e, f, h, P, L, …) or a
+// builtin cannot collide. Callers that pass a prefix must declare the uniforms as
+// `${prefix}${name}` while still reading their values from scope[name]. Default ""
+// keeps the bare-name behavior (used by the transpilability probes in scope.js).
+// Returns GLSL string or null.
+function exprToGLSL(expr, vars, uniforms, prefix=""){
   let root; try { root = math.parse(expr); } catch { return null; }
   const walk = (node) => {
     switch(node.type){
@@ -67,8 +73,10 @@ function exprToGLSL(expr, vars, uniforms){
       case "SymbolNode": {
         if(vars.has(node.name)) return node.name;
         if(_GLSL_CONST[node.name]) return _GLSL_CONST[node.name];
-        // a free scalar (slider/animator/constant) → uniform
-        if(/^[A-Za-z_]\w*$/.test(node.name)){ uniforms.add(node.name); return node.name; }
+        // a free scalar (slider/animator/constant) → uniform. Collect the original
+        // name (scope is keyed on it) but EMIT a prefixed identifier so it can't
+        // collide with shader internals or GLSL builtins.
+        if(/^[A-Za-z_]\w*$/.test(node.name)){ uniforms.add(node.name); return prefix+node.name; }
         return null;
       }
       case "OperatorNode": {
@@ -117,6 +125,11 @@ function exprToGLSL(expr, vars, uniforms){
   return walk(root);
 }
 
+// Reserved prefix for user-derived (slider/constant/animator) uniforms in
+// generated shaders. Chosen so it can't collide with shader-internal locals
+// (single letters, camelCase) or the app's own uniforms (uSteps, uColor, …).
+const GLSL_UNIFORM_PREFIX = "usr_";
+
 export {
-  exprToGLSL, _glslNum
+  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX
 };

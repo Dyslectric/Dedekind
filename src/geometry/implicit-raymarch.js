@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { exprToGLSL } from "./glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX } from "./glsl.js";
 import { hexToThree } from "./three-helpers.js";
 
 // ── Ray-marched implicit surface ──────────────────────────────────────────────
@@ -36,7 +36,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
   // else (sliders/animators/constants) becomes a uniform.
   const uniforms = new Set();
   const axisVars = new Set([vA, vB, vC]);
-  const glslF = exprToGLSL(fExpr, axisVars, uniforms);
+  const glslF = exprToGLSL(fExpr, axisVars, uniforms, GLSL_UNIFORM_PREFIX);
   if (glslF == null) return null;               // untranspilable → caller uses mesh path
   const freeUniforms = [...uniforms].filter(n => !axisVars.has(n));
 
@@ -59,7 +59,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
   geo.translate(cx,cy,cz);
 
   // Uniform declarations + map. Box bounds in math coords are baked as constants.
-  const uniDecls = freeUniforms.map(n=>`uniform float ${n};`).join("\n");
+  const uniDecls = freeUniforms.map(n=>`uniform float ${GLSL_UNIFORM_PREFIX}${n};`).join("\n");
   const uniformsObj = {
     uColor:{value:new THREE.Color(hexToThree(color))},
     uMinM:{value:new THREE.Vector3(aMin,bMin,cMin)},   // math-space box min (x,y,z)
@@ -85,7 +85,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
     uColorShift:{value: resolveNum(tp.colorShift, scope, 0)},
     uGradScale:{value: 0.5},
   };
-  for(const n of freeUniforms) uniformsObj[n]={value:Number(scope[n])||0};
+  for(const n of freeUniforms) uniformsObj[GLSL_UNIFORM_PREFIX+n]={value:Number(scope[n])||0};
 
   const vert = `
     varying vec3 vWorld;
@@ -362,7 +362,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
   mat.extensions = { fragDepth:true };
   const mesh=new THREE.Mesh(geo, mat);
   mesh.frustumCulled=false;
-  mesh._gpuSurface = { uNames: freeUniforms };  // lets updateGpuUniforms animate sliders live
+  mesh._gpuSurface = { uNames: freeUniforms, uPrefix: GLSL_UNIFORM_PREFIX };  // lets updateGpuUniforms animate sliders live
   mesh._raymarch = true;
   // The fragment shader needs the live projection matrix (which three doesn't pass
   // to fragment shaders). Refresh it from whatever camera renders this mesh, every

@@ -6,7 +6,7 @@ import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { resolveNum, safeEval, linspace, splitTopLevel } from "../core/math.js";
 import { compileToJS } from "../core/jit.js";
-import { exprToGLSL, _glslNum } from "./glsl.js";
+import { exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
 
 // Target on-screen thickness for 1-space curves in 3D cameras (CSS pixels).
@@ -19,7 +19,7 @@ function buildSurfGPU(kind, p, scope, color){
   const showWire = p.showWire!==false;
   let bodyP, uniforms=new Set(), umin, umax, vmin, vmax, ures, vres;
   if(kind==="surf3d"){
-    const gx=exprToGLSL(p.expr, new Set(["x","y"]), uniforms);
+    const gx=exprToGLSL(p.expr, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX);
     if(gx==null) return null;
     umin=resolveNum(p.xMin,scope,-4); umax=resolveNum(p.xMax,scope,4);
     vmin=resolveNum(p.yMin,scope,-4); vmax=resolveNum(p.yMax,scope,4);
@@ -32,9 +32,9 @@ function buildSurfGPU(kind, p, scope, color){
              y = uDomV.x + _gd.y*(uDomV.y - uDomV.x);
              float zz = ${gx}; vec3 P = vec3(x, y, zz);`;
   } else if(kind==="paramsurf"){
-    const sx=exprToGLSL(p.exprX,new Set(["u","v"]),uniforms);
-    const sy=exprToGLSL(p.exprY,new Set(["u","v"]),uniforms);
-    const sz=exprToGLSL(p.exprZ,new Set(["u","v"]),uniforms);
+    const sx=exprToGLSL(p.exprX,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX);
+    const sy=exprToGLSL(p.exprY,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX);
+    const sz=exprToGLSL(p.exprZ,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX);
     if(sx==null||sy==null||sz==null) return null;
     umin=resolveNum(p.uMin,scope,0); umax=resolveNum(p.uMax,scope,Math.PI*2);
     vmin=resolveNum(p.vMin,scope,0); vmax=resolveNum(p.vMax,scope,Math.PI);
@@ -69,15 +69,15 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   // solid sheet would bury them. The wire gets full opacity here since there is
   // no fill behind it.
   if(wireOnly){
-    const matW = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain);
+    const matW = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain, GLSL_UNIFORM_PREFIX);
     matW.uniforms.uColor.value = new THREE.Color(hexToThree(color));
     matW.transparent = true; matW.opacity = 0.5;
     const w = new THREE.Mesh(geo, matW);
     w.frustumCulled = false;
-    w._gpuSurface = { uNames, domain: domain||null };
+    w._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX };
     return [w];
   }
-  const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts, domain);
+  const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts, domain, GLSL_UNIFORM_PREFIX);
   const mesh = new THREE.Mesh(geo, matFill);
   // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
   // shader, so three.js's CPU-side bounding volume (a tiny 1×1 patch) does NOT
@@ -88,9 +88,9 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   // `domain` (uDomU/uDomV) is recorded so updateGpuUniforms can refresh the
   // bounds each frame — animating a domain bound costs one uniform write, no
   // rebuild. uNames covers the expression uniforms (sliders in exprX/Y/Z).
-  mesh._gpuSurface = { uNames, domain: domain||null };
+  mesh._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX };
   if(showWire===false) return [mesh];
-  const matWire = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain);
+  const matWire = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain, GLSL_UNIFORM_PREFIX);
   matWire.uniforms.uColor.value = new THREE.Color(hexToThree(color)).multiplyScalar(1.4);
   // Wireframe shares the SAME geometry (no clone): two meshes can reference one
   // BufferGeometry, halving vertex memory and skipping a full-buffer clone on
@@ -98,7 +98,7 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   const wire = new THREE.Mesh(geo, matWire);
   wire.frustumCulled = false;
   wire._sharedGeometry = true;
-  wire._gpuSurface = { uNames, domain: domain||null };
+  wire._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX };
   return [mesh, wire];
 }
 // GPU-accelerated SPHERICAL transformer: a 2-input map r = f(θ,φ) drawn as a
@@ -114,7 +114,7 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
   const res=Math.max(2,Math.min(512,Math.round(resolveNum(tp.res,scope,40))));
   const uniforms=new Set();
   // radius from out0, in terms of grid symbols x=θ, y=φ
-  const rG=exprToGLSL(outs[0]||"0", new Set(["x","y"]), uniforms);
+  const rG=exprToGLSL(outs[0]||"0", new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX);
   if(rG==null) return null;
   // grid coords _gd.x∈[0,1]→θ (x), _gd.y∈[0,1]→φ (y); then place the spherical
   // point. `_r` holds the radius once so the expression is evaluated a single time.
@@ -155,7 +155,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
   // Transpile each output expression once (needed for axis placement and color).
   const outGLSL=[];
   for(let k=0;k<outDim;k++){
-    const g=exprToGLSL(outs[k]||"0", new Set(["x","y"]), uniforms);
+    const g=exprToGLSL(outs[k]||"0", new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX);
     if(g==null) return null;           // unsupported expr → caller uses CPU path
     outGLSL[k]=g;
   }
@@ -435,9 +435,9 @@ function buildQuiver3d(p,exprX,exprY,exprZ,gridN,xMin,xMax,yMin,yMax,zMin,zMax,c
 // field expressions aren't GLSL-translatable (→ CPU fallback).
 function buildQuiver3dGPU(p, scope, color){
   const uniforms=new Set();
-  const gx=exprToGLSL(p.exprX, new Set(["x","y","z"]), uniforms);
-  const gy=exprToGLSL(p.exprY, new Set(["x","y","z"]), uniforms);
-  const gz=p.exprZ ? exprToGLSL(p.exprZ, new Set(["x","y","z"]), uniforms) : "0.0";
+  const gx=exprToGLSL(p.exprX, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX);
+  const gy=exprToGLSL(p.exprY, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX);
+  const gz=p.exprZ ? exprToGLSL(p.exprZ, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX) : "0.0";
   if(gx==null||gy==null||gz==null) return null;
   const gridN=Math.max(2,Math.min(64,Math.round(resolveNum(p.gridN,scope,5))));
   const xMin=resolveNum(p.xMin,scope,-3),xMax=resolveNum(p.xMax,scope,3);
@@ -472,8 +472,8 @@ function buildQuiver3dGPU(p, scope, color){
   geo.instanceCount=count;
 
   const uobj={ uColor:{value:new THREE.Color(hexToThree(color))}, uMaxMag:{value:1.0}, uNorm:{value:normalize?1.0:0.0} };
-  for(const u of uniforms) uobj[u]={value:Number(scope[u])||0};
-  const decls=[...uniforms].map(u=>`uniform float ${u};`).join("\n");
+  for(const u of uniforms) uobj[GLSL_UNIFORM_PREFIX+u]={value:Number(scope[u])||0};
+  const decls=[...uniforms].map(u=>`uniform float ${GLSL_UNIFORM_PREFIX}${u};`).join("\n");
   const vert=`
     ${decls}
     attribute vec3 iBase;
@@ -513,7 +513,7 @@ function buildQuiver3dGPU(p, scope, color){
     uobj.uMaxMag.value=mx||1;
   }
   const mesh=new THREE.Mesh(geo,mat); mesh.frustumCulled=false;
-  mesh._gpuSurface={uNames:[...uniforms]};
+  mesh._gpuSurface={uNames:[...uniforms], uPrefix:GLSL_UNIFORM_PREFIX};
   return [mesh];
 }
 

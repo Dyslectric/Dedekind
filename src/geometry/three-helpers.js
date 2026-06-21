@@ -18,10 +18,12 @@ function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
 //   computes `float cval` — a per-vertex scalar mapped through a lo→hi ramp over
 //   [cmin,cmax]. When present the fill pass is gradient-colored instead of using
 //   the flat uColor. opts.colorLo/colorHi are THREE.Color; cmin/cmax are numbers.
-function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, domain){
+function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, domain, uPrefix=""){
   const colored = !!(opts && opts.colorBody);
   const uniforms = { uColor:{value:new THREE.Color(hexToThree(color))} };
-  for(const u of uniformNames) uniforms[u] = { value: Number(scope[u]) || 0 };
+  // User scalar uniforms are declared/keyed as prefix+name (the body references
+  // them prefixed) but their values come from scope[name].
+  for(const u of uniformNames) uniforms[uPrefix+u] = { value: Number(scope[u]) || 0 };
   // Domain bounds as uniforms (uDomU = [min,max] for the first param, uDomV for
   // the second). When the body references them, animating a bound is a uniform
   // write — no shader rebuild. Default to the unit range if not supplied.
@@ -37,7 +39,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     uniforms.uCMax = { value: Number(opts.cmax)||1 };
   }
   const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
-  const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${u};`).join("\n");
+  const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
   // Map math (x,y,z) → three (x,z,y) to match the rest of the app's convention.
   // The wireframe overlay is flat-shaded (no lighting), so it skips the two extra
   // mathPos() evaluations the fill pass needs for finite-difference normals —
@@ -120,6 +122,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader:vert, fragmentShader:frag,
     side:THREE.DoubleSide, transparent:true, wireframe:!!wireframe });
   mat._uniformNames = uniformNames;
+  mat._uPrefix = uPrefix;
   return mat;
 }
 
@@ -132,7 +135,11 @@ function updateGpuUniforms(objs, scope){
   for(const o of objs){
     const info=o._gpuSurface; if(!info) continue;
     const mat=o.material; if(!mat||!mat.uniforms) continue;
-    for(const u of info.uNames){ if(mat.uniforms[u]) mat.uniforms[u].value = Number(scope[u])||0; }
+    // User scalar uniforms may be namespaced (info.uPrefix) so their names can't
+    // collide with shader internals. The scope is keyed on the ORIGINAL name; the
+    // shader uniform is keyed on prefix+name.
+    const pfx=info.uPrefix||"";
+    for(const u of info.uNames){ const k=pfx+u; if(mat.uniforms[k]) mat.uniforms[k].value = Number(scope[u])||0; }
     const dom=info.domain;
     if(dom && dom.expr && mat.uniforms.uDomU && mat.uniforms.uDomV){
       const d=dom.defs||{};

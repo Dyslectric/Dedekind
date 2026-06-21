@@ -1,4 +1,4 @@
-import { exprToGLSL } from "./glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX } from "./glsl.js";
 
 // ── GPU-accelerated field evaluation for marching squares / cubes ─────────────
 // Replaces the CPU double/triple mathjs.evaluate() loops with a WebGL2 fragment
@@ -73,11 +73,11 @@ function evalFieldGPU2D(gl, fExpr, varA, varB, scope, aMin, aMax, bMin, bMax, N)
 
   const uniforms = new Set();
   const axisVars = new Set([varA, varB]);
-  const glslF = exprToGLSL(fExpr, axisVars, uniforms);
+  const glslF = exprToGLSL(fExpr, axisVars, uniforms, GLSL_UNIFORM_PREFIX);
   if (!glslF) return null;
 
   const freeUniforms = [...uniforms].filter(n => !axisVars.has(n));
-  const uniDecls = freeUniforms.map(n => `uniform highp float ${n};`).join("\n");
+  const uniDecls = freeUniforms.map(n => `uniform highp float ${GLSL_UNIFORM_PREFIX}${n};`).join("\n");
 
   const fragSrc = `#version 300 es
 precision highp float;
@@ -124,7 +124,7 @@ void main() {
   gl.uniform1f(gl.getUniformLocation(prog, "u_N"), N);
 
   for (const name of freeUniforms) {
-    const loc = gl.getUniformLocation(prog, name);
+    const loc = gl.getUniformLocation(prog, GLSL_UNIFORM_PREFIX + name);
     if (loc !== null) {
       const v = scope[name];
       gl.uniform1f(loc, typeof v === "number" && isFinite(v) ? v : 0);
@@ -157,11 +157,11 @@ function evalFieldGPU3D(gl, fExpr, varA, varB, varC, scope, xMin, xMax, yMin, yM
 
   const uniforms = new Set();
   const axisVars = new Set([varA, varB, varC]);
-  const glslF = exprToGLSL(fExpr, axisVars, uniforms);
+  const glslF = exprToGLSL(fExpr, axisVars, uniforms, GLSL_UNIFORM_PREFIX);
   if (!glslF) return null;
 
   const freeUniforms = [...uniforms].filter(n => !axisVars.has(n));
-  const uniDecls = freeUniforms.map(n => `uniform highp float ${n};`).join("\n");
+  const uniDecls = freeUniforms.map(n => `uniform highp float ${GLSL_UNIFORM_PREFIX}${n};`).join("\n");
 
   const fragSrc = `#version 300 es
 precision highp float;
@@ -226,7 +226,7 @@ void main() {
   gl.uniform1f(uN,      N);
 
   for (const name of freeUniforms) {
-    const loc = gl.getUniformLocation(prog, name);
+    const loc = gl.getUniformLocation(prog, GLSL_UNIFORM_PREFIX + name);
     if (loc !== null) {
       const v = scope[name];
       gl.uniform1f(loc, typeof v === "number" && isFinite(v) ? v : 0);
