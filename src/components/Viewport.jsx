@@ -396,7 +396,18 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
       window.removeEventListener("mouseup",onMU);window.removeEventListener("mousemove",onMM);
       window.removeEventListener("keydown",onKD);window.removeEventListener("keyup",onKU);
       document.removeEventListener("pointerdown",onPD,true);
-      renderer.dispose();if(el.contains(renderer.domElement))el.removeChild(renderer.domElement);
+      // Free GPU resources: renderer.dispose() alone does NOT release the scene's
+      // geometries/materials. Traverse and dispose them, then force the WebGL
+      // context to be lost so browsers reclaim it promptly (the landing/tutorials
+      // mount many viewports; without this, long sessions can exhaust the ~16
+      // live-context cap and previews stop rendering).
+      scene.traverse(o=>{
+        if(o.geometry && !o._sharedGeometry) o.geometry.dispose?.();
+        const m=o.material; if(Array.isArray(m)) m.forEach(x=>x?.dispose?.()); else m?.dispose?.();
+      });
+      renderer.dispose();
+      renderer.forceContextLoss?.();
+      if(el.contains(renderer.domElement))el.removeChild(renderer.domElement);
     };
   },[]);
 
@@ -682,6 +693,7 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
       for(const [,entry] of plotCache){ for(const o of entry.objs){ o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } }
       plotCache.clear(); inScene.clear();
       renderer.dispose();
+      renderer.forceContextLoss?.();
       if(container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
       if(container.contains(gridCv)) container.removeChild(gridCv);
       if(container.contains(labelCv)) container.removeChild(labelCv);
