@@ -1,6 +1,6 @@
 import { compileExpr } from "../core/math.js";
 import { EDGE_TABLE, TRI_TABLE } from "./mcTables.js";
-import { evalFieldGPU2D, evalFieldGPU3D, getSharedGL } from "./implicit-gpu.js";
+import { evalFieldGPU2D, evalFieldGPU3D, getSharedGL, gpu3DAvailable } from "./implicit-gpu.js";
 
 // A GPU field readback is trusted only if it's the right length and not degenerate.
 // A failed/short read (driver quirks, oversized atlas, R32F readback rejection)
@@ -165,7 +165,7 @@ function marchingCubes(eqNode, scope, xMin, xMax, yMin, yMax, zMin, zMax, res){
   let F = null;
   {
     const gl = getSharedGL();
-    if (gl){
+    if (gl && gpu3DAvailable()){
       try {
         const f = evalFieldGPU3D(gl, fExpr, vA, vB, vC, scope, xMin, xMax, yMin, yMax, zMin, zMax, N);
         if (gpuFieldValid(f, sx*sy*sz)) F = f;

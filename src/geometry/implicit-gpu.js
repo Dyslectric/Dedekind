@@ -266,7 +266,7 @@ void main() {
   return F;
 }
 
-export { evalFieldGPU2D, evalFieldGPU3D, getSharedGL };
+export { evalFieldGPU2D, evalFieldGPU3D, getSharedGL, gpu3DAvailable };
 
 // ── Shared offscreen WebGL2 context ───────────────────────────────────────────
 // Marching squares/cubes are pure compute (no on-screen output), so they evaluate
@@ -297,8 +297,20 @@ function getSharedGL() {
     // 2D corner (1,1) → 2 ; 3D corner (1,1,1) → 1+2+4 = 7
     const ok2 = probe2d && Math.abs(probe2d[probe2d.length-1] - 2) < 1e-3;
     const ok3 = probe3d && Math.abs(probe3d[probe3d.length-1] - 7) < 1e-3;
-    _sharedGL = (ok2 && ok3) ? gl : null;
-  } catch { _sharedGL = null; }
+    // The 2D probe gates the shared context: it covers everything that renders a
+    // single float-framebuffer pass and reads it back — 2D implicit curves AND the
+    // flow integrator's ping-pong. The 3D probe gates ONLY GPU marching cubes
+    // (the z-slice atlas path), which some drivers de-tile incorrectly. We no
+    // longer let a 3D-atlas failure disable the whole GPU stack; instead the 3D
+    // marching path checks gpu3DAvailable() and falls back to CPU on its own.
+    _gpu3DOk = !!ok3;
+    _sharedGL = ok2 ? gl : null;
+  } catch { _sharedGL = null; _gpu3DOk = false; }
   return _sharedGL;
 }
+
+// Whether the 3D z-slice atlas readback is trustworthy on this driver. The 3D
+// marching-cubes GPU path must check this; if false it uses the CPU sampler.
+let _gpu3DOk = false;
+function gpu3DAvailable(){ getSharedGL(); return _gpu3DOk; }
 

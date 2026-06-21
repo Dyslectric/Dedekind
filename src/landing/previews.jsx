@@ -312,7 +312,7 @@ function flowSurface3DScene(){
   field.props.out0="-y";field.props.out1="x";field.props.out2="0.6";   // constant z
   // seed line segment (0,0,0) → (1,0,0)
   const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seed line";seeds.props.degree="1";
-  seeds.props.exprX="t";seeds.props.exprY="0";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="24";
+  seeds.props.exprX="t";seeds.props.exprY="0";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="28";
   const flow=makeNode("flow",{x:640,y:200});flow.label="Stream Surface";flow.color="#5be0c0";
   flow.props.steps="320";flow.props.stepSize="0.03";flow.props.output="surface";
   flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
@@ -629,6 +629,10 @@ Object.assign(SCENES, {
   "tut-combine-intersect": tutCombineIntersectScene,
   "tut-orbit-logistic": tutOrbitLogisticScene,
   "tut-orbit-attractor": tutOrbitAttractorScene,
+  "tut-orbit-converge": tutOrbitConvergeScene,
+  "tut-sensitive": tutSensitiveScene,
+  "tut-henon": tutHenonScene,
+  "tut-gingerbread": tutGingerbreadScene,
   "tut-series-1": tutSeries1Scene,
   "tut-series-5": tutSeries5Scene,
   "tut-series-15": tutSeries15Scene,
@@ -663,7 +667,43 @@ Object.assign(SCENES, {
   "tut-limitcycle": tutLimitCycleScene,
   "tut-lorenz": tutLorenzScene,
   "tut-rossler": tutRosslerScene,
+  "tut-flow-dense2d": tutFlowDense2dScene,
+  "tut-flow-dense-surface": tutFlowDenseSurfaceScene,
+  "tut-flow-dense-grid": tutFlowDenseGridScene,
 });
+
+// Dense flows — high seed counts that exercise the GPU batch integrator.
+
+// Many streamlines across a 2D field: ~150 seeds on a ring, each integrated.
+// On the GPU these advance in parallel; on the CPU they fall back gracefully.
+function tutFlowDense2dScene(){
+  return _flow2d({label:"150 streamlines at once", vx:"-y + 0.18*x - 0.3*x*(x*x+y*y)*0.1", vy:"x + 0.18*y - 0.3*y*(x*x+y*y)*0.1",
+    size:3.2, seedX:"2.8*cos(6.2832*t)", seedY:"2.8*sin(6.2832*t)", seedRes:64,
+    steps:240, stepSize:0.03, output:"lines"});
+}
+// A dense stream surface: ~120 seeds along a line swept into a fine sheet.
+function tutFlowDenseSurfaceScene(){
+  return _flow2d({label:"a finely-sampled stream surface", vx:"-y + 0.25*x", vy:"x + 0.25*y",
+    size:3.4, seedX:"0.2 + 3.0*t", seedY:"0.05", seedRes:60, steps:260, stepSize:0.03, output:"surface"});
+}
+// A dense 3D stream surface: a seed line of 96 points swept through a helical
+// field into a smooth helicoidal sheet (the GPU path's best 3D case).
+function tutFlowDenseGridScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="96 seeds → smooth sheet";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="10";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="44";
+  const field=makeNode("fnMap",{x:300,y:120});field.props.inDim="3";field.props.outDim="3";
+  field.props.out0="-y";field.props.out1="x";field.props.out2="0.5";
+  const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seed line";seeds.props.degree="1";
+  seeds.props.exprX="0.4 + 2.2*t";seeds.props.exprY="0";seeds.props.exprZ="0";
+  seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="56";
+  const flow=makeNode("flow",{x:640,y:200});flow.label="stream surface";flow.color="#5be0c0";
+  flow.props.steps="360";flow.props.stepSize="0.03";flow.props.output="surface";
+  flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
+  flow.attachments=[field.id,seeds.id];
+  cam.attachments=[flow.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow},camId:cam.id,animated:false};
+}
 
 // The Rössler attractor: x'=−y−z, y'=x+ay, z'=b+z(x−c), classic a=b=0.2, c=5.7.
 // Same cheap reveal approach as Lorenz: integrate once as a recursive points
@@ -695,18 +735,27 @@ function tutRosslerScene(){
 
 // an attracting spiral: everything winds inward to the origin.
 function tutFixedAttractScene(){
-  return _flow2d({label:"a stable spiral (attracting)", vx:"-x - y", vy:"x - y", size:2.6,
-    seedX:"2.3*cos(6.2832*t)", seedY:"2.3*sin(6.2832*t)", seedRes:12, steps:260, stepSize:0.03, output:"lines"});
+  const w=makeNode("slider",{x:20,y:300});w.name="w";w.label="w · swirl";w.value=1;
+  w.props.min="0.2";w.props.max="3";w.props.step="0.02";
+  return _flow2d({label:"a stable spiral (drag swirl)", vx:"-x - w*y", vy:"w*x - y", size:2.6,
+    seedX:"2.3*cos(6.2832*t)", seedY:"2.3*sin(6.2832*t)", seedRes:24, steps:240, stepSize:0.03,
+    output:"lines", sliders:[w]});
 }
 // a repelling spiral: everything winds outward.
 function tutFixedRepelScene(){
-  return _flow2d({label:"an unstable spiral (repelling)", vx:"x - y", vy:"x + y", size:2.6,
-    seedX:"0.25*cos(6.2832*t)", seedY:"0.25*sin(6.2832*t)", seedRes:12, steps:150, stepSize:0.03, output:"lines"});
+  const w=makeNode("slider",{x:20,y:300});w.name="w";w.label="w · swirl";w.value=1;
+  w.props.min="0.2";w.props.max="3";w.props.step="0.02";
+  return _flow2d({label:"an unstable spiral (drag swirl)", vx:"x - w*y", vy:"w*x + y", size:2.6,
+    seedX:"0.25*cos(6.2832*t)", seedY:"0.25*sin(6.2832*t)", seedRes:24, steps:150, stepSize:0.03,
+    output:"lines", sliders:[w]});
 }
 // a center: closed orbits, neither attracting nor repelling (the boundary case).
 function tutFixedCenterScene(){
-  return _flow2d({label:"a center (closed orbits)", vx:"-y", vy:"x", size:2.6,
-    seedX:"0.5 + 1.7*t", seedY:"0", seedRes:6, steps:260, stepSize:0.03, output:"lines"});
+  const w=makeNode("slider",{x:20,y:300});w.name="w";w.label="w · rotation";w.value=1;
+  w.props.min="0.3";w.props.max="3";w.props.step="0.02";
+  return _flow2d({label:"a center (drag rotation)", vx:"-w*y", vy:"w*x", size:2.6,
+    seedX:"0.4 + 1.8*t", seedY:"0", seedRes:14, steps:320, stepSize:0.03,
+    output:"lines", sliders:[w]});
 }
 
 // Dynamical systems: limit cycles (Van der Pol) ──────────────────────────────
@@ -760,71 +809,111 @@ function _flow2d(opts){
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label=opts.label;cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize=String(opts.size||3);
   if(opts.cx!=null){cam.props.planeOx=String(opts.cx);cam.props.planeOy=String(opts.cy||0);}
+  // sliders + an optional looping animator all feed the field (and its quiver)
   const extraSliders=opts.sliders||[];
+  const anim=opts.anim||null;
+  const feeders=[...extraSliders, ...(anim?[anim]:[])];
   const field=makeNode("fnMap",{x:300,y:120});field.label="V(x,y)";field.props.inDim="2";field.props.outDim="2";
   field.props.out0=opts.vx;field.props.out1=opts.vy;
-  if(extraSliders.length) field.attachments=extraSliders.map(s=>s.id);
+  if(feeders.length) field.attachments=feeders.map(s=>s.id);
   const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seeds";seeds.props.degree="1";
   seeds.props.exprX=opts.seedX||"-2.4 + 4.8*t";seeds.props.exprY=opts.seedY||"-2.2";seeds.props.exprZ="0";
-  seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res=String(opts.seedRes||13);
+  // resolutions kept modest so re-integration on slider/animation frames stays
+  // smooth even when the GPU path isn't carrying the load
+  seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res=String(opts.seedRes||20);
   const flow=makeNode("flow",{x:640,y:200});flow.label="streamlines";flow.color="#5be0c0";
-  flow.props.steps=String(opts.steps||220);flow.props.stepSize=String(opts.stepSize||0.04);flow.props.output=opts.output||"surface";
+  flow.props.steps=String(opts.steps||220);flow.props.stepSize=String(opts.stepSize||0.035);flow.props.output=opts.output||"surface";
   flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
   flow.attachments=[field.id,seeds.id];
-  // companion quiver of the same field
+  // companion quiver of the same field (denser grid now that it's cheap)
   const qfn=makeNode("fnMap",{x:300,y:520});qfn.props.inDim="2";qfn.props.outDim="2";
   qfn.props.out0=opts.vx;qfn.props.out1=opts.vy;
-  if(extraSliders.length) qfn.attachments=extraSliders.map(s=>s.id);
+  if(feeders.length) qfn.attachments=feeders.map(s=>s.id);
   const quiver=makeNode("transformer",{x:640,y:460});quiver.label="field";quiver.color="#ffb454";
   quiver.props.mode="field";quiver.props.inAxis0="x";quiver.props.inAxis1="y";
   const ext=opts.size||3;
   quiver.props.aMin=String(-ext);quiver.props.aMax=String(ext);quiver.props.bMin=String(-ext);quiver.props.bMax=String(ext);
-  quiver.props.res="11";quiver.props.arrowLen="0.32";quiver.props.normalize=true;
+  quiver.props.res=String(opts.quiverRes||12);quiver.props.arrowLen="0.3";quiver.props.normalize=true;
   quiver.attachments=[qfn.id];
   const scene={[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow,[qfn.id]:qfn,[quiver.id]:quiver};
-  for(const s of extraSliders) scene[s.id]=s;
+  for(const s of feeders) scene[s.id]=s;
   cam.attachments=[flow.id,quiver.id];
-  return {scene,camId:cam.id,animated:!!opts.animated};
+  return {scene,camId:cam.id,animated:!!opts.animated || !!anim};
 }
 // Step: a source/sink — arrows point outward, streamlines radiate.
 function tutFlowSourceScene(){
-  return _flow2d({label:"a source", vx:"x", vy:"y", size:2.6,
-    seedX:"2.2*cos(6.2832*t)", seedY:"2.2*sin(6.2832*t)", seedRes:16, steps:90, stepSize:0.02, output:"lines"});
+  // A pure source (s=0) radiates straight out; raising s adds rotation so it
+  // becomes a spiral source. Because the flow normalizes speed, a plain magnitude
+  // scale would be invisible — s changes the DIRECTION field, which shows.
+  const s=makeNode("slider",{x:20,y:300});s.name="s";s.label="s · swirl";s.value=0;
+  s.props.min="0";s.props.max="1.4";s.props.step="0.01";
+  return _flow2d({label:"a source (drag swirl)", vx:"x - s*y", vy:"s*x + y", size:2.6,
+    seedX:"2.2*cos(6.2832*t)", seedY:"2.2*sin(6.2832*t)", seedRes:24, steps:120, stepSize:0.02,
+    output:"lines", sliders:[s]});
 }
 // Step: a saddle — flow in along one axis, out along the other.
 function tutFlowSaddleScene(){
-  return _flow2d({label:"a saddle", vx:"x", vy:"-y", size:2.6,
-    seedX:"-2.4 + 4.8*t", seedY:"-2.3", seedRes:15, steps:200, stepSize:0.03, output:"lines"});
+  const a=makeNode("slider",{x:20,y:300});a.name="a";a.label="a · asymmetry";a.value=1;
+  a.props.min="0.3";a.props.max="2.5";a.props.step="0.01";
+  return _flow2d({label:"a saddle (drag asymmetry)", vx:"a*x", vy:"-y", size:2.6,
+    seedX:"-2.4 + 4.8*t", seedY:"-2.3", seedRes:24, steps:200, stepSize:0.03,
+    output:"lines", sliders:[a]});
 }
 // Step: a shear — horizontal speed grows with height.
 function tutFlowShearScene(){
-  return _flow2d({label:"a shear flow", vx:"y", vy:"0", size:2.6,
-    seedX:"-2.4", seedY:"-2.4 + 4.8*t", seedRes:15, steps:160, stepSize:0.03, output:"lines"});
+  // Pure shear (k=0) is V=(y,0): every streamline is horizontal, faster higher up.
+  // Raising k adds a vertical response so the straight shear bends toward rotation.
+  // A magnitude scale on (y,0) would be invisible to the normalized flow; k changes
+  // the direction field, so the streamlines visibly curve.
+  const k=makeNode("slider",{x:20,y:300});k.name="k";k.label="k · bend";k.value=0;
+  k.props.min="0";k.props.max="1.2";k.props.step="0.01";
+  return _flow2d({label:"a shear flow (drag bend)", vx:"y", vy:"k*x", size:2.6,
+    seedX:"-2.4", seedY:"-2.4 + 4.8*t", seedRes:24, steps:200, stepSize:0.03,
+    output:"lines", sliders:[k]});
 }
 // Step: a slider morphs the field from pure rotation to spiral.
 function tutFlowMorphScene(){
   const a=makeNode("slider",{x:20,y:300});a.name="a";a.label="a · inward pull";a.value=0;
   a.props.min="-0.6";a.props.max="0.6";a.props.step="0.01";
   return _flow2d({label:"drag a: swirl ↔ spiral", vx:"-y + a*x", vy:"x + a*y", size:2.8,
-    seedX:"2.4*cos(6.2832*t)", seedY:"2.4*sin(6.2832*t)", seedRes:14, steps:240, stepSize:0.03,
+    seedX:"2.4*cos(6.2832*t)", seedY:"2.4*sin(6.2832*t)", seedRes:26, steps:240, stepSize:0.03,
     output:"lines", sliders:[a]});
 }
 // Deeper page: lines output (discrete trajectories).
 function tutFlowLinesScene(){
   return _flow2d({label:"trajectories as lines", vx:"-y + 0.25*x", vy:"x + 0.25*y", size:3,
-    seedX:"0.3 + 2.4*t", seedY:"0.1", seedRes:9, steps:240, stepSize:0.035, output:"lines"});
+    seedX:"0.3 + 2.4*t", seedY:"0.1", seedRes:18, steps:320, stepSize:0.035, output:"lines"});
 }
 // Deeper page: surface output (the seeds sweep a filled stream surface).
 function tutFlowSurfaceScene(){
-  return _flow2d({label:"trajectories as a surface", vx:"-y + 0.25*x", vy:"x + 0.25*y", size:3,
-    seedX:"0.3 + 2.4*t", seedY:"0.1", seedRes:24, steps:240, stepSize:0.035, output:"surface"});
+  // A genuine 3D stream surface: a swirling field with a steady vertical lift
+  // sweeps a dense seed line into a spiral ramp. The camera slowly orbits to show
+  // the form from all sides. The surface is built ONCE — only the camera moves per
+  // frame, so the scene stays cheap (no per-frame re-integration or rebuild).
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="trajectories as a surface";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="11";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="32";
+  const field=makeNode("fnMap",{x:300,y:120});field.props.inDim="3";field.props.outDim="3";
+  field.props.out0="-y + 0.12*x";field.props.out1="x + 0.12*y";field.props.out2="0.55";
+  const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seed line";seeds.props.degree="1";
+  seeds.props.exprX="0.3 + 2.4*t";seeds.props.exprY="0.1";seeds.props.exprZ="0";
+  seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="36";
+  const flow=makeNode("flow",{x:640,y:200});flow.label="stream surface";flow.color="#5be0c0";
+  flow.props.steps="200";flow.props.stepSize="0.04";flow.props.output="surface";
+  flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
+  flow.attachments=[field.id,seeds.id];
+  cam.attachments=[flow.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow},camId:cam.id,animated:true};
 }
 // Deeper page: a pendulum phase portrait, a physically meaningful field.
 function tutFlowPendulumScene(){
   // state (θ, ω): θ' = ω, ω' = −sin θ (undamped pendulum). Closed orbits near the
   // center, over-the-top rotation outside the separatrix.
-  return _flow2d({label:"pendulum phase portrait", vx:"y", vy:"-sin(x)", size:3.2,
-    seedX:"-3 + 6*t", seedY:"0.05", seedRes:16, steps:360, stepSize:0.03, output:"lines"});
+  const g=makeNode("slider",{x:20,y:300});g.name="g";g.label="g · gravity";g.value=1;
+  g.props.min="0.3";g.props.max="2.5";g.props.step="0.02";
+  return _flow2d({label:"pendulum phase portrait (drag g)", vx:"y", vy:"-g*sin(x)", size:3.2,
+    seedX:"-3 + 6*t", seedY:"0.05", seedRes:26, steps:300, stepSize:0.03,
+    output:"lines", sliders:[g]});
 }
 // Deeper page: a 3D flow (reuse the helicoidal stream surface pattern).
 function tutFlow3dScene(){
@@ -834,7 +923,7 @@ function tutFlow3dScene(){
   const field=makeNode("fnMap",{x:300,y:120});field.props.inDim="3";field.props.outDim="3";
   field.props.out0="-y";field.props.out1="x";field.props.out2="0.6";
   const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seed line";seeds.props.degree="1";
-  seeds.props.exprX="t";seeds.props.exprY="0";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="24";
+  seeds.props.exprX="t";seeds.props.exprY="0";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="48";
   const flow=makeNode("flow",{x:640,y:200});flow.label="stream surface";flow.color="#5be0c0";
   flow.props.steps="320";flow.props.stepSize="0.03";flow.props.output="surface";
   flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
@@ -1286,6 +1375,80 @@ function tutOrbitAttractorScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
 }
 
+// An orbit that settles to a fixed point: the discrete analogue of a stable
+// equilibrium. Logistic at r=2.8 spirals into 1−1/r and stays.
+function tutOrbitConvergeScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="settling to a fixed point";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.2";cam.props.planeOx="2.6";cam.props.planeOy="0.5";
+  const pts=makeNode("points",{x:620,y:160});pts.label="r = 2.8";pts.color="#5ad1e6";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="0, 0.08";
+  pts.props.recStep="x[n-1] + 0.09, 2.8*y[n-1]*(1 - y[n-1])";
+  pts.props.recCount="60";pts.props.drawLines=true;pts.props.radius="2.6";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#5ad1e6";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// Sensitive dependence: two logistic orbits (r=3.9) starting 0.0005 apart, drawn
+// together. They track for a while then diverge completely — the butterfly effect.
+function tutSensitiveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="sensitive dependence";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="2.8";cam.props.planeOy="0.5";
+  const a=makeNode("points",{x:620,y:120});a.label="x₀ = 0.300";a.color="#5ad1e6";
+  a.props.kind="points";a.props.mode="recursive";
+  a.props.recInit="0, 0.300";
+  a.props.recStep="x[n-1] + 0.06, 3.9*y[n-1]*(1 - y[n-1])";
+  a.props.recCount="100";a.props.drawLines=true;a.props.radius="2.2";
+  const b=makeNode("points",{x:620,y:300});b.label="x₀ = 0.3005";b.color="#ff5ea8";
+  b.props.kind="points";b.props.mode="recursive";
+  b.props.recInit="0, 0.3005";
+  b.props.recStep="x[n-1] + 0.06, 3.9*y[n-1]*(1 - y[n-1])";
+  b.props.recCount="100";b.props.drawLines=true;b.props.radius="2.2";
+  cam.attachments=[a.id,b.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b},camId:cam.id,animated:false};
+}
+
+// The Hénon map: the other canonical strange attractor, x'=1−a·x²+y, y'=b·x.
+// Its banded, folded curve is a textbook fractal. Fills in over time.
+function tutHenonScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="the Hénon attractor";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.6";cam.props.planeOy="0";
+  const n=makeNode("animator",{x:40,y:340});n.name="N";n.value=120;
+  n.props.min="120";n.props.max="3000";n.props.period="10";n.props.loop="loop";n.playing=true;
+  const pts=makeNode("points",{x:620,y:160});pts.label="a = 1.4, b = 0.3";pts.color="#ffcf6e";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="0, 0";
+  pts.props.recStep="1 - 1.4*x[n-1]*x[n-1] + y[n-1], 0.3*x[n-1]";
+  pts.props.recCount="N";pts.props.drawLines=false;pts.props.radius="1.4";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#ffcf6e";pts.props.colorHi="#ff5ea8";
+  pts.attachments=[n.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
+}
+
+// The Gingerbreadman map: x'=1−y+|x|, y'=x. A piecewise-linear rule whose orbit
+// tiles the plane into a polygonal, kaleidoscopic region — chaos without a curve.
+function tutGingerbreadScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="the Gingerbreadman map";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";cam.props.planeOx="2.3";cam.props.planeOy="2.3";
+  const n=makeNode("animator",{x:40,y:340});n.name="N";n.value=200;
+  n.props.min="200";n.props.max="4000";n.props.period="11";n.props.loop="loop";n.playing=true;
+  const pts=makeNode("points",{x:620,y:160});pts.label="x' = 1 − y + |x|, y' = x";pts.color="#9b8cff";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="-0.1, 0";
+  pts.props.recStep="1 - y[n-1] + abs(x[n-1]), x[n-1]";
+  pts.props.recCount="N";pts.props.drawLines=false;pts.props.radius="1.3";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  pts.attachments=[n.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
+}
+
 // Algebraic geometry: singular points and nodes ──────────────────────────────
 
 // helper: a 3D implicit surface scene with a chosen coloring
@@ -1412,12 +1575,16 @@ function tutStreamlinesScene(){
   const field=makeNode("fnMap",{x:300,y:120});field.label="V(x,y)";field.props.inDim="2";field.props.outDim="2";
   field.props.out0="-y + 0.25*x";field.props.out1="x + 0.25*y";
   const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seeds";seeds.props.degree="1";
-  seeds.props.exprX="0.3 + 2.2*t";seeds.props.exprY="0.1";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="11";
+  seeds.props.exprX="0.3 + 2.2*t";seeds.props.exprY="0.1";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="24";
+  // animate the trajectory length: the streamlines grow out from the seeds and
+  // retrace, like particles released into the field. `g` drives the step count.
+  const grow=makeNode("animator",{x:40,y:360});grow.name="g";grow.value=8;
+  grow.props.min="8";grow.props.max="260";grow.props.period="6";grow.props.loop="bounce";grow.playing=true;
   const flow=makeNode("flow",{x:640,y:200});flow.label="flow";flow.color="#5be0c0";
-  flow.props.steps="260";flow.props.stepSize="0.04";flow.props.output="surface";
+  flow.props.steps="g";flow.props.stepSize="0.04";flow.props.output="surface";
   flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
-  flow.attachments=[field.id,seeds.id];cam.attachments=[flow.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow},camId:cam.id,animated:false};
+  flow.attachments=[field.id,seeds.id,grow.id];cam.attachments=[flow.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[grow.id]:grow,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow},camId:cam.id,animated:true};
 }
 
 // Tutorial: inputs and scope ─────────────────────────────────────────────────

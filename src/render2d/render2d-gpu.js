@@ -4,7 +4,7 @@ import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain, plotSignature } from "../core/scope.js";
 import { applyDomain, pointGradientColors, rampColors } from "../geometry/rebuild.js";
 import { parsePointSeq, parseGlyphField, parsePointsExplicit, parseGlyphsExplicit } from "../geometry/parse.js";
-import { integrateFlow } from "../geometry/flow.js";
+import { integrateFlow, getTrajectories } from "../geometry/flow.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
 import { marchingSquares } from "../geometry/implicit.js";
@@ -30,19 +30,82 @@ function hexColor(hex){ const[r,g,b]=hexRGB(hex); return new THREE.Color(r,g,b);
 // requires filled geometry. Joints use a simple averaged-normal miter, which is
 // fine for smooth curves; very sharp corners fall back gracefully (clamped).
 // Returns one Mesh per contiguous run (NaN/null breaks the run).
+// Build the triangle ribbon for ONE polyline into the shared `pos` array. No new
+// mesh/material per line — the caller merges every run into a single geometry.
+// Round-join fans are emitted ONLY where the direction turns sharply; for the
+// near-collinear vertices of a smooth streamline (the overwhelmingly common case)
+// the segment quads alone read as a clean continuous line, which removes the bulk
+// of the triangles the old per-vertex fan produced.
+const JOIN_ANGLE_MIN = 0.35; // radians (~20°); below this, skip the join fan
+function appendRibbon(pos, run, half){
+  const n=run.length; if(n<2) return;
+  const pushTri=(a,b,c)=>{ pos.push(a[0],a[1],0, b[0],b[1],0, c[0],c[1],0); };
+  const JOIN_SEGS=4;
+  const fan=(c,a0,a1)=>{
+    let d=a1-a0; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
+    const steps=Math.max(1,Math.ceil(Math.abs(d)/(Math.PI/JOIN_SEGS)));
+    let prev=[c[0]+Math.cos(a0)*half, c[1]+Math.sin(a0)*half];
+    for(let k=1;k<=steps;k++){
+      const a=a0+d*(k/steps);
+      const cur=[c[0]+Math.cos(a)*half, c[1]+Math.sin(a)*half];
+      pushTri(c, prev, cur); prev=cur;
+    }
+  };
+  let prevAngN=null, prevValid=false;
+  for(let i=0;i<n-1;i++){
+    const p=run[i], q=run[i+1];
+    const dx=q[0]-p[0], dy=q[1]-p[1];
+    const l=Math.hypot(dx,dy);
+    if(l<1e-12) continue;
+    const ux=dx/l, uy=dy/l, nx=-uy, ny=ux;
+    const hx=nx*half, hy=ny*half;
+    const p1=[p[0]+hx,p[1]+hy], p2=[p[0]-hx,p[1]-hy];
+    const q1=[q[0]+hx,q[1]+hy], q2=[q[0]-hx,q[1]-hy];
+    pushTri(p1,q1,q2); pushTri(p1,q2,p2);
+    const angN=Math.atan2(ny,nx);
+    if(prevValid){
+      // only fan the joint when the turn is sharp enough to leave a visible notch
+      let d=angN-prevAngN; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
+      if(Math.abs(d) > JOIN_ANGLE_MIN){
+        fan(p, prevAngN, angN);
+        fan(p, prevAngN+Math.PI, angN+Math.PI);
+      }
+    }
+    prevAngN=angN; prevValid=true;
+  }
+}
+
+// Build a SINGLE merged mesh for all polylines (split on NaN gaps). One geometry,
+// one material, one draw call — instead of one mesh per trajectory.
 function buildThickLine2D(pts2d, color, half, opacity=1){
-  const runs=[]; let cur=[];
+  const pos=[]; let cur=[];
+  const flush=()=>{ if(cur.length>1) appendRibbon(pos, cur, half); cur=[]; };
   for(const p of pts2d){
     if(p&&isFinite(p[0])&&isFinite(p[1])) cur.push(p);
-    else{ if(cur.length>1)runs.push(cur); cur=[]; }
+    else flush();
   }
-  if(cur.length>1) runs.push(cur);
-  const meshes=[];
-  for(const run of runs){
-    const m=ribbonMesh(run, half, color, opacity);
-    if(m) meshes.push(m);
+  flush();
+  if(!pos.length) return [];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide,transparent:opacity<1,opacity});
+  return [new THREE.Mesh(g,mat)];
+}
+
+// Build many trajectories into ONE merged mesh. Used by the flow renderer so a
+// 64-streamline plot is a single draw call, not 64. Each trajectory is a separate
+// run (no connecting segment between them).
+function buildMergedStreamlines2D(trajs2d, color, half, opacity=1){
+  const pos=[];
+  for(const run of trajs2d){
+    const clean=run.filter(p=>p&&isFinite(p[0])&&isFinite(p[1]));
+    if(clean.length>1) appendRibbon(pos, clean, half);
   }
-  return meshes;
+  if(!pos.length) return [];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide,transparent:opacity<1,opacity});
+  return [new THREE.Mesh(g,mat)];
 }
 
 // Build thick DISCONNECTED segments (for implicit/marching-squares output where
@@ -75,55 +138,6 @@ function buildThickSegments2D(segs, color, half){
 // fast-moving / steep curves (near-vertical y=f(x), tight parametric loops) go
 // skinny and hard to see. Per-segment quads keep the full half-width through any
 // angle; the round joints fill the outer corner so the stroke reads continuous.
-function ribbonMesh(run, half, color, opacity=1){
-  const n=run.length; if(n<2) return null;
-  const pos=[];
-  const pushTri=(a,b,c)=>{ pos.push(a[0],a[1],0, b[0],b[1],0, c[0],c[1],0); };
-  // Round-join fan: sweep a disc wedge of radius `half` around centre `c`, from
-  // angle a0 to a1 along the shorter arc. A few wedges is plenty at ~2.6px.
-  const JOIN_SEGS=6;
-  const fan=(c,a0,a1)=>{
-    let d=a1-a0;
-    while(d> Math.PI) d-=2*Math.PI;
-    while(d<-Math.PI) d+=2*Math.PI;
-    const steps=Math.max(1,Math.ceil(Math.abs(d)/(Math.PI/JOIN_SEGS)));
-    let prev=[c[0]+Math.cos(a0)*half, c[1]+Math.sin(a0)*half];
-    for(let k=1;k<=steps;k++){
-      const a=a0+d*(k/steps);
-      const cur=[c[0]+Math.cos(a)*half, c[1]+Math.sin(a)*half];
-      pushTri(c, prev, cur);
-      prev=cur;
-    }
-  };
-  let prev=null; // {q1,q2, angN} of the previous segment's END
-  for(let i=0;i<n-1;i++){
-    const p=run[i], q=run[i+1];
-    const dx=q[0]-p[0], dy=q[1]-p[1];
-    const l=Math.hypot(dx,dy);
-    if(l<1e-12) continue;
-    const ux=dx/l, uy=dy/l;          // unit direction
-    const nx=-uy, ny=ux;             // unit left normal
-    const hx=nx*half, hy=ny*half;
-    const p1=[p[0]+hx,p[1]+hy], p2=[p[0]-hx,p[1]-hy];
-    const q1=[q[0]+hx,q[1]+hy], q2=[q[0]-hx,q[1]-hy];
-    // Full-width quad for this segment (its own normal → never pinches).
-    pushTri(p1,q1,q2);
-    pushTri(p1,q2,p2);
-    // Round join at the shared vertex p between the previous segment and this one.
-    if(prev){
-      const angN=Math.atan2(ny,nx);          // this segment's +normal angle
-      fan(p, prev.angN, angN);               // outer side
-      fan(p, prev.angN+Math.PI, angN+Math.PI); // inner side
-    }
-    prev={angN:Math.atan2(ny,nx)};
-  }
-  if(!pos.length) return null;
-  const g=new THREE.BufferGeometry();
-  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
-  const mat=new THREE.MeshBasicMaterial({color:hexToThree(color),depthTest:false,side:THREE.DoubleSide,transparent:opacity<1,opacity});
-  return new THREE.Mesh(g,mat);
-}
-
 // Build a SOLID filled mesh from a grid of projected [u,v] points
 // (rows[r][c] = [u,v] | null). Triangulates each quad cell directly into two
 // triangles — it does NOT triangulate a boundary polygon, so a self-intersecting
@@ -760,10 +774,11 @@ function build2DFlow(np, rawNode, nodes, pscope, color, px, animVals, fr){
   }
   // streamlines: one projected polyline per seed
   const half=px(LINE_PX)/2;
-  for(const s of seeds){
-    const traj=integrateFlow(s,field.exprX,field.exprY,field.exprZ,steps,stepSize,fieldSc);
-    objs.push(...buildThickLine2D(projectPts(fr,traj), color, half));
-  }
+  // Integrate all seeds, then build EVERY streamline into one merged mesh (a
+  // single draw call for the whole flow) instead of one mesh per trajectory.
+  const trajs=getTrajectories(field, seeds, steps, stepSize, fieldSc);
+  const proj=trajs.map(traj=>projectPts(fr,traj));
+  objs.push(...buildMergedStreamlines2D(proj, color, half));
   return objs;
 }
 
@@ -815,7 +830,7 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
 
   const VIEW_FILLING=new Set(["fn1d","quiver2d"]);
   // Types whose element size is constant-on-screen (so zoom changes geometry).
-  const ZOOM_SIZED=new Set(["fn1d","curve3d","pointSeq","points","point","quiver2d","quiver3d","glyphField","transformer"]);
+  const ZOOM_SIZED=new Set(["fn1d","curve3d","pointSeq","points","point","quiver2d","quiver3d","glyphField","transformer","flow"]);
 
   for(const childId of (camNode.attachments||[])){
     const rawNode=nodes[childId]; if(!rawNode) continue;
@@ -829,8 +844,12 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     // Build the per-plot signature: geometry + frame + (zoom?) + (view?).
     const gsig=plotSignature(node,np,pscope,nodes,animVals||{}) ?? `${node.type}|raw`;
     const t=rawNode.type==="transformer"||rawNode.type==="flow"?rawNode.type:node.type;
-    const POINT_TYPES=new Set(["pointSeq","points","point"]);
-    const zPart=ZOOM_SIZED.has(t)?`|z${POINT_TYPES.has(t)?zoomBucketCoarse:zoomBucket}`:"";
+    // Point sets and flows carry heavy geometry (instances / integrated trajectories)
+    // and keep constant on-screen size, so they use the COARSE zoom bucket: they
+    // re-fit their pixel width at wide zoom intervals instead of rebuilding on every
+    // fine scroll step. Other zoom-sized line plots use the fine bucket.
+    const COARSE_ZOOM=new Set(["pointSeq","points","point","flow"]);
+    const zPart=ZOOM_SIZED.has(t)?`|z${COARSE_ZOOM.has(t)?zoomBucketCoarse:zoomBucket}`:"";
     const vPart=VIEW_FILLING.has(t)?`|v${viewSig}`:"";
     const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;
 
