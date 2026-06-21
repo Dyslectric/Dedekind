@@ -625,6 +625,42 @@ function tutPolarRoseScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[k.id]:k,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// Editor transformer-modes: polar mode reads a one-input map r(θ) as a radius
+// swept around the origin. A distinct example from the analytic rose — an
+// Archimedean spiral r = θ/turns, where the radius grows steadily with the angle.
+function tutModePolarScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="polar mode: r grows with θ";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";
+  const turns=makeNode("slider",{x:20,y:320});turns.name="turns";turns.label="turns";turns.value=3;
+  turns.props.min="1";turns.props.max="6";turns.props.step="1";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="r(θ) = θ/(2π)";fn.color="#ffb454";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="x/(2*pi)";fn.attachments=[];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="polar curve";tr.color="#ffb454";
+  tr.props.mode="polar";tr.props.aMin="0";tr.props.aMax="6.2832*turns";tr.props.res="800";
+  tr.attachments=[fn.id,turns.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[turns.id]:turns,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Editor transformer-modes: spherical mode reads a two-input map r(θ,φ) as a
+// radius over the sphere of directions. A distinct example from the analytic
+// urchin — a peanut/dumbbell from a low-order spherical harmonic.
+function tutModeSphericalScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="spherical mode: r(θ,φ)";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="4.6";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="32";
+  const lobe=makeNode("slider",{x:20,y:320});lobe.name="lobe";lobe.label="lobe · polar order";lobe.value=2;
+  lobe.props.min="1";lobe.props.max="6";lobe.props.step="1";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="r(θ,φ)";fn.color="#9b8cff";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0.6 + 0.7*abs(cos(lobe*y))";fn.attachments=[lobe.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="spherical";tr.color="#9b8cff";
+  tr.props.mode="spherical";tr.props.aMin="0";tr.props.aMax="6.2832";tr.props.bMin="0";tr.props.bMax="3.14159";
+  tr.props.res="80";tr.props.colorMode="normal";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[lobe.id]:lobe,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+
 // A cardioid/limaçon r = a + cos(θ) via polar mode; the offset a turns the
 // cardioid into the family of limaçons (inner loop when a < 1).
 function tutPolarCardioidScene(){
@@ -1088,6 +1124,8 @@ Object.assign(SCENES, {
   "tut-polar-rose": tutPolarRoseScene,
   "tut-polar-cardioid": tutPolarCardioidScene,
   "tut-spherical": tutPolarSpiralScene,
+  "tut-mode-polar": tutModePolarScene,
+  "tut-mode-spherical": tutModeSphericalScene,
   "tut-mode-graph": tutModeGraphScene,
   "tut-mode-param": tutModeParamScene,
   "tut-mode-field": tutModeFieldScene,
@@ -1107,6 +1145,7 @@ Object.assign(SCENES, {
   "tut-torus-level": tutTorusLevelScene,
   "tut-const-curve": tutConstCurveScene,
   "tut-slider-curve": tutSliderCurveScene,
+  "tut-animator-curve": tutAnimatorCurveScene,
   "tut-named-scope": tutNamedScopeScene,
   "tut-cam-3d": tutCam3dScene,
   "tut-cam-2d": tutCam2dScene,
@@ -1148,6 +1187,7 @@ Object.assign(SCENES, {
   "tut-tangent-plane": tutTangentPlaneScene,
   "tut-tangent-bundle": tutTangentBundleScene,
   "tut-frenet": tutFrenetScene,
+  "tut-frenet-measure": tutFrenetMeasureScene,
   "tut-geodesic-sphere": tutGeodesicSphereScene,
   "tut-geodesic-compare": tutGeodesicCompareScene,
   "tut-gauss-curvature": tutGaussCurvatureScene,
@@ -1910,6 +1950,59 @@ function tutFrenetScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[curve.id]:curve,[Tn.id]:Tn,[Nn.id]:Nn,[Bn.id]:Bn,[mark.id]:mark},camId:cam.id,animated:true};
 }
 
+// Companion to the Frenet scene: a curve whose curvature and torsion VARY, so the
+// frame visibly speeds up and slows down as it rides along — the helix's frame
+// rotates steadily, but on this weave r(s)=(cos s, sin s, 0.6·sin 3s) the bending
+// and twisting change with position. The frame is built from dependency functions
+// (D1*, D2* for derivatives; T*, N*, B* for the orthonormal vectors).
+function tutFrenetMeasureScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1180,y:120}));cam.label="curvature and torsion vary along the curve";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="6.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const scene={[project.id]:project,[cam.id]:cam};
+  const s=makeNode("animator",{x:-40,y:360});s.name="s";s.value=0;
+  s.props.min="0";s.props.max="6.2832";s.props.period="16";s.props.loop="loop";s.playing=true;scene[s.id]=s;
+  // the weave curve
+  const curve=makeNode("paramSpace",{x:300,y:60});curve.label="weave";curve.color="#7ad7ff";
+  curve.props.degree="1";curve.props.exprX="cos(t)";curve.props.exprY="sin(t)";curve.props.exprZ="0.6*sin(3*t)";
+  curve.props.tMin="0";curve.props.tMax="6.2832";curve.props.res="400";scene[curve.id]=curve;
+  // helper functions: first and second derivatives. Each fnDef attaches to the
+  // other fnDefs it references (by name), so resolveScope threads the chain.
+  const fns=[]; const byName={};
+  const fn=(name,expr,x,y,deps=[])=>{ const nd=makeNode("fnDef",{x,y});nd.name=name;nd.label=`${name}(s)`;nd.props.params="s";nd.props.expr=expr;
+    nd.attachments=deps.map(d=>byName[d].id);
+    scene[nd.id]=nd;fns.push(nd);byName[name]=nd;return nd; };
+  fn("D1X","-sin(s)",60,180); fn("D1Y","cos(s)",60,250); fn("D1Z","1.8*cos(3*s)",60,320);
+  fn("D2X","-cos(s)",60,390); fn("D2Y","-sin(s)",60,460); fn("D2Z","-5.4*sin(3*s)",60,530);
+  fn("SP","sqrt(D1X(s)^2 + D1Y(s)^2 + D1Z(s)^2)",340,200,["D1X","D1Y","D1Z"]);
+  // T = r'/|r'|
+  fn("TX","D1X(s)/SP(s)",340,300,["D1X","SP"]); fn("TY","D1Y(s)/SP(s)",340,360,["D1Y","SP"]); fn("TZ","D1Z(s)/SP(s)",340,420,["D1Z","SP"]);
+  // N direction = d2 - (d2·T)T, normalized
+  fn("DOT","D2X(s)*TX(s) + D2Y(s)*TY(s) + D2Z(s)*TZ(s)",620,200,["D2X","D2Y","D2Z","TX","TY","TZ"]);
+  fn("NRX","D2X(s) - DOT(s)*TX(s)",620,270,["D2X","DOT","TX"]); fn("NRY","D2Y(s) - DOT(s)*TY(s)",620,330,["D2Y","DOT","TY"]); fn("NRZ","D2Z(s) - DOT(s)*TZ(s)",620,390,["D2Z","DOT","TZ"]);
+  fn("NL","sqrt(NRX(s)^2 + NRY(s)^2 + NRZ(s)^2)",620,460,["NRX","NRY","NRZ"]);
+  fn("NX","NRX(s)/NL(s)",900,200,["NRX","NL"]); fn("NY","NRY(s)/NL(s)",900,260,["NRY","NL"]); fn("NZ","NRZ(s)/NL(s)",900,320,["NRZ","NL"]);
+  // B = T × N
+  fn("BX","TY(s)*NZ(s) - TZ(s)*NY(s)",900,400,["TY","TZ","NY","NZ"]); fn("BY","TZ(s)*NX(s) - TX(s)*NZ(s)",900,460,["TZ","TX","NX","NZ"]); fn("BZ","TX(s)*NY(s) - TY(s)*NX(s)",900,520,["TX","TY","NX","NY"]);
+  const allFns=fns.map(f=>f.id);
+  const L=0.7;
+  const arrow=(name,col,fx,fy,fz,y)=>{
+    const n=makeNode("points",{x:1180,y});n.label=name;n.color=col;
+    n.props.kind="points";n.props.mode="index";
+    n.props.idxPoint=`cos(s) + i*${L}*${fx}(s), sin(s) + i*${L}*${fy}(s), 0.6*sin(3*s) + i*${L}*${fz}(s)`;
+    n.props.idxCount="2";n.props.drawLines=true;n.props.radius="0";n.attachments=[s.id,...allFns];
+    scene[n.id]=n; return n;
+  };
+  const Tn=arrow("T","#ff5ea8","TX","TY","TZ",300);
+  const Nn=arrow("N","#5be0c0","NX","NY","NZ",380);
+  const Bn=arrow("B","#ffcf6e","BX","BY","BZ",460);
+  const mark=makeNode("points",{x:1180,y:540});mark.label="point";mark.color="#ffffff";
+  mark.props.kind="points";mark.props.mode="index";mark.props.idxPoint="cos(s), sin(s), 0.6*sin(3*s)";mark.props.idxCount="1";
+  mark.props.drawLines=false;mark.props.radius="0.09";mark.attachments=[s.id];scene[mark.id]=mark;
+  cam.attachments=[curve.id,Tn.id,Nn.id,Bn.id,mark.id];
+  return {scene,camId:cam.id,animated:true};
+}
+
 // ── Geodesics ──
 
 // A geodesic on the sphere is a great circle. Show it as the straightest path
@@ -2038,7 +2131,7 @@ function tutPointTypesScene(){
 function tutPointsListScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="a list of points";cam.props.showOpenBtn=false;
-  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.6";
   const pts=makeNode("points",{x:620,y:160});pts.label="points";pts.color="#a6e3a1";
   pts.props.kind="points";pts.props.mode="list";
   pts.props.listPoints="-2, -1\n-1, 1\n0, -0.5\n1, 1.5\n2, 0";
@@ -2255,7 +2348,7 @@ function tutNodeGradientScene(){
 function tutPolyCurveScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="x³ − x = y  (algebraic)";cam.props.showOpenBtn=false;
-  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.5";
   const eq=makeNode("equation",{x:360,y:160});eq.label="cubic curve";eq.color="#a6e3a1";
   eq.props.dims="2d";eq.props.lhs="x^3 - x";eq.props.rhs="y";eq.props.varA="x";eq.props.varB="y";
   const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#a6e3a1";
@@ -2267,7 +2360,7 @@ function tutPolyCurveScene(){
 function tutTranscendentalScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="y = eˣ·sin(3x)  (transcendental)";cam.props.showOpenBtn=false;
-  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="7";cam.props.planeOx="0";cam.props.planeOy="0";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="4";cam.props.planeOx="0";cam.props.planeOy="0";
   const eq=makeNode("equation",{x:360,y:160});eq.label="transcendental";eq.color="#9b8cff";
   eq.props.dims="2d";eq.props.lhs="exp(0.35*x)*sin(3*x)";eq.props.rhs="y";eq.props.varA="x";eq.props.varB="y";
   const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#9b8cff";
@@ -2327,7 +2420,7 @@ function tutRevolutionScene(){
 function tutVectorFieldScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="vector field";cam.props.showOpenBtn=false;
-  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.3";
   const fn=makeNode("fnMap",{x:360,y:160});fn.label="V(x,y)";fn.color="#7ad7ff";
   fn.props.inDim="2";fn.props.outDim="2";fn.props.out0="-y + 0.25*x";fn.props.out1="x + 0.25*y";
   const tr=makeNode("transformer",{x:700,y:160});tr.label="field";tr.color="#7ad7ff";
@@ -2341,7 +2434,7 @@ function tutVectorFieldScene(){
 function tutStreamlinesScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="streamlines";cam.props.showOpenBtn=false;
-  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.3";
   const field=makeNode("fnMap",{x:300,y:120});field.label="V(x,y)";field.props.inDim="2";field.props.outDim="2";
   field.props.out0="-y + 0.25*x";field.props.out1="x + 0.25*y";
   const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seeds";seeds.props.degree="1";
@@ -2388,8 +2481,24 @@ function tutSliderCurveScene(){
   tr.attachments=[fn.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
 }
-// Step 3: a slider `k` is referenced by NAME in the expression without being
-// wired straight to the transformer — showing named scalars live in global scope.
+// Step 2b: an animator is a value that advances on its own. A travelling phase t
+// inside sin(x − t) marches the wave sideways with no input from you — the
+// difference from a slider is that time drives it, not your hand.
+function tutAnimatorCurveScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="t advances on its own";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.0";cam.props.orbPhi="1.45";cam.props.showGrid=true;cam.props.showAxes=true;
+  const t=makeNode("animator",{x:40,y:320});t.name="t";t.value=0;
+  t.props.min="0";t.props.max="6.2832";t.props.period="6";t.props.loop="loop";t.playing=true;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="sin(x − t)";fn.color="#9b8cff";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="sin(x - t)";fn.attachments=[t.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="z";
+  tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="200";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[t.id]:t,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
 function tutNamedScopeScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="k drives frequency";cam.props.showOpenBtn=false;
@@ -2433,7 +2542,7 @@ function tutCam2dScene(){
   const trId=_camSurface(project,scene);
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="2D camera (top-down)";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalX="0";cam.props.normalY="0";cam.props.normalZ="1";
-  cam.props.planeOx="0";cam.props.planeOy="0";cam.props.planeOz="0";cam.props.orthoSize="7";
+  cam.props.planeOx="0";cam.props.planeOy="0";cam.props.planeOz="0";cam.props.orthoSize="3.6";
   cam.attachments=[trId];scene[cam.id]=cam;
   return {scene,camId:cam.id,animated:false};
 }
