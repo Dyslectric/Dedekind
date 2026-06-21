@@ -97,6 +97,39 @@ function integrate(args, _m, scope) {
 }
 integrate.rawArgs = true;
 
+// Memoized symbolic derivative + compile. Both `differentiate` and `partial` take
+// the symbolic derivative of a body expression w.r.t. a variable and then compile
+// the result for evaluation. Doing that on EVERY sample is ~440x slower than the
+// closed form (measured): a derivative plotted over a grid re-derives and
+// re-compiles per point. Since the body text and variable are stable across a
+// plot's samples (only the bound values change), we cache the compiled derivative
+// keyed on (body source, variable). Returns the compiled object, or null if the
+// body can't be differentiated.
+const _derivCache = new Map();
+const _DERIV_CACHE_MAX = 2000;
+function compiledDerivative(bodyNode, varName) {
+  // Key on the body's source text + the differentiation variable. toString() is
+  // stable for a given AST and cheap relative to derivative+compile.
+  let src;
+  try { src = bodyNode.toString(); } catch { src = null; }
+  const key = src == null ? null : (varName + "\u0000" + src);
+  if (key != null) {
+    const hit = _derivCache.get(key);
+    if (hit !== undefined) return hit;   // may be null (known un-differentiable)
+  }
+  let compiled = null;
+  try { compiled = math.derivative(bodyNode, varName).compile(); }
+  catch { compiled = null; }
+  if (key != null) {
+    if (_derivCache.size >= _DERIV_CACHE_MAX) {
+      const firstKey = _derivCache.keys().next().value;
+      _derivCache.delete(firstKey);
+    }
+    _derivCache.set(key, compiled);
+  }
+  return compiled;
+}
+
 // differentiate(body, x, point, [pin...])  — d/dx[body] evaluated at x = point.
 // Takes the SYMBOLIC derivative of body w.r.t. x (mathjs `derivative`), then
 // evaluates with x bound to `point`; remaining free variables resolve from the
@@ -106,9 +139,8 @@ integrate.rawArgs = true;
 function differentiate(args, _m, scope) {
   if (args.length < 3 || !args[1].isSymbolNode) return NaN;
   const name = args[1].name;
-  let d;
-  try { d = math.derivative(args[0], name); }      // symbolic d(body)/d(name)
-  catch { return NaN; }
+  const d = compiledDerivative(args[0], name);   // cached symbolic derivative + compile
+  if (!d) return NaN;
   let pt; try { pt = args[2].compile().evaluate(scope); } catch { return NaN; }
   if (typeof pt !== "number" || !isFinite(pt)) return NaN;
   const binds = [[name, pt]];
@@ -125,7 +157,7 @@ function differentiate(args, _m, scope) {
   const prev = nms.map((nm, i) => had[i] ? _scopeGet(scope, nm) : undefined);
   binds.forEach(([nm, val]) => _scopeSet(scope, nm, val));
   let v;
-  try { v = d.compile().evaluate(scope); }
+  try { v = d.evaluate(scope); }
   catch { v = NaN; }
   finally {
     nms.forEach((nm, i) => { if (had[i]) _scopeSet(scope, nm, prev[i]); else _scopeDelete(scope, nm); });
@@ -145,9 +177,8 @@ differentiate.rawArgs = true;
 function partial(args, _m, scope) {
   if (args.length < 4 || !args[1].isSymbolNode) return NaN;
   const dv = args[1].name;
-  let d;
-  try { d = math.derivative(args[0], dv); }        // symbolic ∂(expr)/∂(dv)
-  catch { return NaN; }
+  const d = compiledDerivative(args[0], dv);       // cached symbolic ∂/∂(dv) + compile
+  if (!d) return NaN;
   const namesNode = args[2], valsNode = args[3];
   if (!namesNode || !namesNode.isArrayNode || !valsNode || !valsNode.isArrayNode) return NaN;
   const names = namesNode.items || [];
@@ -169,7 +200,7 @@ function partial(args, _m, scope) {
   const prev = nms.map((nm, i) => had[i] ? _scopeGet(scope, nm) : undefined);
   binds.forEach(([nm, val]) => _scopeSet(scope, nm, val));
   let v;
-  try { v = d.compile().evaluate(scope); }
+  try { v = d.evaluate(scope); }
   catch { v = NaN; }
   finally {
     nms.forEach((nm, i) => { if (had[i]) _scopeSet(scope, nm, prev[i]); else _scopeDelete(scope, nm); });
