@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useUI } from "../../theme/tokens.jsx";
 import { sampleRawGeom } from "../../geometry/builders.js";
 import { MathInput, EI, XF } from "../MathInput.jsx";
@@ -18,8 +19,15 @@ export function RawGeomEditor({ node, scope, onChange }){
   const listField = prim==="points"?"rawPoints":prim==="segments"?"rawSegments":prim==="glyphs"?"rawGlyphs":"rawTris";
   const idxField  = prim==="points"?"idxPoints":prim==="segments"?"idxSegments":prim==="glyphs"?"idxGlyphs":"idxTris";
 
-  let count=0;
-  try{ count = sampleRawGeom(p, prim, scope).verts.length; }catch(e){ count=0; }
+  // The vertex count requires sampling the whole geometry (JIT-compiling + running
+  // the index lattice up to 20k verts/dim). Doing that on every render — including
+  // the ~8Hz props-panel animation tick — is wasteful. Memoize on the inputs that
+  // change it: the active data text, the count, and the scope's scalar values.
+  const dataText = isIdx ? p[idxField] : p[listField];
+  const scopeKey = useMemo(()=>Object.keys(scope||{}).sort().map(k=>{const v=scope[k];return typeof v==="number"?`${k}=${v}`:k;}).join(","), [scope]);
+  const count = useMemo(()=>{
+    try{ return sampleRawGeom(p, prim, scope).verts.length; }catch(e){ return 0; }
+  }, [prim, src, dataText, p.idxCount, scopeKey]);
 
   const listHint = {
     points:    "one point per line:  x, y, z",
