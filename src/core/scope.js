@@ -1,7 +1,7 @@
 import { catOf } from "./taxonomy.js";
 import { resolveNum, safeEval, makeFn, splitTopLevel } from "./math.js";
 import * as math from "mathjs";
-import { exprToGLSL } from "../geometry/glsl.js";
+import { exprToGLSL, fnTableFromScope, fnTableSig } from "../geometry/glsl.js";
 
 // Memoized check: will an equation's lhs/rhs transpile to GLSL (→ GPU raymarch
 // path)? If so, its sliders/animators become live shader uniforms and must NOT
@@ -9,11 +9,15 @@ import { exprToGLSL } from "../geometry/glsl.js";
 // the surface). Cached by the expression text so the per-frame signature stays
 // cheap. Returns true when BOTH sides transpile.
 const _glslOkCache = new Map();
-function eqTranspiles(eqNode){
+function eqTranspiles(eqNode, scope){
   if(!eqNode) return false;
   const q=eqNode.props||{};
   const is3d=(q.dims||"2d")==="3d";
-  const key=`${q.dims}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`;
+  // fnDefs wired into the equation can be INLINED into the GLSL (see exprToGLSL's
+  // fnTable arg), so a composed implicit surface rides the GPU too. Whether it
+  // transpiles depends on the fnDef bodies, so fold their structure into the key.
+  const fnTable=fnTableFromScope(scope);
+  const key=`${q.dims}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}|${fnTableSig(fnTable)}`;
   const hit=_glslOkCache.get(key);
   if(hit!==undefined) return hit;
   let ok=false;
@@ -26,7 +30,7 @@ function eqTranspiles(eqNode){
       ? new Set([(q.varA||"x").trim()||"x",(q.varB||"y").trim()||"y",(q.varC||"z").trim()||"z"])
       : new Set([(q.varA||"x").trim()||"x",(q.varB||"y").trim()||"y"]);
     const f=`(${q.lhs ?? "0"}) - (${q.rhs ?? "0"})`;
-    ok = exprToGLSL(f, axis, new Set()) != null;
+    ok = exprToGLSL(f, axis, new Set(), "", fnTable) != null;
   }catch{ ok=false; }
   _glslOkCache.set(key, ok);
   return ok;
@@ -38,16 +42,21 @@ function eqTranspiles(eqNode){
 // signature. When it doesn't (CPU mesh fallback), the bounds are baked into the
 // geometry and their values MUST be in the signature so an animated bound rebuilds.
 const _surfGlslCache = new Map();
-function surfTranspiles(node){
+function surfTranspiles(node, scope){
   const p=node.props||{};
   let key, exprs, axis;
-  if(node.type==="surf3d"){ key=`s|${p.expr}`; exprs=[p.expr]; axis=new Set(["x","y"]); }
-  else if(node.type==="paramsurf"){ key=`p|${p.exprX}|${p.exprY}|${p.exprZ}`; exprs=[p.exprX,p.exprY,p.exprZ]; axis=new Set(["u","v"]); }
+  // fnDefs wired into the surface inline into the GLSL, so a surface composed from
+  // helper functions can ride the GPU. The fnDef bodies affect transpilability, so
+  // they're part of the memo key.
+  const fnTable=fnTableFromScope(scope);
+  const fnSig=fnTableSig(fnTable);
+  if(node.type==="surf3d"){ key=`s|${p.expr}|${fnSig}`; exprs=[p.expr]; axis=new Set(["x","y"]); }
+  else if(node.type==="paramsurf"){ key=`p|${p.exprX}|${p.exprY}|${p.exprZ}|${fnSig}`; exprs=[p.exprX,p.exprY,p.exprZ]; axis=new Set(["u","v"]); }
   else return false;
   const hit=_surfGlslCache.get(key);
   if(hit!==undefined) return hit;
   let ok=true;
-  try{ for(const e of exprs){ if(exprToGLSL(e ?? "0", axis, new Set())==null){ ok=false; break; } } }
+  try{ for(const e of exprs){ if(exprToGLSL(e ?? "0", axis, new Set(), "", fnTable)==null){ ok=false; break; } } }
   catch{ ok=false; }
   _surfGlslCache.set(key, ok);
   return ok;
@@ -205,11 +214,11 @@ function geomSignature(node, scope){
   const c=node.color||"";
   switch(node.type){
     case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${
-      surfTranspiles(node) ? "" : `${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|`
+      surfTranspiles(node,scope) ? "" : `${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|`
     }${scopeSigFns(node,scope)}`;
     case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
     case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${
-      surfTranspiles(node) ? "" : `${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|`
+      surfTranspiles(node,scope) ? "" : `${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|`
     }${scopeSigFns(node,scope)}`;
     case "paramvol": return `pv|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${p.wMin}|${p.wMax}|${resolveNum(p.uRes,scope,14)}|${resolveNum(p.vRes,scope,14)}|${resolveNum(p.wRes,scope,14)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
     case "curve3d": return `c|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.tMin,scope,0)}|${resolveNum(p.tMax,scope,6.283)}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
@@ -284,7 +293,7 @@ function plotSignature(node, p, scope, nodes, animVals){
       // live uniforms and must NOT enter the signature. TWO equations are an
       // intersection curve (CPU mesh-derived), so values always fold in — an
       // animated slider must rebuild the curve.
-      eqRaymarch = eqDeps.length===1 && eqTranspiles(eqDeps[0]);
+      eqRaymarch = eqDeps.length===1 && eqTranspiles(eqDeps[0], resolveScope(eqDeps[0].id,nodes,animV));
       for(const dep of eqDeps){
         const q=dep.props;
         eqSig += `eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC};`;

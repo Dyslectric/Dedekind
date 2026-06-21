@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { resolveNum } from "../core/math.js";
+import { augmentScopeForGPU } from "./glsl.js";
 
 // ── THREE helpers ────────────────────────────────────────────────────────────
 function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(o); if(o.geometry&&!o._sharedGeometry)o.geometry.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else if(o.material)o.material.dispose();}}
@@ -132,6 +133,10 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
 // bounds (info.domain → uDomU/uDomV vec2s), re-resolving the bound expressions so
 // an animator wired into a domain edge sweeps the surface with no rebuild.
 function updateGpuUniforms(objs, scope){
+  // Composed surfaces inline user fnDefs; scalars inside those fnDef bodies became
+  // uniforms by name but live in the fnDef's own scope, so resolve against the
+  // augmented scope (a no-op for ordinary surfaces — returns the same object).
+  const sc=augmentScopeForGPU(scope);
   for(const o of objs){
     const info=o._gpuSurface; if(!info) continue;
     const mat=o.material; if(!mat||!mat.uniforms) continue;
@@ -139,7 +144,7 @@ function updateGpuUniforms(objs, scope){
     // collide with shader internals. The scope is keyed on the ORIGINAL name; the
     // shader uniform is keyed on prefix+name.
     const pfx=info.uPrefix||"";
-    for(const u of info.uNames){ const k=pfx+u; if(mat.uniforms[k]) mat.uniforms[k].value = Number(scope[u])||0; }
+    for(const u of info.uNames){ const k=pfx+u; if(mat.uniforms[k]) mat.uniforms[k].value = Number(sc[u])||0; }
     const dom=info.domain;
     if(dom && dom.expr && mat.uniforms.uDomU && mat.uniforms.uDomV){
       const d=dom.defs||{};

@@ -10,7 +10,7 @@ import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
 import { marchingSquares } from "../geometry/implicit.js";
 import { hexToThree } from "../geometry/three-helpers.js";
-import { exprToGLSL, GLSL_UNIFORM_PREFIX } from "../geometry/glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "../geometry/glsl.js";
 import { planeFrame, projectPt, projectPts } from "./project2d.js";
 import { advectSeeds } from "../geometry/flow.js";
 
@@ -580,9 +580,15 @@ function build2DImplicitGPU(tNode, eqNode, pscope, color, fr){
   const varA=(p.varA||"x").trim()||"x", varB=(p.varB||"y").trim()||"y";
   const fExpr=`(${p.lhs??"0"}) - (${p.rhs??"0"})`;
   const uniforms=new Set();
+  // fnDefs wired into the equation are inlined, so a composed 2D implicit curve
+  // renders on the GPU too.
+  const fnTable=fnTableFromScope(pscope);
+  const ascope=fnTable?augmentScopeForGPU(pscope):pscope;
   // map the equation's two plane variables to the shader's a,b coords
-  const g=exprToGLSL(fExpr, new Set([varA,varB]), uniforms, GLSL_UNIFORM_PREFIX);
+  const g=exprToGLSL(fExpr, new Set([varA,varB]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
   if(g==null) return null;
+  // composed curve: bail to marching squares if an inlined scalar can't resolve
+  if(fnTable){ for(const u of uniforms){ if(!(varA===u||varB===u) && !Number.isFinite(Number(ascope[u]))) return null; } }
   // rename varA/varB to the shader locals a,b (exprToGLSL emits them verbatim)
   // We declare them as the function params below, so just guard reserved names.
   const tp=tNode.props||{};
@@ -602,7 +608,7 @@ function build2DImplicitGPU(tNode, eqNode, pscope, color, fr){
   const uobj={ uColor:{value:new THREE.Color(hexToThree(color))} };
   // exclude the two plane variables (they're function params, not uniforms)
   const planeVars=new Set([varA,varB]);
-  for(const u of uniforms){ if(!planeVars.has(u)) uobj[GLSL_UNIFORM_PREFIX+u]={value:Number(pscope[u])||0}; }
+  for(const u of uniforms){ if(!planeVars.has(u)) uobj[GLSL_UNIFORM_PREFIX+u]={value:Number(ascope[u])||0}; }
   const decls=[...uniforms].filter(u=>!planeVars.has(u)).map(u=>`uniform float ${GLSL_UNIFORM_PREFIX}${u};`).join("\n");
   const vert=`
     attribute vec2 ab; varying vec2 vAb;
@@ -992,6 +998,8 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
             uScope=resolveScope(childId,nodes,animVals||{});
             // fold in scalars from a wired equation (coefficients live there)
             for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(d&&d.type==="equation"){ Object.assign(uScope, resolveScope(d.id,nodes,animVals||{})); } }
+            // composed curves inline fnDefs whose scalars live in the fnDef scope
+            uScope=augmentScopeForGPU(uScope);
           }
           for(const nm of names){ const u=o.material.uniforms[GLSL_UNIFORM_PREFIX+nm]; if(u) u.value=Number(uScope[nm])||0; }
         }

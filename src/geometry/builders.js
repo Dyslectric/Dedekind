@@ -6,20 +6,34 @@ import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { resolveNum, safeEval, linspace, splitTopLevel } from "../core/math.js";
 import { compileToJS } from "../core/jit.js";
-import { exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX } from "./glsl.js";
+import { exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
 
 // Target on-screen thickness for 1-space curves in 3D cameras (CSS pixels).
 const CURVE_3D_PX = 2.6;
+
+// When a surface is composed from user fnDefs, exprToGLSL inlines them and the
+// scalars inside those fnDef bodies become shader uniforms by name. Those scalars
+// live in the fnDef's own scope, so resolution must use the AUGMENTED scope. This
+// guard rejects the GPU path (→ CPU fallback) if any collected uniform can't be
+// resolved to a finite value there, so a composed surface never silently renders
+// with a missing (zeroed) coefficient. Only applied when fnDefs are present, so
+// plain surfaces keep their exact existing behavior.
+function gpuUniformsResolvable(uniforms, ascope){
+  for(const u of uniforms){ if(!Number.isFinite(Number(ascope[u]))) return false; }
+  return true;
+}
 
 // Attempt a GPU-evaluated surface. Returns [mesh, wire] or null if the
 // expression(s) can't be translated to GLSL.
 function buildSurfGPU(kind, p, scope, color){
   // a parametrized grid of (u,v) or (x,y) in [0,1]^2 mapped to the domain
   const showWire = p.showWire!==false;
+  const fnTable=fnTableFromScope(scope);
+  const ascope=fnTable?augmentScopeForGPU(scope):scope;
   let bodyP, uniforms=new Set(), umin, umax, vmin, vmax, ures, vres;
   if(kind==="surf3d"){
-    const gx=exprToGLSL(p.expr, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX);
+    const gx=exprToGLSL(p.expr, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
     if(gx==null) return null;
     umin=resolveNum(p.xMin,scope,-4); umax=resolveNum(p.xMax,scope,4);
     vmin=resolveNum(p.yMin,scope,-4); vmax=resolveNum(p.yMax,scope,4);
@@ -32,9 +46,9 @@ function buildSurfGPU(kind, p, scope, color){
              y = uDomV.x + _gd.y*(uDomV.y - uDomV.x);
              float zz = ${gx}; vec3 P = vec3(x, y, zz);`;
   } else if(kind==="paramsurf"){
-    const sx=exprToGLSL(p.exprX,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX);
-    const sy=exprToGLSL(p.exprY,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX);
-    const sz=exprToGLSL(p.exprZ,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX);
+    const sx=exprToGLSL(p.exprX,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX,fnTable);
+    const sy=exprToGLSL(p.exprY,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX,fnTable);
+    const sz=exprToGLSL(p.exprZ,new Set(["u","v"]),uniforms,GLSL_UNIFORM_PREFIX,fnTable);
     if(sx==null||sy==null||sz==null) return null;
     umin=resolveNum(p.uMin,scope,0); umax=resolveNum(p.uMax,scope,Math.PI*2);
     vmin=resolveNum(p.vMin,scope,0); vmax=resolveNum(p.vMax,scope,Math.PI);
@@ -45,13 +59,17 @@ function buildSurfGPU(kind, p, scope, color){
              vec3 P = vec3(${sx}, ${sy}, ${sz});`;
   } else return null;
 
+  // Composed surface: bail to CPU if an inlined fnDef pulled in a scalar we can't
+  // resolve (so it never renders with a zeroed coefficient).
+  if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
+
   // Pass the initial domain so the shader's uDomU/uDomV uniforms start correct;
   // they are refreshed each frame by updateGpuUniforms, which re-resolves the
   // bound EXPRESSIONS (so an animator/slider in a bound updates live, no rebuild).
   const domExpr = kind==="surf3d"
     ? { uMin:p.xMin, uMax:p.xMax, vMin:p.yMin, vMax:p.yMax }
     : { uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax };
-  return assembleSurfGPU(bodyP, [...uniforms], scope, color, ures, vres, showWire,
+  return assembleSurfGPU(bodyP, [...uniforms], ascope, color, ures, vres, showWire,
     null, { uDomU:[umin,umax], uDomV:[vmin,vmax],
             expr:domExpr, defs:{ uMin:umin, uMax:umax, vMin:vmin, vMax:vmax } }, p.wireOnly===true);
 }
@@ -112,10 +130,13 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
   const aMin=resolveNum(tp.aMin,scope,0),aMax=resolveNum(tp.aMax,scope,6.2832);
   const bMin=resolveNum(tp.bMin,scope,0),bMax=resolveNum(tp.bMax,scope,3.14159);
   const res=Math.max(2,Math.min(512,Math.round(resolveNum(tp.res,scope,40))));
+  const fnTable=fnTableFromScope(scope);
+  const ascope=fnTable?augmentScopeForGPU(scope):scope;
   const uniforms=new Set();
   // radius from out0, in terms of grid symbols x=θ, y=φ
-  const rG=exprToGLSL(outs[0]||"0", new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX);
+  const rG=exprToGLSL(outs[0]||"0", new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
   if(rG==null) return null;
+  if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
   // grid coords _gd.x∈[0,1]→θ (x), _gd.y∈[0,1]→φ (y); then place the spherical
   // point. `_r` holds the radius once so the expression is evaluated a single time.
   const bodyP = `x = ${_glslNum(aMin)} + _gd.x*${_glslNum(aMax-aMin)};
@@ -123,7 +144,7 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
                  float _r = ${rG};
                  float _sp = sin(y);
                  vec3 P = vec3(_r*_sp*cos(x), _r*_sp*sin(x), _r*cos(y));`;
-  return assembleSurfGPU(bodyP, [...uniforms], scope, color, res, res, tp.showWire!==false);
+  return assembleSurfGPU(bodyP, [...uniforms], ascope, color, res, res, tp.showWire!==false);
 }
 
 // GPU-accelerated graph-mode transformer with TWO inputs → a surface.
@@ -144,6 +165,8 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
   const bMin=resolveNum(tp.bMin,scope,-5),bMax=resolveNum(tp.bMax,scope,5);
   const res=Math.max(2,Math.min(512,Math.round(resolveNum(tp.res,scope,40))));
+  const fnTable=fnTableFromScope(scope);
+  const ascope=fnTable?augmentScopeForGPU(scope):scope;
   const uniforms=new Set();
   // input grid coords in map symbols: x=a, y=b
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
@@ -155,10 +178,11 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
   // Transpile each output expression once (needed for axis placement and color).
   const outGLSL=[];
   for(let k=0;k<outDim;k++){
-    const g=exprToGLSL(outs[k]||"0", new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX);
+    const g=exprToGLSL(outs[k]||"0", new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
     if(g==null) return null;           // unsupported expr → caller uses CPU path
     outGLSL[k]=g;
   }
+  if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
   for(let k=0;k<outDim;k++){
     const ax=AX[outAx[k]]; if(ax==null) continue;   // skip color/none/unbound
     world[ax]=outGLSL[k];
@@ -179,7 +203,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     }
     // if color expr can't transpile, fall back to flat-colored GPU surface
   }
-  return assembleSurfGPU(bodyP, [...uniforms], scope, color, res, res, tp.showWire!==false, colorOpts, null, tp.wireOnly===true);
+  return assembleSurfGPU(bodyP, [...uniforms], ascope, color, res, res, tp.showWire!==false, colorOpts, null, tp.wireOnly===true);
 }
 
 function buildFn1dGPU(p, scope, color){
@@ -434,11 +458,14 @@ function buildQuiver3d(p,exprX,exprY,exprZ,gridN,xMin,xMax,yMin,yMax,zMin,zMax,c
 // all arrows instead of hundreds of Line+Cone objects. Returns null if the
 // field expressions aren't GLSL-translatable (→ CPU fallback).
 function buildQuiver3dGPU(p, scope, color){
+  const fnTable=fnTableFromScope(scope);
+  const ascope=fnTable?augmentScopeForGPU(scope):scope;
   const uniforms=new Set();
-  const gx=exprToGLSL(p.exprX, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX);
-  const gy=exprToGLSL(p.exprY, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX);
-  const gz=p.exprZ ? exprToGLSL(p.exprZ, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX) : "0.0";
+  const gx=exprToGLSL(p.exprX, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+  const gy=exprToGLSL(p.exprY, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+  const gz=p.exprZ ? exprToGLSL(p.exprZ, new Set(["x","y","z"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable) : "0.0";
   if(gx==null||gy==null||gz==null) return null;
+  if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
   const gridN=Math.max(2,Math.min(64,Math.round(resolveNum(p.gridN,scope,5))));
   const xMin=resolveNum(p.xMin,scope,-3),xMax=resolveNum(p.xMax,scope,3);
   const yMin=resolveNum(p.yMin,scope,-3),yMax=resolveNum(p.yMax,scope,3);
@@ -472,7 +499,7 @@ function buildQuiver3dGPU(p, scope, color){
   geo.instanceCount=count;
 
   const uobj={ uColor:{value:new THREE.Color(hexToThree(color))}, uMaxMag:{value:1.0}, uNorm:{value:normalize?1.0:0.0} };
-  for(const u of uniforms) uobj[GLSL_UNIFORM_PREFIX+u]={value:Number(scope[u])||0};
+  for(const u of uniforms) uobj[GLSL_UNIFORM_PREFIX+u]={value:Number(ascope[u])||0};
   const decls=[...uniforms].map(u=>`uniform float ${GLSL_UNIFORM_PREFIX}${u};`).join("\n");
   const vert=`
     ${decls}

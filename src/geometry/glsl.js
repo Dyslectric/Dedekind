@@ -158,16 +158,73 @@ function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
 // (the closures carry _fnName/_fnParams/_fnExpr metadata, see makeFn). Pass the
 // result as exprToGLSL's fnTable argument to inline user functions into the GPU
 // path. Returns null if the scope has no fnDefs (so callers can cheaply skip).
+// Recurses into each fnDef's own closed-over scope so a helper that itself calls
+// another helper (nested composition) is fully inlinable.
 function fnTableFromScope(scope){
   if(!scope) return null;
   let table=null;
+  const seen=new Set();
+  const collect=(sc)=>{
+    if(!sc) return;
+    for(const k in sc){
+      const v=sc[k];
+      if(typeof v==="function" && v._fnExpr!=null && Array.isArray(v._fnParams)){
+        const name=v._fnName||k;
+        if(seen.has(name)) continue; seen.add(name);
+        (table||(table={}))[name]={ params:v._fnParams, expr:v._fnExpr };
+        collect(v._fnScope);   // pull in helpers this helper calls
+      }
+    }
+  };
+  collect(scope);
+  return table;
+}
+
+// A stable text signature of an fnTable's STRUCTURE (names, params, bodies). Used
+// to key the transpilability probes' memo: whether an expression transpiles can
+// change when a referenced fnDef's body changes, but not when a slider value
+// changes, so the value-free structure is the right cache key. "" when no table.
+function fnTableSig(fnTable){
+  if(!fnTable) return "";
+  return Object.keys(fnTable).sort()
+    .map(n=>`${n}(${(fnTable[n].params||[]).join(",")})=${fnTable[n].expr}`).join(";");
+}
+
+// Flatten every fnDef-private numeric scalar reachable from a scope into a flat
+// {name: value} map. When a fnDef body is INLINED into a shader, the scalars it
+// references (that aren't its parameters) are emitted as uniforms by their
+// original names — but those scalars live in the fnDef's OWN closed-over scope,
+// not the consumer's, so the consumer's scope can't resolve them. This hoists
+// them so the uniform values are available at build and update time. Parameter
+// names are stripped (they're substituted by call-site args, never uniforms).
+function _collectFnScalars(scope, out, seen){
+  if(!scope) return out;
   for(const k in scope){
     const v=scope[k];
     if(typeof v==="function" && v._fnExpr!=null && Array.isArray(v._fnParams)){
-      (table||(table={}))[v._fnName||k]={ params:v._fnParams, expr:v._fnExpr };
+      const name=v._fnName||k;
+      if(seen.has(name)) continue; seen.add(name);
+      const fnScope=v._fnScope||{};
+      const params=new Set(v._fnParams);
+      for(const kk in fnScope){
+        if(params.has(kk)) continue;
+        const vv=fnScope[kk];
+        if(typeof vv==="number" && !(kk in out)) out[kk]=vv;
+      }
+      _collectFnScalars(fnScope, out, seen);   // nested helpers + their scalars
     }
   }
-  return table;
+  return out;
+}
+// Return a scope augmented with all inlined-fnDef-private scalars, so shader
+// uniforms resolve. The consumer's own scalars win on name conflict. Returns the
+// SAME object when there are no fnDef-private scalars (the common case), so the
+// per-frame uniform update doesn't allocate for ordinary surfaces.
+function augmentScopeForGPU(scope){
+  if(!scope) return scope;
+  const extra=_collectFnScalars(scope, {}, new Set());
+  for(const _ in extra) return { ...extra, ...scope };
+  return scope;
 }
 
 // Reserved prefix for user-derived (slider/constant/animator) uniforms in
@@ -176,5 +233,5 @@ function fnTableFromScope(scope){
 const GLSL_UNIFORM_PREFIX = "usr_";
 
 export {
-  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope
+  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, fnTableSig, augmentScopeForGPU
 };

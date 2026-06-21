@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { exprToGLSL, GLSL_UNIFORM_PREFIX } from "./glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "./glsl.js";
 import { hexToThree } from "./three-helpers.js";
 
 // ── Ray-marched implicit surface ──────────────────────────────────────────────
@@ -36,9 +36,16 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
   // else (sliders/animators/constants) becomes a uniform.
   const uniforms = new Set();
   const axisVars = new Set([vA, vB, vC]);
-  const glslF = exprToGLSL(fExpr, axisVars, uniforms, GLSL_UNIFORM_PREFIX);
+  // fnDefs wired into the equation are inlined into the field expression, so a
+  // composed implicit surface raymarches on the GPU too.
+  const fnTable = fnTableFromScope(scope);
+  const ascope = fnTable ? augmentScopeForGPU(scope) : scope;
+  const glslF = exprToGLSL(fExpr, axisVars, uniforms, GLSL_UNIFORM_PREFIX, fnTable);
   if (glslF == null) return null;               // untranspilable → caller uses mesh path
   const freeUniforms = [...uniforms].filter(n => !axisVars.has(n));
+  // Composed surface: if an inlined fnDef pulled in a scalar we can't resolve,
+  // fall back to the marching-cubes mesh rather than raymarch a zeroed coefficient.
+  if (fnTable){ for(const n of freeUniforms){ if(!Number.isFinite(Number(ascope[n]))) return null; } }
 
   // Math-space sampling box.
   const aMin=resolveNum(tp.aMin,scope,-5), aMax=resolveNum(tp.aMax,scope,5);
@@ -85,7 +92,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
     uColorShift:{value: resolveNum(tp.colorShift, scope, 0)},
     uGradScale:{value: 0.5},
   };
-  for(const n of freeUniforms) uniformsObj[GLSL_UNIFORM_PREFIX+n]={value:Number(scope[n])||0};
+  for(const n of freeUniforms) uniformsObj[GLSL_UNIFORM_PREFIX+n]={value:Number(ascope[n])||0};
 
   const vert = `
     varying vec3 vWorld;
