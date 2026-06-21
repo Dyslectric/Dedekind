@@ -5,6 +5,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
+import { compileToJS } from "../core/jit.js";
 import { exprToGLSL, _glslNum } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
 
@@ -265,7 +266,7 @@ function buildCurve3d(pts,color,cols=null){
 // WebGL drivers). `segs` is math-space [[ [x,y,z],[x,y,z] ], ...]; coordinates
 // are baked to final world space (x, z, −y) and the object is flagged for the
 // unmirrored group + resize refinement, exactly like buildCurve3d.
-function buildSegments3d(segs, color){
+function buildSegments3d(segs, color, cols=null){
   if(!segs||!segs.length) return [];
   const pos=new Float32Array(segs.length*2*3);
   let k=0;
@@ -277,15 +278,28 @@ function buildSegments3d(segs, color){
   }
   const geo=new LineSegmentsGeometry();
   geo.setPositions(pos);
+  // Per-endpoint colors → the fat-line shader interpolates them along each
+  // segment (Gouraud). cols is one [ca, cb] pair per segment.
+  const useCol=!!cols;
+  if(useCol){
+    const cArr=new Float32Array(segs.length*2*3); let ci=0;
+    for(const [ca,cb] of cols){
+      const a=ca||[1,1,1], b=cb||[1,1,1];
+      cArr[ci++]=a[0]; cArr[ci++]=a[1]; cArr[ci++]=a[2];
+      cArr[ci++]=b[0]; cArr[ci++]=b[1]; cArr[ci++]=b[2];
+    }
+    geo.setColors(cArr);
+  }
   const c3=new THREE.Color(hexToThree(color));
   const _res = (typeof window!=="undefined" && window.innerWidth)
     ? new THREE.Vector2(window.innerWidth, window.innerHeight)
     : new THREE.Vector2(1024,768);
   const mat=new LineMaterial({
-    color: c3.getHex(),
+    color: useCol ? 0xffffff : c3.getHex(),
     linewidth: CURVE_3D_PX,
     worldUnits: false,
     resolution: _res,
+    vertexColors: useCol,
   });
   mat._isCurve3d = true;
   const seg=new LineSegments2(geo,mat);
@@ -719,6 +733,313 @@ function buildScalarVolume(p, scope, color){
   return [new THREE.Points(geo,mat)];
 }
 
+// ── Raw geometry node ────────────────────────────────────────────────────────
+// Build explicit primitives from typed-in data, no formula/transformer in the
+// loop. Four primitive kinds (prim): points / segments / glyphs / triangles.
+// Two source modes (src):
+//   list  — literal vertex data, one primitive per line.
+//   index — ONE template primitive whose coordinates are EXPRESSIONS over the
+//           indices i (and j,k for a lattice) plus n (flat index), evaluated over
+//           a count grid. Expressions see wired scalars and fnDefs, so primitives
+//           can express against arbitrary dependency functions.
+// Every vertex carries an optional color scalar (colorExpr) mapped through the
+// lo→hi ramp, interpolated across the primitive (Gouraud).
+function buildRawGeom3d(p, scope, color){
+  const prim = p.prim || "points";
+  const { verts, cols, rgb, alpha } = sampleRawGeom(p, prim, scope); // verts: array of vertex-groups
+  if(!verts.length) return [];
+  // Per-vertex colors as [r,g,b] groups. Either taken straight from the rgb
+  // three-parameter mode, or produced by ramping the scalar groups.
+  let rampGroups=null;
+  if(rgb){
+    rampGroups=rgb;                       // already [0,1] per channel, per vertex
+  } else if(cols){
+    const flat=[]; for(const g of cols) for(const cval of g) flat.push(cval);
+    const ramped=rampRaw(flat, p, scope);
+    rampGroups=[]; let idx=0; for(const g of cols){ const grp=[]; for(let m=0;m<g.length;m++) grp.push(ramped[idx++]); rampGroups.push(grp); }
+  }
+  const useCol = !!rampGroups;
+  const alphaGroups = alpha;              // per-vertex [0,1] alpha groups, or null
+
+  // For points/segments/glyphs the underlying materials don't carry per-vertex
+  // alpha, so honor alpha as a single opacity (the mean of the per-vertex alphas).
+  let meanAlpha=1;
+  if(alphaGroups){ let s=0,c=0; for(const g of alphaGroups) for(const a of g){ s+=a; c++; } meanAlpha=c?s/c:1; }
+
+  if(prim==="points"){
+    const r = resolveNum(p.radius, scope, 0.08);
+    const pts = verts.map(v=>v[0]);
+    const pcols = rampGroups ? rampGroups.map(g=>g[0]) : null;
+    const objs = buildPointSeqGPU(pts, color, r, p.drawLines===true, pcols);
+    if(alphaGroups) for(const o of objs){ if(o.material){ o.material.transparent=true; o.material.opacity=meanAlpha; } }
+    return objs;
+  }
+  if(prim==="segments"){
+    const segs = verts.map(([a,b])=>[a,b]);
+    const scols = rampGroups ? rampGroups.map(([ca,cb])=>[ca,cb]) : null;
+    const objs = buildSegments3d(segs, color, scols);
+    if(alphaGroups) for(const o of objs){ if(o.material){ o.material.transparent=true; o.material.opacity=meanAlpha; } }
+    return objs;
+  }
+  if(prim==="glyphs"){
+    const pairs = verts.map(([pos,vec])=>({pos, vec}));
+    const opts = {
+      arrowLen: resolveNum(p.arrowLen,scope,0.5),
+      lenMode: p.lenMode || "raw",
+      normalize: p.normalize===true,
+      anim: "none",
+    };
+    if(rampGroups) opts.cols = rampGroups.map(g=>g[0]); // glyph colored by its base vertex
+    const objs = buildGlyphFieldGPU(pairs, color, opts);
+    if(alphaGroups) for(const o of objs){ if(o.material){ o.material.transparent=true; o.material.opacity=meanAlpha; } }
+    return objs;
+  }
+  // triangles → a filled mesh from explicit vertex triples (math→three swap), with
+  // optional per-vertex colors interpolated across each face. When alpha is on,
+  // colors are stored RGBA (4-component) so transparency interpolates per vertex.
+  const hasA = !!alphaGroups;
+  const cw = hasA ? 4 : 3;
+  const pos=new Float32Array(verts.length*9);
+  const colArr=(useCol||hasA)?new Float32Array(verts.length*3*cw):null;
+  let k=0, ck=0;
+  for(let t=0;t<verts.length;t++){
+    const [a,b,c]=verts[t];
+    const tri=[a,b,c];
+    for(let m=0;m<3;m++){ const v=tri[m]; pos[k++]=v[0]; pos[k++]=v[2]||0; pos[k++]=-(v[1]||0);
+      if(colArr){ const cc=(useCol?rampGroups[t][m]:null)||[1,1,1]; colArr[ck++]=cc[0]; colArr[ck++]=cc[1]; colArr[ck++]=cc[2];
+        if(hasA){ const av=alphaGroups[t]; colArr[ck++]=(av&&av[m]!=null)?av[m]:1; } } }
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos,3));
+  if(colArr) geo.setAttribute("color", new THREE.BufferAttribute(colArr,cw));
+  geo.computeVertexNormals();
+  const c3=hexToThree(color);
+  const vCol=useCol||hasA;
+  const mat=new THREE.MeshPhongMaterial({color:vCol?0xffffff:c3,vertexColors:vCol,side:THREE.DoubleSide,transparent:true,opacity:hasA?1:0.82,shininess:36,flatShading:!useCol});
+  const mesh=new THREE.Mesh(geo,mat);
+  if(p.showWire===false) return [mesh];
+  const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geo), new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.35}));
+  return [mesh, wire];
+}
+
+// Ramp helper for rawGeom (mirrors transformer's rampColors but reads rawGeom's
+// own color props). Returns one [r,g,b] per input scalar.
+function rampRaw(vals, p, scope){
+  const lo=new THREE.Color(p.colorLo||"#3a6aff"), hi=new THREE.Color(p.colorHi||"#ff5ea8");
+  let mn=(p.colorMin!==""&&p.colorMin!=null)?resolveNum(p.colorMin,scope,0):Math.min(...vals);
+  let mx=(p.colorMax!==""&&p.colorMax!=null)?resolveNum(p.colorMax,scope,1):Math.max(...vals);
+  if(!isFinite(mn))mn=0; if(!isFinite(mx))mx=1;
+  const span=(mx-mn)||1, c=new THREE.Color();
+  return vals.map(v=>{let t=(v-mn)/span;t=t<0?0:t>1?1:t;c.copy(lo).lerp(hi,t);return [c.r,c.g,c.b];});
+}
+
+// Sample rawGeom into vertex groups (+ optional per-vertex color scalars). Each
+// group is a primitive's vertices: points→[v], segments/glyphs→[a,b], tris→[a,b,c].
+// Build a JIT context for rawGeom index sampling: split the scope into plain
+// scalars (S) and a function table (F) of native-JS-compiled fnDefs (recursively
+// registering every fnDef reachable through the dependency chain). Returns
+// { S, F, fnNames } or null if the scope can't be JIT-prepared. Any single fnDef
+// that can't be compiled falls back to its mathjs closure inside F, so partial
+// compilation is safe; a coordinate/color expression that can't compile makes the
+// caller fall back to the interpreted path for THAT expression.
+function buildJitContext(scope){
+  const S={}, F={}, done=new Set();
+  function reg(name, fnObj){
+    if(done.has(name)) return; done.add(name);
+    if(!fnObj || typeof fnObj!=="function"){ return; }
+    const params=fnObj._fnParams, expr=fnObj._fnExpr, fnScope=fnObj._fnScope;
+    if(params==null || expr==null){ F[name]=fnObj; return; }  // not a fnDef closure → keep as-is
+    const innerFns=new Set(), innerS={};
+    for(const k in (fnScope||{})){ const v=fnScope[k]; if(typeof v==="function"){ innerFns.add(k); reg(k, v); } else innerS[k]=v; }
+    const jsfn=compileToJS(expr, innerFns, new Set(params));
+    if(!jsfn){ F[name]=fnObj; return; }   // fall back to the mathjs closure for this fn
+    F[name]=(...args)=>{ const V={}; for(let z=0;z<params.length;z++) V[params[z]]=args[z]??0; return jsfn(innerS, F, V); };
+  }
+  for(const k in scope){ const v=scope[k]; if(typeof v==="function") reg(k, v); else S[k]=v; }
+  return { S, F, fnNames:new Set(Object.keys(F)) };
+}
+
+const _RAW_VERTEX_VARS = new Set(["i","j","k","n","x","y","z","part"]);
+
+function sampleRawGeom(p, prim, scope){
+  const want = prim==="points" ? 1 : prim==="triangles" ? 3 : 2;
+  const useCol = p.colorOn===true;
+  const mode = p.colorMode || "ramp";           // "ramp" (scalar→gradient) | "rgb" (3 exprs)
+  const rgbMode = useCol && mode==="rgb";
+  const colExpr = useCol ? (p.colorExpr || "i") : null;
+  const rE = rgbMode ? (p.colorR ?? "512") : null;
+  const gE = rgbMode ? (p.colorG ?? "512") : null;
+  const bE = rgbMode ? (p.colorB ?? "512") : null;
+  // Per-vertex alpha is independent of the color mode: an optional expression in
+  // the same 0..1024 (10-bit) range → [0,1], default fully opaque. Interpolates
+  // across the primitive like the colors do.
+  const alphaOn = p.alphaOn===true;
+  const aE = alphaOn ? (p.colorA ?? "1024") : null;
+  const field = prim==="points" ? p.rawPoints : prim==="segments" ? p.rawSegments
+              : prim==="glyphs" ? p.rawGlyphs : p.rawTris;
+  const verts=[], cols=(useCol&&!rgbMode)?[]:null, rgb=rgbMode?[]:null, alpha=alphaOn?[]:null;
+
+  const ch10=(e,sc)=>{ let x=safeEval(e,sc); if(!isFinite(x))x=0; x/=1024; return x<0?0:x>1?1:x; };
+  // Evaluate one vertex's color into either the scalar group (ramp) or rgb group,
+  // and its alpha into the alpha group when enabled.
+  const evalColor=(sc, scalarGroup, rgbGroup, alphaGroup)=>{
+    if(rgbMode){
+      rgbGroup.push([ch10(rE,sc), ch10(gE,sc), ch10(bE,sc)]);
+    } else if(scalarGroup){
+      const cval=safeEval(colExpr,sc); scalarGroup.push(isFinite(cval)?cval:0);
+    }
+    if(alphaGroup) alphaGroup.push(ch10(aE,sc));
+  };
+  const anyPerVertex = useCol || alphaOn;
+
+  if((p.src||"list")==="index"){
+    // ONE template line; its parts/coords are expressions in i,j,k,n.
+    const idxField = prim==="points" ? p.idxPoints : prim==="segments" ? p.idxSegments
+                   : prim==="glyphs" ? p.idxGlyphs : p.idxTris;
+    const line=String(idxField||"").split(/\n+/).map(s=>s.trim()).find(s=>s.length);
+    if(!line) return { verts, cols, rgb, alpha };
+    const parts=line.split("|").map(t=>t.trim());
+    if(parts.length!==want) return { verts, cols, rgb, alpha };
+    const exprs=parts.map(part=>splitCoords(part));
+    const counts=String(p.idxCount||"").split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+    const ni=clampRawCount(safeEval(counts[0]||"1",scope)), 
+          nj=counts[1]!=null?clampRawCount(safeEval(counts[1],scope)):1,
+          nk=counts[2]!=null?clampRawCount(safeEval(counts[2],scope)):1;
+
+    // ── JIT fast path ───────────────────────────────────────────────────────
+    // Compile every coordinate + color + alpha expression to native JS. If all
+    // compile, run a tight loop that calls them with a reused V object — no
+    // mathjs interpretation, no per-vertex scope spread. Falls back to the
+    // interpreted loop below if ANY expression is outside the JIT subset, so
+    // results are always identical to mathjs.
+    let jit=null;
+    try{ jit=buildJitContext(scope); }catch(e){ jit=null; }
+    if(jit){
+      // compile the want×3 coordinate exprs
+      const cfns=[]; let ok=true;
+      for(let part=0;part<want && ok;part++){
+        const row=[];
+        for(let d=0;d<3;d++){ const f=compileToJS(exprs[part][d]||"0", jit.fnNames, _RAW_VERTEX_VARS); if(!f){ ok=false; break; } row.push(f); }
+        cfns.push(row);
+      }
+      // compile color/alpha exprs
+      let fR,fG,fB,fScal,fA;
+      if(ok && rgbMode){ fR=compileToJS(rE,jit.fnNames,_RAW_VERTEX_VARS); fG=compileToJS(gE,jit.fnNames,_RAW_VERTEX_VARS); fB=compileToJS(bE,jit.fnNames,_RAW_VERTEX_VARS); if(!fR||!fG||!fB) ok=false; }
+      else if(ok && cols){ fScal=compileToJS(colExpr,jit.fnNames,_RAW_VERTEX_VARS); if(!fScal) ok=false; }
+      if(ok && alphaOn){ fA=compileToJS(aE,jit.fnNames,_RAW_VERTEX_VARS); if(!fA) ok=false; }
+
+      if(ok){
+        const S=jit.S, F=jit.F;
+        const V={i:0,j:0,k:0,n:0,x:0,y:0,z:0,part:0};
+        const clamp01=(x)=>{ if(!isFinite(x))x=0; x/=1024; return x<0?0:x>1?1:x; };
+        for(let i=0;i<ni;i++)for(let j=0;j<nj;j++)for(let k=0;k<nk;k++){
+          V.i=i; V.j=j; V.k=k; V.n=(i*nj+j)*nk+k;
+          const group=[]; let bad=false; const cgroup=cols?[]:null; const rgroup=rgb?[]:null; const agroup=alpha?[]:null;
+          for(let part=0;part<want;part++){
+            V.part=part; V.x=0; V.y=0; V.z=0;
+            const r=cfns[part];
+            const vx=r[0](S,F,V), vy=r[1](S,F,V), vz=r[2](S,F,V);
+            if(!isFinite(vx)||!isFinite(vy)||!isFinite(vz)){ bad=true; break; }
+            group.push([vx,vy,vz]);
+            if(anyPerVertex){
+              V.x=vx; V.y=vy; V.z=vz;
+              if(rgbMode) rgroup.push([clamp01(fR(S,F,V)), clamp01(fG(S,F,V)), clamp01(fB(S,F,V))]);
+              else if(cgroup){ const cv=fScal(S,F,V); cgroup.push(isFinite(cv)?cv:0); }
+              if(agroup) agroup.push(clamp01(fA(S,F,V)));
+            }
+          }
+          if(bad) continue;
+          verts.push(want===1?[group[0]]:group);
+          if(cols) cols.push(cgroup);
+          if(rgb) rgb.push(rgroup);
+          if(alpha) alpha.push(agroup);
+        }
+        return { verts, cols, rgb, alpha };
+      }
+    }
+
+    // ── interpreted fallback (mathjs) ───────────────────────────────────────
+    for(let i=0;i<ni;i++)for(let j=0;j<nj;j++)for(let k=0;k<nk;k++){
+      const n=(i*nj+j)*nk+k;
+      const sc={...scope, i, j, k, n};
+      const group=[]; let bad=false; const cgroup=cols?[]:null; const rgroup=rgb?[]:null; const agroup=alpha?[]:null;
+      for(let part=0;part<want;part++){
+        const e=exprs[part];
+        const v=[safeEval(e[0]||"0",sc)??0, safeEval(e[1]||"0",sc)??0, safeEval(e[2]||"0",sc)??0];
+        if(v.some(x=>!isFinite(x))){ bad=true; break; }
+        group.push(v);
+        if(anyPerVertex) evalColor({...sc, x:v[0], y:v[1], z:v[2], part}, cgroup, rgroup, agroup);
+      }
+      if(bad) continue;
+      verts.push(want===1?[group[0]]:group);
+      if(cols) cols.push(cgroup);
+      if(rgb) rgb.push(rgroup);
+      if(alpha) alpha.push(agroup);
+    }
+    return { verts, cols, rgb, alpha };
+  }
+
+  // list mode — literal numbers, but still evaluated (so constants/scalars work).
+  let row=0;
+  for(const ln of String(field||"").split(/\n+/)){
+    const s=ln.trim(); if(!s) continue;
+    const parts=s.split("|").map(t=>t.trim()).filter(t=>t.length);
+    if(parts.length!==want){ row++; continue; }
+    const group=[]; let bad=false; const cgroup=cols?[]:null; const rgroup=rgb?[]:null; const agroup=alpha?[]:null;
+    let part=0;
+    for(const partStr of parts){
+      const nums=splitCoords(partStr).map(t=>resolveNum(t,scope,NaN));
+      const v=[nums[0]??0, nums[1]??0, nums[2]??0];
+      if(v.some(x=>!isFinite(x))){ bad=true; break; }
+      group.push(v);
+      if(anyPerVertex) evalColor({...scope, i:row, n:row, x:v[0], y:v[1], z:v[2], part}, cgroup, rgroup, agroup);
+      part++;
+    }
+    if(bad){ row++; continue; }
+    verts.push(want===1?[group[0]]:group);
+    if(cols) cols.push(cgroup);
+    if(rgb) rgb.push(rgroup);
+    if(alpha) alpha.push(agroup);
+    row++;
+  }
+  return { verts, cols, rgb, alpha };
+}
+
+function clampRawCount(c){ if(c==null||!isFinite(c))return 1; return Math.max(1,Math.min(20000,Math.round(c))); }
+
+// Split a coordinate string on TOP-LEVEL commas only, so commas inside function
+// calls — e.g. h(x, y) or atan2(y, x) — stay intact. Without this, a part like
+// "a, b, h(x, y)" would wrongly split into four fields and break the h() call.
+function splitCoords(s){
+  const out=[]; let depth=0, cur="";
+  for(const ch of String(s)){
+    if(ch==="("||ch==="[") depth++;
+    else if(ch===")"||ch==="]") depth--;
+    if(ch==="," && depth===0){ out.push(cur.trim()); cur=""; }
+    else cur+=ch;
+  }
+  if(cur.trim().length||out.length) out.push(cur.trim());
+  return out;
+}
+
+// Back-compat: the 2D renderer imports parseRawRows for plain list parsing.
+function parseRawRows(text, prim, scope){
+  const want = prim==="points" ? 1 : prim==="triangles" ? 3 : 2;
+  const out=[];
+  for(const line of String(text||"").split(/\n+/)){
+    const s=line.trim(); if(!s) continue;
+    const parts=s.split("|").map(t=>t.trim()).filter(t=>t.length);
+    if(parts.length!==want) continue;
+    const vecs=parts.map(part=>{
+      const nums=splitCoords(part).map(t=>resolveNum(t,scope,NaN));
+      return [nums[0]??0, nums[1]??0, nums[2]??0];
+    });
+    if(vecs.some(v=>!isFinite(v[0])||!isFinite(v[1])||!isFinite(v[2]))) continue;
+    out.push(want===1 ? vecs[0] : vecs);
+  }
+  return out;
+}
+
 export {
-  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume
+  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume, buildRawGeom3d, parseRawRows, sampleRawGeom
 };

@@ -24,7 +24,7 @@ const CATEGORY = {
   //   scalarFn   — scalar-valued function of 1/2/3 spatial inputs
   //   paramSpace — parameterized manifold (curve=degree 1, surface=degree 2)
   //   points     — points / glyphs / sequences, plane or space, optional vectors
-  scalarFn:"plot", paramSpace:"plot", points:"plot",
+  scalarFn:"plot", paramSpace:"plot", points:"plot", rawGeom:"plot",
   // New function/transformer model:
   //   fnMap      — a pure map ℝᵐ→ℝⁿ (no spatial meaning on its own). Category
   //                "map": it attaches to a transformer (or domain source), never

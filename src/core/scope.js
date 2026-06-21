@@ -215,6 +215,30 @@ function geomSignature(node, scope){
     case "curve3d": return `c|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.tMin,scope,0)}|${resolveNum(p.tMax,scope,6.283)}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
     case "plane": return `pl|${c}|${resolveNum(p.centerX,scope,0)}|${resolveNum(p.centerY,scope,0)}|${resolveNum(p.centerZ,scope,0)}|${resolveNum(p.normalX,scope,0)}|${resolveNum(p.normalY,scope,1)}|${resolveNum(p.normalZ,scope,0)}|${resolveNum(p.size,scope,8)}`;
     case "point": return `pt|${c}|${resolveNum(p.x,scope,0)}|${resolveNum(p.y,scope,0)}|${resolveNum(p.z,scope,0)}|${resolveNum(p.radius,scope,0.08)}`;
+    case "rawGeom": {
+      // Resolve the active primitive's data against scope so a wired slider in any
+      // coordinate (list or index template) triggers a rebuild.
+      const isIdx=(p.src||"list")==="index";
+      const f = isIdx
+        ? (p.prim==="points"?p.idxPoints : p.prim==="segments"?p.idxSegments : p.prim==="glyphs"?p.idxGlyphs : p.idxTris)
+        : (p.prim==="points"?p.rawPoints : p.prim==="segments"?p.rawSegments : p.prim==="glyphs"?p.rawGlyphs : p.rawTris);
+      let resolved="";
+      try{
+        if(isIdx){
+          // Resolve the COUNT against scope so a wired slider on the count (e.g.
+          // idxCount="N") changes the signature when dragged. Hashing the raw
+          // text alone would miss it. Also hash resolved lattice dims.
+          const cnt=String(p.idxCount||"").split(/[,;]/).map(t=>resolveNum(t.trim(),scope,NaN)).join("x");
+          resolved = String(f||"")+"|cnt:"+cnt;
+        }
+        else resolved = String(f||"").split(/\n+/).map(line=>line.split("|").map(part=>part.split(",").map(t=>resolveNum(t.trim(),scope,NaN)).join(",")).join("|")).join(";");
+      }catch(e){ resolved=String(f||""); }
+      const colSig = p.colorOn?`|col:${p.colorMode||"ramp"}:${p.colorExpr||""}|${p.colorR||""}|${p.colorG||""}|${p.colorB||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}`:"";
+      const aSig = p.alphaOn?`|a:${p.colorA||""}`:"";
+      // For index mode, scope-dependent expressions need scopeSig so wired
+      // scalars/fnDefs in the templates trigger rebuilds.
+      return `raw|${c}|${p.prim}|${p.src||"list"}|${resolved}${colSig}${aSig}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.normalize?1:0}|${p.lenMode||""}|${p.showWire!==false?1:0}|${isIdx?scopeSig(node,scope):""}`;
+    }
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
     case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
       // For a transpilable implicit equation (GPU raymarch), the wired sliders/
@@ -379,7 +403,8 @@ function nodeExprText(node){
   const p=node.props||{};
   const fields=[p.expr,p.exprX,p.exprY,p.exprZ,p.points,p.pairs,p.x,p.y,p.z,p.x0,p.y0,p.z0,p.seedX,p.seedY,p.seedZ,p.tMin,p.tMax,p.xMin,p.xMax,p.yMin,p.yMax,p.zMin,p.zMax,p.uMin,p.uMax,p.vMin,p.vMax,p.res,p.gridN,p.steps,p.stepSize,p.radius,p.size,p.seedN,p.seedSpan,p.arrowLen,p.speed,
     p.out0,p.out1,p.out2,p.out3,p.data,p.colorExpr,p.colorMin,p.colorMax,p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,
-    p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig];
+    p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig,
+    p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA];
   return fields.filter(e=>typeof e==="string"&&e.length).join("\u0001");
 }
 // Extract the set of free variable names appearing in a node's expressions

@@ -700,6 +700,169 @@ function tutModeFieldScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// ── Raw geometry tutorials ──
+
+// helper: a rawGeom node with sensible defaults filled in, so each scene only
+// sets what it cares about.
+function _rawNode(pos,label,color,overrides){
+  const g=makeNode("rawGeom",pos);g.label=label;g.color=color;
+  g.props={
+    prim:"segments",src:"list",
+    rawPoints:"0,0,0",rawSegments:"0,0,0 | 1,0,0",rawGlyphs:"0,0,0 | 1,0,0",rawTris:"0,0,0 | 1,0,0 | 0,1,0",
+    idxPoints:"cos(i),sin(i),0",idxSegments:"0,0,0 | 1,0,0",idxGlyphs:"0,0,0 | 1,0,0",idxTris:"0,0,0 | 1,0,0 | 0,1,0",
+    idxCount:"16",
+    colorOn:false,colorExpr:"i",colorLo:"#3a6aff",colorHi:"#ff5ea8",colorMin:"",colorMax:"",
+    radius:"0.08",drawLines:false,arrowLen:"0.5",normalize:false,lenMode:"raw",showWire:true,
+    ...overrides,
+  };
+  return g;
+}
+
+// 1) Hand-built primitives in LIST mode: a tetrahedron drawn three ways at once —
+// its vertices (points), its edges (segments), and its faces (triangles), each a
+// separate rawGeom node sharing the same four corners. Shows direct authoring.
+function tutRawListScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1100,y:120}));cam.label="a tetrahedron, three ways";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="5.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const A="1,1,1", B="1,-1,-1", C="-1,1,-1", D="-1,-1,1";
+  const faces=_rawNode({x:300,y:80},"faces","#5b9cf6",{prim:"triangles",src:"list",
+    rawTris:`${A} | ${B} | ${C}\n${A} | ${B} | ${D}\n${A} | ${C} | ${D}\n${B} | ${C} | ${D}`, showWire:false});
+  const edges=_rawNode({x:300,y:300},"edges","#ffcf6e",{prim:"segments",src:"list",
+    rawSegments:`${A} | ${B}\n${A} | ${C}\n${A} | ${D}\n${B} | ${C}\n${B} | ${D}\n${C} | ${D}`});
+  const verts=_rawNode({x:300,y:520},"vertices","#ff5ea8",{prim:"points",src:"list",
+    rawPoints:`${A}\n${B}\n${C}\n${D}`, radius:"0.1"});
+  cam.attachments=[faces.id,edges.id,verts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[faces.id]:faces,[edges.id]:edges,[verts.id]:verts},camId:cam.id,animated:true};
+}
+
+// 2) INDEX sequence: one segment template swept over i to make a sunburst of
+// spokes, each colored by its index (Gouraud along the spoke). A slider sets the
+// spoke count, so one template + one number = a whole family.
+function tutRawSequenceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="one template, many spokes";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.6";
+  const N=makeNode("slider",{x:40,y:340});N.name="N";N.label="N · spokes";N.value=24;
+  N.props.min="3";N.props.max="60";N.props.step="1";
+  const g=_rawNode({x:340,y:140},"spokes","#ff5ea8",{prim:"segments",src:"index",
+    idxSegments:"0.3*cos(2*pi*i/N), 0.3*sin(2*pi*i/N), 0 | cos(2*pi*i/N), sin(2*pi*i/N), 0",
+    idxCount:"N",
+    colorOn:true,colorExpr:"i+part",colorLo:"#5ad1e6",colorHi:"#ff5ea8",colorMin:"0"});
+  g.attachments=[N.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[g.id]:g},camId:cam.id,animated:false};
+}
+
+// 3) INDEX lattice → a triangulated surface. An i,j grid emits two triangles per
+// cell from two rawGeom nodes (upper + lower), Gouraud-colored by height. A real
+// mesh built entirely from index expressions plus a wired height function.
+function tutRawLatticeScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1100,y:120}));cam.label="a surface from a lattice";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="44";
+  const h=makeNode("fnDef",{x:60,y:120});h.name="h";h.label="h(x,y)";h.props.params="x,y";h.props.expr="0.6*sin(x)*cos(y)";
+  const X=(e)=>`(${e}-6)*0.5`;
+  const P=(ie,je)=>`${X(ie)}, ${X(je)}, h(${X(ie)}, ${X(je)})`;
+  const upper=_rawNode({x:360,y:120},"upper tris","#7a5cf0",{prim:"triangles",src:"index",
+    idxTris:`${P("i","j")} | ${P("i+1","j")} | ${P("i","j+1")}`,
+    idxCount:"12, 12", colorOn:true, colorExpr:"z", colorLo:"#2a3a8a", colorHi:"#ff9e64", colorMin:"-0.6", colorMax:"0.6", showWire:false});
+  upper.attachments=[h.id];
+  const lower=_rawNode({x:360,y:360},"lower tris","#7a5cf0",{prim:"triangles",src:"index",
+    idxTris:`${P("i+1","j")} | ${P("i+1","j+1")} | ${P("i","j+1")}`,
+    idxCount:"12, 12", colorOn:true, colorExpr:"z", colorLo:"#2a3a8a", colorHi:"#ff9e64", colorMin:"-0.6", colorMax:"0.6", showWire:false});
+  lower.attachments=[h.id];
+  cam.attachments=[upper.id,lower.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[h.id]:h,[upper.id]:upper,[lower.id]:lower},camId:cam.id,animated:true};
+}
+
+// 4) Dependency functions: a discrete vector field. Two wired functions fx,fy
+// define the field; a glyph rawGeom samples them over an i,j lattice and colors
+// each arrow by magnitude. Primitives expressing against dependency functions.
+function tutRawGlyphsScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="a field sampled from f(x,y)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  const fx=makeNode("fnDef",{x:60,y:100});fx.name="fx";fx.label="fx(x,y)";fx.props.params="x,y";fx.props.expr="-y + 0.3*x";
+  const fy=makeNode("fnDef",{x:60,y:240});fy.name="fy";fy.label="fy(x,y)";fy.props.params="x,y";fy.props.expr="x + 0.3*y";
+  const px="(i-6)*0.45", py="(j-6)*0.45";
+  const g=_rawNode({x:360,y:160},"glyph field","#5ad1e6",{prim:"glyphs",src:"index",
+    idxGlyphs:`${px}, ${py}, 0 | fx(${px}, ${py}), fy(${px}, ${py}), 0`,
+    idxCount:"13, 13",
+    arrowLen:"0.32", normalize:true,
+    colorOn:true, colorExpr:`hypot(fx(${px},${py}), fy(${px},${py}))`,
+    colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"0", colorMax:"4"});
+  g.attachments=[fx.id,fy.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fx.id]:fx,[fy.id]:fy,[g.id]:g},camId:cam.id,animated:false};
+}
+
+// 6) Capstone — a twisted, rippled torus assembled entirely from raw triangles.
+// Sliders feed helper functions (rippled radius, twist angle); coordinate
+// functions SX/SY/SZ build each vertex; color functions CR/CG/CB/CA drive the
+// three-channel RGB and per-vertex alpha. Two raw nodes tile an M×M lattice into
+// triangles. Everything the node can do — index lattices, dependency functions,
+// rgb color, alpha — in one graph. The compiled-expression path keeps it fast.
+function tutRawTorusScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1320,y:200}));cam.label="a twisted torus from raw triangles";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.05";cam.props.spin="loop";cam.props.spinPeriod="60";
+  cam.props.showAxes=false;cam.props.showGrid=false;
+  // parameters
+  const R0=makeNode("slider",{x:-160,y:-40});R0.name="R0";R0.label="R0 · major radius";R0.value=2.4;R0.props.min="1.5";R0.props.max="3.5";R0.props.step="0.05";
+  const A =makeNode("slider",{x:-160,y:60}); A.name="A"; A.label="A · ripple amp";  A.value=0.35;A.props.min="0";A.props.max="1";A.props.step="0.01";
+  const rt=makeNode("slider",{x:-160,y:160});rt.name="rt";rt.label="rt · tube radius";rt.value=0.8;rt.props.min="0.2";rt.props.max="1.2";rt.props.step="0.02";
+  const P =makeNode("slider",{x:-160,y:260});P.name="p"; P.label="p · ripple count"; P.value=5; P.props.min="1";P.props.max="9";P.props.step="1";
+  const Q =makeNode("slider",{x:-160,y:360});Q.name="q"; Q.label="q · twist";        Q.value=3; Q.props.min="0";Q.props.max="6";Q.props.step="1";
+  const M =makeNode("slider",{x:-160,y:460});M.name="M"; M.label="M · resolution";   M.value=72;M.props.min="24";M.props.max="160";M.props.step="4";
+  // helper functions
+  const RRf=makeNode("fnDef",{x:200,y:-20});RRf.name="RR";RRf.label="RR(u) · rippled radius";RRf.props.params="u";RRf.props.expr="R0 + A*sin(p*u)";RRf.attachments=[R0.id,A.id,P.id];
+  const Wf =makeNode("fnDef",{x:200,y:90}); Wf.name="W"; Wf.label="W(u,v) · twist angle";Wf.props.params="u,v";Wf.props.expr="v + q*u";Wf.attachments=[Q.id];
+  // coordinate functions
+  const SX=makeNode("fnDef",{x:540,y:-40});SX.name="SX";SX.label="SX(u,v)";SX.props.params="u,v";SX.props.expr="(RR(u) + rt*cos(W(u,v)))*cos(u)";SX.attachments=[RRf.id,Wf.id,rt.id];
+  const SY=makeNode("fnDef",{x:540,y:70}); SY.name="SY";SY.label="SY(u,v)";SY.props.params="u,v";SY.props.expr="(RR(u) + rt*cos(W(u,v)))*sin(u)";SY.attachments=[RRf.id,Wf.id,rt.id];
+  const SZ=makeNode("fnDef",{x:540,y:180});SZ.name="SZ";SZ.label="SZ(u,v)";SZ.props.params="u,v";SZ.props.expr="rt*sin(W(u,v))";SZ.attachments=[Wf.id,rt.id];
+  // color + alpha functions (0..1024 per channel)
+  const CR=makeNode("fnDef",{x:540,y:300});CR.name="CR";CR.label="CR(u,v) · red";  CR.props.params="u,v";CR.props.expr="512 + 512*sin(3*u)";
+  const CG=makeNode("fnDef",{x:540,y:410});CG.name="CG";CG.label="CG(u,v) · green";CG.props.params="u,v";CG.props.expr="512 + 512*sin(3*u + v + 2.1)";
+  const CB=makeNode("fnDef",{x:540,y:520});CB.name="CB";CB.label="CB(u,v) · blue"; CB.props.params="u,v";CB.props.expr="512 + 512*sin(3*u + 2*v + 4.2)";
+  const CA=makeNode("fnDef",{x:540,y:630});CA.name="CA";CA.label="CA(u,v) · alpha";CA.props.params="u,v";CA.props.expr="720 + 304*sin(2*v)";
+  // mesh: two raw nodes (upper + lower triangle of each lattice cell)
+  const U=(di)=>`(2*pi*(i+${di})/M)`, V=(dj)=>`(2*pi*(j+${dj})/M)`;
+  const VTX=(di,dj)=>{const u=U(di),v=V(dj);return `SX(${u},${v}), SY(${u},${v}), SZ(${u},${v})`;};
+  const u0=U(0), v0=V(0);
+  const colProps={colorOn:true,colorMode:"rgb",alphaOn:true,colorR:`CR(${u0},${v0})`,colorG:`CG(${u0},${v0})`,colorB:`CB(${u0},${v0})`,colorA:`CA(${u0},${v0})`};
+  const colAtt=[CR.id,CG.id,CB.id,CA.id];
+  const upper=_rawNode({x:920,y:120},"torus · upper tris","#7a5cf0",{prim:"triangles",src:"index",idxCount:"M, M",showWire:false,...colProps,
+    idxTris:`${VTX(0,0)} | ${VTX(1,0)} | ${VTX(0,1)}`});
+  upper.attachments=[SX.id,SY.id,SZ.id,M.id,...colAtt];
+  const lower=_rawNode({x:920,y:360},"torus · lower tris","#7a5cf0",{prim:"triangles",src:"index",idxCount:"M, M",showWire:false,...colProps,
+    idxTris:`${VTX(1,0)} | ${VTX(1,1)} | ${VTX(0,1)}`});
+  lower.attachments=[SX.id,SY.id,SZ.id,M.id,...colAtt];
+  cam.attachments=[upper.id,lower.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,
+    [R0.id]:R0,[A.id]:A,[rt.id]:rt,[P.id]:P,[Q.id]:Q,[M.id]:M,
+    [RRf.id]:RRf,[Wf.id]:Wf,[SX.id]:SX,[SY.id]:SY,[SZ.id]:SZ,
+    [CR.id]:CR,[CG.id]:CG,[CB.id]:CB,[CA.id]:CA,[upper.id]:upper,[lower.id]:lower},
+    camId:cam.id,animated:true};
+}
+
+// 5) Gouraud focus: a fan of triangles around a center, each rim vertex colored
+// by its angle so the color sweeps smoothly around the disk — a color wheel built
+// from raw triangles with per-vertex interpolation.
+function tutRawGouraudScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="per-vertex color (a color wheel)";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.3";
+  const g=_rawNode({x:360,y:160},"color wheel","#ffffff",{prim:"triangles",src:"index",
+    idxTris:"0,0,0 | cos(2*pi*i/36), sin(2*pi*i/36), 0 | cos(2*pi*(i+1)/36), sin(2*pi*(i+1)/36), 0",
+    idxCount:"36",
+    colorOn:true, colorExpr:"atan2(y,x)", colorLo:"#1bd6c0", colorHi:"#ff5ea8", colorMin:"-3.15", colorMax:"3.15",
+    showWire:false});
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g},camId:cam.id,animated:false};
+}
+
 // Taylor series of eˣ: drag N and the polynomial chases the exponential, matching
 // it over a widening interval. Like sin, eˣ is entire — the series converges for
 // every x.
@@ -780,6 +943,12 @@ Object.assign(SCENES, {
   "tut-mode-graph": tutModeGraphScene,
   "tut-mode-param": tutModeParamScene,
   "tut-mode-field": tutModeFieldScene,
+  "tut-raw-list": tutRawListScene,
+  "tut-raw-sequence": tutRawSequenceScene,
+  "tut-raw-lattice": tutRawLatticeScene,
+  "tut-raw-glyphs": tutRawGlyphsScene,
+  "tut-raw-gouraud": tutRawGouraudScene,
+  "tut-raw-torus": tutRawTorusScene,
   "tut-taylor-exp": tutTaylorExpScene,
   "tut-taylor-radius": tutTaylorRadiusScene,
   "tut-torus-level": tutTorusLevelScene,
@@ -1535,7 +1704,7 @@ function tutTangentBundleScene(){
   surf.props.exprY="sin(u) + v*cos(u)";
   surf.props.exprZ="0";
   surf.props.uMin="0";surf.props.uMax="6.2832";surf.props.vMin="-2.6";surf.props.vMax="2.6";
-  surf.props.uRes="200";surf.props.vRes="2";
+  surf.props.uRes="360";surf.props.vRes="2";
   surf.props.showWire=true;surf.props.wireOnly=true;
   // the base circle itself, drawn bright on top
   const circle=makeNode("paramSpace",{x:340,y:340});circle.label="circle";circle.color="#7ad7ff";

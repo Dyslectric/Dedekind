@@ -35,6 +35,7 @@ const TYPE_META={
   scalarFn:  {tag:"f()",  tc:"#6df",   bg:"#0c1820",hdr:"#10202e"},
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
   points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
+  rawGeom:   {tag:"RAW",  tc:"#9fd6a0",bg:"#0e1810",hdr:"#122218"},
   fnMap:     {tag:"ƒ→",   tc:"#7ec8ff",bg:"#0a1622",hdr:"#0e1f30"},
   equation:  {tag:"EQ=",  tc:"#ffd479",bg:"#1c1606",hdr:"#241d08"},
   transformer:{tag:"TRN", tc:"#ffb454",bg:"#1a1206",hdr:"#241a08"},
@@ -149,6 +150,40 @@ function makeNode(type,pos){
       colorMode:"off", colorExpr:"i", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
       // sequencing reveal:
       sequenced:false,seqFrac:"1",seqVar:"",
+    },attachments:[]},
+
+    // rawGeom: explicit primitives typed in directly (no formula/transformer).
+    //   prim "points" | "segments" | "glyphs" | "triangles"
+    //   src  "list"  — literal data, one primitive per line
+    //        "index" — ONE template primitive whose coords are expressions in the
+    //                  indices i (sequence) / i,j,k (lattice) + n, over a count.
+    // Coordinates may reference wired scalars and fnDefs, so primitives express
+    // against arbitrary dependency functions. Every vertex can be colored by a
+    // per-vertex scalar (colorExpr) mapped through the lo→hi ramp (Gouraud).
+    rawGeom:{label:"Raw Geometry",color:nextColor(),props:{
+      prim:"segments", src:"index",
+      // ── list data ──
+      rawPoints:"0, 0, 0\n1, 1, 0\n-1, 1, 0",
+      rawSegments:"-1, 0, 0 | 1, 0, 0\n0, -1, 0 | 0, 1, 0\n0, 0, -1 | 0, 0, 1",
+      rawGlyphs:"0, 0, 0 | 1, 0, 0\n0, 0, 0 | 0, 1, 0\n0, 0, 0 | 0, 0, 1",
+      rawTris:"0, 0, 0 | 1, 0, 0 | 0, 1, 0\n1, 0, 0 | 1, 1, 0 | 0, 1, 0",
+      // ── index templates (expressions in i,j,k,n) ──
+      idxPoints:"cos(i*0.4), sin(i*0.4), i*0.05",
+      idxSegments:"cos(i*0.4), sin(i*0.4), 0 | cos(i*0.4)*1.4, sin(i*0.4)*1.4, 0",
+      idxGlyphs:"cos(i*0.4), sin(i*0.4), 0 | -sin(i*0.4), cos(i*0.4), 0",
+      idxTris:"cos(i*0.5), sin(i*0.5), 0 | cos((i+1)*0.5), sin((i+1)*0.5), 0 | 0, 0, 0",
+      idxCount:"16",
+      // ── per-vertex color ──
+      //   colorMode "ramp" — a scalar (colorExpr) mapped through the lo→hi ramp
+      //   colorMode "rgb"  — three expressions, each 0..1024 (10-bit per channel)
+      colorOn:false, colorMode:"ramp",
+      colorExpr:"i", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
+      colorR:"512", colorG:"512", colorB:"512",
+      // ── per-vertex alpha (0..1024 → opacity), independent of color mode ──
+      alphaOn:false, colorA:"1024",
+      radius:"0.08", drawLines:false,                   // points
+      arrowLen:"0.5", normalize:false, lenMode:"raw",   // glyphs
+      showWire:true,                                    // triangles
     },attachments:[]},
 
     // ── Function / transformer model ───────────────────────────────────────

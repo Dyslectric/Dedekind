@@ -4,6 +4,7 @@ import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain, plotSignature } from "../core/scope.js";
 import { applyDomain, pointGradientColors, rampColors } from "../geometry/rebuild.js";
 import { parsePointSeq, parseGlyphField, parsePointsExplicit, parseGlyphsExplicit } from "../geometry/parse.js";
+import { parseRawRows, sampleRawGeom } from "../geometry/builders.js";
 import { integrateFlow, getTrajectories } from "../geometry/flow.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
@@ -405,6 +406,97 @@ function build2DPoint(np, pscope, color, px, fr){
   const x=resolveNum(np.x,pscope,0), y=resolveNum(np.y,pscope,0), z=resolveNum(np.z,pscope,0);
   const [u,v]=projectPt(fr,x,y,z);
   return [buildDisk2D(u,v,px(5),color)];
+}
+
+// rawGeom in 2D: sample the primitives (list or index mode) and project each onto
+// the camera plane, with optional per-vertex colors. Points → disks, segments →
+// thick segments, glyphs → arrow segments, triangles → filled projected tris.
+function build2DRawGeom(np, pscope, color, px, fr){
+  const prim=np.prim||"points";
+  const { verts, cols, rgb, alpha } = sampleRawGeom(np, prim, pscope);
+  if(!verts.length) return [];
+  // Per-vertex color groups as hex. From rgb three-parameter mode directly, or by
+  // ramping the scalar groups.
+  let rampGroups=null;
+  const toHexRGB=(c)=>{const h=k=>{const x=Math.round(Math.max(0,Math.min(1,c[k]))*255);return(x<16?"0":"")+x.toString(16);};return`#${h(0)}${h(1)}${h(2)}`;};
+  if(rgb){
+    rampGroups=rgb.map(g=>g.map(toHexRGB));
+  } else if(cols){
+    const flat=[]; for(const g of cols) for(const cv of g) flat.push(cv);
+    let mn=(np.colorMin!==""&&np.colorMin!=null)?resolveNum(np.colorMin,pscope,0):Math.min(...flat);
+    let mx=(np.colorMax!==""&&np.colorMax!=null)?resolveNum(np.colorMax,pscope,1):Math.max(...flat);
+    if(!isFinite(mn))mn=0; if(!isFinite(mx))mx=1; const span=(mx-mn)||1;
+    const lo=hexRGB(np.colorLo||"#3a6aff"), hi=hexRGB(np.colorHi||"#ff5ea8");
+    const toHex=(cv)=>{let t=(cv-mn)/span;t=t<0?0:t>1?1:t;const h=k=>{const x=Math.round((lo[k]+(hi[k]-lo[k])*t)*255);return(x<16?"0":"")+x.toString(16);};return`#${h(0)}${h(1)}${h(2)}`;};
+    rampGroups=cols.map(g=>g.map(toHex));
+  }
+  // mean alpha → applied as material opacity on the 2D meshes
+  let meanAlpha=1;
+  if(alpha){ let s=0,c=0; for(const g of alpha) for(const a of g){ s+=a; c++; } meanAlpha=c?s/c:1; }
+  const applyA=(objs)=>{ if(alpha) for(const o of objs){ if(o&&o.material){ o.material.transparent=true; o.material.opacity=(o.material.opacity??1)*meanAlpha; } } return objs; };
+
+  if(prim==="points"){
+    const r=px(Math.max(2, resolveNum(np.radius,pscope,0.08)*60));
+    const objs=verts.map((v,i)=>{ const [u,vv]=projectPt(fr,v[0][0],v[0][1],v[0][2]); return buildDisk2D(u,vv,r,rampGroups?rampGroups[i][0]:color); });
+    if(np.drawLines===true){ const proj=verts.map(v=>projectPt(fr,v[0][0],v[0][1],v[0][2])); objs.unshift(...buildThickLine2D(proj,color,px(LINE_PX)/2)); }
+    return applyA(objs);
+  }
+  if(prim==="segments"){
+    const segs=verts.map(([a,b])=>[projectPt(fr,a[0],a[1],a[2]), projectPt(fr,b[0],b[1],b[2])]);
+    // per-endpoint colors → Gouraud quad strip per segment when colored
+    if(rampGroups) return applyA(buildGouraudSegments2D(segs, rampGroups, px(LINE_PX)/2));
+    return applyA(buildThickSegments2D(segs, color, px(LINE_PX)/2));
+  }
+  if(prim==="glyphs"){
+    const norm=np.normalize===true, scale=resolveNum(np.arrowLen,pscope,0.5);
+    const segs=[];
+    for(const [pos,vec] of verts){
+      const mag=Math.hypot(vec[0],vec[1],vec[2])||1;
+      const s = norm ? scale/mag : 1;
+      const tip=[pos[0]+vec[0]*s, pos[1]+vec[1]*s, pos[2]+vec[2]*s];
+      segs.push([projectPt(fr,pos[0],pos[1],pos[2]), projectPt(fr,tip[0],tip[1],tip[2])]);
+    }
+    if(rampGroups) return applyA(buildGouraudSegments2D(segs, rampGroups, px(LINE_PX)/2));
+    return applyA(buildThickSegments2D(segs, color, px(LINE_PX)/2));
+  }
+  // triangles → filled projected tris, with optional per-vertex vertex colors
+  const tpos=[], tcol=rampGroups?[]:null;
+  for(let t=0;t<verts.length;t++){
+    const [a,b,c]=verts[t];
+    const pa=projectPt(fr,a[0],a[1],a[2]), pb=projectPt(fr,b[0],b[1],b[2]), pc=projectPt(fr,c[0],c[1],c[2]);
+    if(!pa||!pb||!pc) continue;
+    tpos.push(pa[0],pa[1],0, pb[0],pb[1],0, pc[0],pc[1],0);
+    if(rampGroups){ for(let m=0;m<3;m++){ const rgbv=hexRGB(rampGroups[t][m]); tcol.push(rgbv[0],rgbv[1],rgbv[2]); } }
+  }
+  if(!tpos.length) return [];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(tpos,3));
+  let mat;
+  if(tcol){ g.setAttribute("color", new THREE.Float32BufferAttribute(tcol,3)); mat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthTest:false,depthWrite:false,transparent:true,opacity:0.82}); }
+  else mat=new THREE.MeshBasicMaterial({color:hexToThree(color),side:THREE.DoubleSide,depthTest:false,depthWrite:false,transparent:true,opacity:0.82});
+  return applyA([new THREE.Mesh(g,mat)]);
+}
+
+// A set of thick 2D segments with per-endpoint colors, built as colored quads so
+// the color interpolates along each segment (Gouraud). cols is [ [hexA,hexB], … ].
+function buildGouraudSegments2D(segs, cols, half){
+  const pos=[], col=[];
+  for(let s=0;s<segs.length;s++){
+    const [a,b]=segs[s]; if(!a||!b) continue;
+    const dx=b[0]-a[0], dy=b[1]-a[1]; const len=Math.hypot(dx,dy); if(len<1e-9) continue;
+    const nx=-dy/len*half, ny=dx/len*half;
+    const a1=[a[0]+nx,a[1]+ny], a2=[a[0]-nx,a[1]-ny], b1=[b[0]+nx,b[1]+ny], b2=[b[0]-nx,b[1]-ny];
+    const ca=hexRGB(cols[s][0]||"#ffffff"), cb=hexRGB(cols[s][1]||"#ffffff");
+    const push=(p,c)=>{ pos.push(p[0],p[1],0); col.push(c[0],c[1],c[2]); };
+    push(a1,ca); push(b1,cb); push(b2,cb);
+    push(a1,ca); push(b2,cb); push(a2,ca);
+  }
+  if(!pos.length) return [];
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col,3));
+  const mat=new THREE.MeshBasicMaterial({vertexColors:true,depthTest:false,side:THREE.DoubleSide});
+  return [new THREE.Mesh(g,mat)];
 }
 
 function build2DQuiver(np, pscope, color, wxMin, wxMax, wyMin, wyMax, px, fr){
@@ -916,6 +1008,7 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     else if(node.type==="curve3d") built=build2DCurve3d(np,pscope,color,px,fr);
     else if(node.type==="pointSeq"||node.type==="points") built=build2DPointSeq(np,pscope,color,px,fr,childId);
     else if(node.type==="point") built=build2DPoint(np,pscope,color,px,fr);
+    else if(node.type==="rawGeom") built=build2DRawGeom(np,pscope,color,px,fr);
     else if(node.type==="quiver2d") built=build2DQuiver(np,pscope,color,wxMin,wxMax,wyMin,wyMax,px,fr);
     else if(node.type==="quiver3d") built=build2DQuiver3d(np,pscope,color,px,fr);
     else if(rawNode.type==="transformer"){

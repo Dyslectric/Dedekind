@@ -10,7 +10,7 @@
 const ADDABLE_KINDS = [
   ["constant","expr","slider","animator","fnDef"],             // inputs
   ["fnMap","equation","transformer"],                          // functions + how to plot them
-  ["paramSpace","points"],                                     // manifolds / point sets
+  ["paramSpace","points","rawGeom"],                          // manifolds / point sets / raw primitives
   ["flow"],                                                    // flows
   ["camera3d","camera2d"],                                     // viewports
 ];
@@ -34,6 +34,7 @@ const KIND_HOTKEYS = {
   t: "transformer",
   p: "paramSpace",   // (p)arametric space
   o: "points",       // p(o)ints
+  g: "rawGeom",      // raw (g)eometry
   w: "flow",         // (w) ~ flow
   k: "camera3d",     // camera (k)
   j: "camera2d",     // camera (j)

@@ -12,6 +12,7 @@ import { ConstantEditor, ExprEditor, SliderEditor, AnimatorEditor, FnDefEditor }
 import { FnMapEditor, EquationEditor, ScalarFnEditor, ParamSpaceEditor } from "./propspanel/FunctionEditors.jsx";
 import { TransformerEditor } from "./propspanel/TransformerEditor.jsx";
 import { PointsEditor } from "./propspanel/PointsEditor.jsx";
+import { RawGeomEditor } from "./propspanel/RawGeomEditor.jsx";
 import { FlowEditor } from "./propspanel/FlowEditor.jsx";
 import { CameraEditor } from "./propspanel/CameraEditor.jsx";
 import {
@@ -105,6 +106,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
 
         {/* ── Unified: points / glyphs / sequences ── */}
         {node.type==="points"&&<PointsEditor {...ed}/>}
+        {node.type==="rawGeom"&&<RawGeomEditor {...ed}/>}
 
         {/* ── Flow ── */}
         {node.type==="flow"&&<FlowEditor {...ed}/>}
