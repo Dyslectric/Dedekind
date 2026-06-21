@@ -190,6 +190,16 @@ const SECTIONS = [
         ],
       },
       {
+        slug: "shading-and-materials",
+        title: "Shading and materials",
+        summary: "A surface kept as a function can be shaded from that function: exact normals, and colour, specular, and glow driven by per-pixel math.",
+        steps: [
+          { heading: "Lit shading with true normals", body: "Switch a z = f(x,y) surface to Lit shading and it is lit per pixel with a key light and a specular highlight. The normal is the EXACT analytic normal, taken from the symbolic derivatives f_x and f_y of the function itself, so the highlight tracks the real surface rather than the mesh facets — it stays smooth at low grid resolution and as the surface animates. (When a derivative can't be taken, it falls back to screen-space normals.) This is something a mesh engine can't do, because it threw the function away.", kind: "lit-ripple" },
+          { heading: "Colour from an expression", body: "A material channel is just another expression evaluated per fragment over the domain (x, y). Here the colour is sign(sin(2.4x))·sign(sin(2.4y)), a checkerboard, mapped across a two-colour ramp. Because it is evaluated per pixel rather than interpolated between vertices, the squares stay crisp no matter how coarse the mesh.", kind: "mat-checker" },
+          { heading: "Emission and motion", body: "Emission is added after the lighting, so it self-illuminates regardless of the light. Here glow bands pow(max(0, sin(2.5(x+y) − t)), 3) sweep across a dark dome, driven by an animator t that the material reads as a live value — the bands move with no geometry rebuild. Colour, specular, and emission are all the same operation: evaluate an expression per fragment and feed it into the shading.", kind: "mat-glow" },
+        ],
+      },
+      {
         slug: "transcendental-level-sets",
         title: "Beyond polynomials",
         summary: "The modern sense: analytic functions like eˣ and sin reach curves and surfaces no polynomial equation can describe.",

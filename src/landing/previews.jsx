@@ -596,6 +596,58 @@ function spherePlaneScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[sph.id]:sph,[pln.id]:pln,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// MATERIAL (Stage 3): per-fragment colour from an expression, ramped to a crisp
+// checkerboard albedo on a lit surface. Vertex-interpolated colour would smear
+// the checker; evaluating per fragment keeps the edges sharp.
+function matCheckerScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="material · checker albedo";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="28";
+  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="lit + colour expr";fn.color="#5b9cf6";
+  fn.props.dims="2";fn.props.expr="0.5*sin(x)*cos(y)";
+  fn.props.xMin="-3.2";fn.props.xMax="3.2";fn.props.yMin="-3.2";fn.props.yMax="3.2";
+  fn.props.res="96";fn.props.showWire=false;fn.props.shading="lit";
+  fn.props.matColor="sign(sin(2.4*x))*sign(sin(2.4*y))";
+  fn.props.matColorLo="#16213a";fn.props.matColorHi="#ffd166";fn.props.matColorMin="-1";fn.props.matColorMax="1";
+  cam.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn},camId:cam.id,animated:false};
+}
+
+// MATERIAL: an animated colour expression tracking the wave — the material reads
+// the animator t as a live uniform, so the colour sweeps with no geometry rebuild.
+function matRingsScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="material · animated colour";
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const anim=makeNode("animator",{x:40,y:320});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="6";anim.props.loop="loop";anim.playing=true;
+  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="lit + matColor(t)";fn.color="#5b9cf6";
+  fn.props.dims="2";fn.props.expr="sin(sqrt(x^2+y^2)*1.4 - t)*0.8";
+  fn.props.xMin="-4.5";fn.props.xMax="4.5";fn.props.yMin="-4.5";fn.props.yMax="4.5";
+  fn.props.res="64";fn.props.showWire=false;fn.props.shading="lit";
+  fn.props.matColor="sin(sqrt(x^2+y^2)*1.4 - t)";
+  fn.props.matColorLo="#1b3a8f";fn.props.matColorHi="#ff5ea8";fn.props.matColorMin="-1";fn.props.matColorMax="1";
+  fn.attachments=[anim.id];cam.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn},camId:cam.id,animated:true};
+}
+
+// MATERIAL: additive emission — glow bands sweep across a dark lit dome. Emission
+// is added after lighting (it ignores the light), so the bands self-illuminate.
+function matGlowScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="material · emission glow";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";
+  const anim=makeNode("animator",{x:40,y:320});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="5";anim.props.loop="loop";anim.playing=true;
+  const fn=makeNode("scalarFn",{x:380,y:160});fn.label="lit + emission(t)";fn.color="#16203a";
+  fn.props.dims="2";fn.props.expr="exp(-(x^2+y^2)*0.16)*1.6";
+  fn.props.xMin="-4";fn.props.xMax="4";fn.props.yMin="-4";fn.props.yMax="4";
+  fn.props.res="72";fn.props.showWire=false;fn.props.shading="lit";
+  fn.props.matEmit="pow(max(0.0, sin(2.5*(x+y) - t)), 3.0)";fn.props.matEmitColor="#5be0c0";
+  fn.attachments=[anim.id];cam.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn},camId:cam.id,animated:true};
+}
+
 // Register the new scenes alongside the originals.
 Object.assign(SCENES, {
   spheretorus: sphereTorusScene,
@@ -615,6 +667,9 @@ Object.assign(SCENES, {
   "composed-surface": composedSurfaceScene,
   steinmetz: steinmetzScene,
   "sphere-plane": spherePlaneScene,
+  "mat-checker": matCheckerScene,
+  "mat-rings": matRingsScene,
+  "mat-glow": matGlowScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────

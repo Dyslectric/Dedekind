@@ -128,6 +128,24 @@ export function ScalarFnEditor({ node, scope, onChange }){
         Lit shades per fragment with a key light and a specular highlight, using exact analytic surface normals (computed from the symbolic derivatives of <em>f</em>) where possible, falling back to screen-space normals otherwise. Highlights track the true surface, not the mesh facets.
       </div>
     </Sec>}
+    {dims==="2"&&(node.props.shading==="lit")&&<Sec title="Material (lit)">
+      <div style={{fontSize:12.5,color:ui.uiFaint,marginBottom:6,lineHeight:1.5}}>
+        Per-fragment expressions over the domain <em>x, y</em> plus any wired scalars — wire an <strong>animator t</strong> and the material animates with no rebuild. Leave a field blank to keep the default.
+      </div>
+      <PR label="colour"><XF v={node.props.matColor||""} sc={scope} onChange={v=>set("matColor",v)} placeholder="scalar, e.g. sin(3x)·cos(3y)"/></PR>
+      {node.props.matColor&&<>
+        <PR label="ramp low"><ColorRow v={node.props.matColorLo||"#3a6aff"} onChange={v=>set("matColorLo",v)}/></PR>
+        <PR label="ramp high"><ColorRow v={node.props.matColorHi||"#ff5ea8"} onChange={v=>set("matColorHi",v)}/></PR>
+        <PR label="min"><EI v={node.props.matColorMin??""} sc={scope} onChange={v=>set("matColorMin",v)} placeholder="-1"/></PR>
+        <PR label="max"><EI v={node.props.matColorMax??""} sc={scope} onChange={v=>set("matColorMax",v)} placeholder="1"/></PR>
+        <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>
+          The colour expression is mapped across [min, max] onto the ramp (no auto-fit on the GPU, so set the range).
+        </div>
+      </>}
+      <PR label="specular ×"><XF v={node.props.matSpec||""} sc={scope} onChange={v=>set("matSpec",v)} placeholder="multiplies highlight, e.g. step(0,sin(8x))"/></PR>
+      <PR label="emission"><XF v={node.props.matEmit||""} sc={scope} onChange={v=>set("matEmit",v)} placeholder="adds glow, e.g. 0.5+0.5·sin(x-t)"/></PR>
+      {node.props.matEmit&&<PR label="glow colour"><ColorRow v={node.props.matEmitColor||"#ffffff"} onChange={v=>set("matEmitColor",v)}/></PR>}
+    </Sec>}
   </>;
 }
 

@@ -68,7 +68,7 @@ function buildSurfGPU(kind, p, scope, color){
   // back to screen-space dFdx/dFdy. paramsurf always uses the fallback (no
   // closed-form normal for an arbitrary parametric map). Derivative uniforms are
   // collected into the SAME set so their sliders are declared + resolvable.
-  let shade=null;
+  let shade=null, matOpts=null;
   if(p.shading==="lit"){
     let fxG=null, fyG=null;
     if(kind==="surf3d"){
@@ -76,7 +76,28 @@ function buildSurfGPU(kind, p, scope, color){
       if(fxs) fxG=exprToGLSL(fxs, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
       if(fys) fyG=exprToGLSL(fys, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
     }
-    shade={ fx:fxG, fy:fyG };
+    // Stage 3 material channels — per-fragment expressions over the domain (x,y)
+    // + wired scalars/animators. Graph surfaces only (they expose (x,y); a
+    // parametric surface's vDomain is grid coords, not its own params). Each is
+    // optional and transpile-or-skip: a null GLSL just omits that channel.
+    let colorG=null, specG=null, emitG=null;
+    if(kind==="surf3d"){
+      const ax=new Set(["x","y"]);
+      if(p.matColor) colorG=exprToGLSL(p.matColor, ax, uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+      if(p.matSpec)  specG=exprToGLSL(p.matSpec,  ax, uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+      if(p.matEmit)  emitG=exprToGLSL(p.matEmit,  ax, uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+    }
+    shade={ fx:fxG, fy:fyG, specExpr:specG, emitExpr:emitG, emitColor:p.matEmitColor };
+    if(colorG){
+      matOpts={ colorBody:colorG,
+        colorLo:new THREE.Color(hexToThree(p.matColorLo||"#3a6aff")),
+        colorHi:new THREE.Color(hexToThree(p.matColorHi||"#ff5ea8")),
+        cmin:resolveNum(p.matColorMin, scope, -1),
+        cmax:resolveNum(p.matColorMax, scope, 1),
+        shade };
+    } else {
+      matOpts={ shade };
+    }
   }
 
   // Composed surface: bail to CPU if an inlined fnDef pulled in a scalar we can't
@@ -90,7 +111,7 @@ function buildSurfGPU(kind, p, scope, color){
     ? { uMin:p.xMin, uMax:p.xMax, vMin:p.yMin, vMax:p.yMax }
     : { uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax };
   return assembleSurfGPU(bodyP, [...uniforms], ascope, color, ures, vres, showWire,
-    shade ? { shade } : null, { uDomU:[umin,umax], uDomV:[vmin,vmax],
+    matOpts, { uDomU:[umin,umax], uDomV:[vmin,vmax],
             expr:domExpr, defs:{ uMin:umin, uMax:umax, vMin:vmin, vMax:vmax } }, p.wireOnly===true);
 }
 // Given a GLSL body that sets `vec3 P` (math-order x,y,z) from grid coords d∈[0,1]²,

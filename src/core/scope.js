@@ -213,7 +213,7 @@ function geomSignature(node, scope){
   const p=node.props;
   const c=node.color||"";
   switch(node.type){
-    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${p.shading||""}|${
+    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${p.shading||""}|${p.matColor||""}|${p.matColorLo||""}|${p.matColorHi||""}|${p.matColorMin||""}|${p.matColorMax||""}|${p.matSpec||""}|${p.matEmit||""}|${p.matEmitColor||""}|${
       surfTranspiles(node,scope) ? "" : `${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|`
     }${scopeSigFns(node,scope)}`;
     case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
@@ -414,7 +414,8 @@ function nodeExprText(node){
   const fields=[p.expr,p.exprX,p.exprY,p.exprZ,p.points,p.pairs,p.x,p.y,p.z,p.x0,p.y0,p.z0,p.seedX,p.seedY,p.seedZ,p.tMin,p.tMax,p.xMin,p.xMax,p.yMin,p.yMax,p.zMin,p.zMax,p.uMin,p.uMax,p.vMin,p.vMax,p.res,p.gridN,p.steps,p.stepSize,p.radius,p.size,p.seedN,p.seedSpan,p.arrowLen,p.speed,
     p.out0,p.out1,p.out2,p.out3,p.data,p.colorExpr,p.colorMin,p.colorMax,p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,
     p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig,
-    p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA];
+    p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA,
+    p.matColor,p.matSpec,p.matEmit];
   return fields.filter(e=>typeof e==="string"&&e.length).join("\u0001");
 }
 // Extract the set of free variable names appearing in a node's expressions

@@ -56,6 +56,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     uniforms.uDif   = { value: shade.diffuse  ?? 0.85 };
     uniforms.uSpe   = { value: shade.specular ?? 0.35 };
     uniforms.uShine = { value: shade.shininess ?? 32.0 };
+    if(shade.emitExpr) uniforms.uEmitColor = { value: new THREE.Color(hexToThree(shade.emitColor||"#ffffff")) };
   }
   const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
   const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
@@ -140,19 +141,27 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     }`);
   // ── Opt-in lit path: per-fragment Blinn-Phong with analytic-or-screen-space
   // normal, computed in VIEW space (so three's matrices handle the mirror group).
+  // Stage 3 material channels (all per fragment, all optional): a color
+  // expression ramped through uColorLo→uColorHi (opts.colorBody, evaluated at the
+  // fragment's domain (x,y) so the pattern is crisp, not vertex-interpolated), a
+  // specular-intensity multiplier (shade.specExpr), and an additive emission
+  // (shade.emitExpr × uEmitColor). They read the domain varying + any wired
+  // scalars/animators (an animator named t is just a live usr_t uniform).
   let litVert = null, litFrag = null;
   if(lit){
     const analytic = !!(shade.fx && shade.fy);   // both derivatives transpiled
+    const specExpr = shade.specExpr || null;
+    const emitExpr = shade.emitExpr || null;
+    const needXY = analytic || colored || !!specExpr || !!emitExpr;
     litVert = `
       ${decls}
-      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk; ${colorVaryV}
+      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk;
       void main(){
         vec2 _gd = position.xy;
         float x=_gd.x; float y=_gd.y; ${body}
         vec3 p = vec3(P.x, P.z, P.y);
         vDomain = vec2(x,y);
         vOk = (abs(p.x)<1e6 && abs(p.y)<1e6 && abs(p.z)<1e6) ? 1.0 : 0.0;
-        ${colored ? "vCval = ("+opts.colorBody+");" : ""}
         vec4 _vp = modelViewMatrix * vec4(p,1.0);
         vViewPos = _vp.xyz;
         gl_Position = projectionMatrix * _vp;
@@ -164,12 +173,13 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       uniform vec3 uColor; uniform vec3 uLightDir;
       uniform float uAmb; uniform float uDif; uniform float uSpe; uniform float uShine;
       ${colored ? "uniform vec3 uColorLo; uniform vec3 uColorHi; uniform float uCMin; uniform float uCMax;" : ""}
-      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk; ${colored?"varying float vCval;":""}
+      ${emitExpr ? "uniform vec3 uEmitColor;" : ""}
+      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk;
       void main(){
         if(vOk<0.5) discard;
+        ${needXY ? "float x=vDomain.x; float y=vDomain.y;" : ""}
         vec3 N;
         ${analytic ? `
-        float x=vDomain.x; float y=vDomain.y;
         float fx = ${shade.fx};
         float fy = ${shade.fy};
         // math-space height-field normal (-f_x,-f_y,1) → three (x,z,y) → view via uNormalMat
@@ -184,10 +194,12 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         float dif = max(dot(N,L), 0.0);
         vec3 H = normalize(L + V);
         float spe = pow(max(dot(N,H), 0.0), uShine);
+        float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
         ${colored
-          ? "float _sp=(uCMax-uCMin); float _t=(abs(_sp)<1e-12)?0.0:clamp((vCval-uCMin)/_sp,0.0,1.0); vec3 albedo=mix(uColorLo,uColorHi,_t);"
+          ? `float _cv = (${opts.colorBody}); float _sp=(uCMax-uCMin); float _t=(abs(_sp)<1e-12)?0.0:clamp((_cv-uCMin)/_sp,0.0,1.0); vec3 albedo=mix(uColorLo,uColorHi,_t);`
           : "vec3 albedo = uColor;"}
-        vec3 col = uAmb*albedo + uDif*dif*albedo + uSpe*spe*vec3(1.0);
+        vec3 col = uAmb*albedo + uDif*dif*albedo + uSpe*specMul*spe*vec3(1.0);
+        ${emitExpr ? `col += clamp(${emitExpr}, 0.0, 8.0) * uEmitColor;` : ""}
         col = pow(clamp(col,0.0,1.0), vec3(1.0/2.2));
         gl_FragColor = vec4(col, 0.92);
       }`;
