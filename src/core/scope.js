@@ -398,7 +398,6 @@ function scopeSigFns(node, scope){
   return uniq.join(",");
 }
 // Concatenated raw expression text of a node (all expression-bearing props).
-const _nodeTextCache=new Map();
 function nodeExprText(node){
   const p=node.props||{};
   const fields=[p.expr,p.exprX,p.exprY,p.exprZ,p.points,p.pairs,p.x,p.y,p.z,p.x0,p.y0,p.z0,p.seedX,p.seedY,p.seedZ,p.tMin,p.tMax,p.xMin,p.xMax,p.yMin,p.yMax,p.zMin,p.zMax,p.uMin,p.uMax,p.vMin,p.vMax,p.res,p.gridN,p.steps,p.stepSize,p.radius,p.size,p.seedN,p.seedSpan,p.arrowLen,p.speed,
