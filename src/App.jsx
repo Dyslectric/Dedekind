@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ComputeWorker } from "./core/worker.js";
 import { catOf, canAttach, SCALAR_TYPES, isCameraType } from "./core/taxonomy.js";
 import { buildScopeForCamera, resolveScope, collectScalarDeps } from "./core/scope.js";
 import { serializeProject, deserializeProject, serializeCameraShare, deserializeCameraShare, isShareHash, migrateModel } from "./core/serialize.js";
@@ -821,7 +820,6 @@ function Root(){
 }
 
 export default function App(){
-  useEffect(()=>{ ComputeWorker.init(); },[]);
   const isMobile=useIsMobile();
   const hash=window.location.hash.slice(1);
   const parsed=useMemo(()=>{
