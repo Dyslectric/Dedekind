@@ -213,11 +213,11 @@ function geomSignature(node, scope){
   const p=node.props;
   const c=node.color||"";
   switch(node.type){
-    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${
+    case "surf3d": return `s|${c}|${p.expr}|${resolveNum(p.res,scope,40)}|${p.showWire!==false?1:0}|${p.shading||""}|${
       surfTranspiles(node,scope) ? "" : `${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|`
     }${scopeSigFns(node,scope)}`;
     case "fn1d": return `f|${c}|${p.expr}|${p.xMin}|${p.xMax}|${resolveNum(p.res,scope,300)}|${scopeSig(node,scope)}`;
-    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${
+    case "paramsurf": return `p|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.uRes,scope,40)}|${resolveNum(p.vRes,scope,30)}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|${p.shading||""}|${
       surfTranspiles(node,scope) ? "" : `${resolveNum(p.uMin,scope,0)}|${resolveNum(p.uMax,scope,6.283)}|${resolveNum(p.vMin,scope,0)}|${resolveNum(p.vMax,scope,3.1416)}|`
     }${scopeSigFns(node,scope)}`;
     case "paramvol": return `pv|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${p.uMin}|${p.uMax}|${p.vMin}|${p.vMax}|${p.wMin}|${p.wMax}|${resolveNum(p.uRes,scope,14)}|${resolveNum(p.vRes,scope,14)}|${resolveNum(p.wRes,scope,14)}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;

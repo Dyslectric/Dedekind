@@ -21,6 +21,11 @@ function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
 //   the flat uColor. opts.colorLo/colorHi are THREE.Color; cmin/cmax are numbers.
 function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, domain, uPrefix=""){
   const colored = !!(opts && opts.colorBody);
+  // Opt-in per-fragment lighting (Blinn-Phong) with an analytic or screen-space
+  // normal. `opts.shade` is the lit-mode descriptor; when absent the shader is
+  // byte-identical to before (no regression). Never lit for the wireframe pass.
+  const shade = (!wireframe && opts && opts.shade) ? opts.shade : null;
+  const lit = !!shade;
   const uniforms = { uColor:{value:new THREE.Color(hexToThree(color))} };
   // User scalar uniforms are declared/keyed as prefix+name (the body references
   // them prefixed) but their values come from scope[name].
@@ -38,6 +43,19 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     uniforms.uColorHi = { value: opts.colorHi.clone() };
     uniforms.uCMin = { value: Number(opts.cmin)||0 };
     uniforms.uCMax = { value: Number(opts.cmax)||1 };
+  }
+  if(lit){
+    // uNormalMat is the object→view normal matrix; it's refreshed per frame from
+    // the mesh in assembleSurfGPU's onBeforeRender (three doesn't expose
+    // normalMatrix to the fragment stage, and computing it ourselves keeps the
+    // mirror group's negative scale handled correctly). Light is a fixed key light
+    // for now (Stage 6 will surface these as node props).
+    uniforms.uNormalMat = { value: new THREE.Matrix3() };
+    uniforms.uLightDir  = { value: new THREE.Vector3(0.4,0.9,0.5).normalize() };
+    uniforms.uAmb   = { value: shade.ambient  ?? 0.18 };
+    uniforms.uDif   = { value: shade.diffuse  ?? 0.85 };
+    uniforms.uSpe   = { value: shade.specular ?? 0.35 };
+    uniforms.uShine = { value: shade.shininess ?? 32.0 };
   }
   const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
   const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
@@ -120,10 +138,72 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       float diff = 0.55 + 0.45*abs(dot(normalize(vNormalW), L));
       gl_FragColor = vec4(uColor*diff, 0.82);
     }`);
-  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader:vert, fragmentShader:frag,
+  // ── Opt-in lit path: per-fragment Blinn-Phong with analytic-or-screen-space
+  // normal, computed in VIEW space (so three's matrices handle the mirror group).
+  let litVert = null, litFrag = null;
+  if(lit){
+    const analytic = !!(shade.fx && shade.fy);   // both derivatives transpiled
+    litVert = `
+      ${decls}
+      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk; ${colorVaryV}
+      void main(){
+        vec2 _gd = position.xy;
+        float x=_gd.x; float y=_gd.y; ${body}
+        vec3 p = vec3(P.x, P.z, P.y);
+        vDomain = vec2(x,y);
+        vOk = (abs(p.x)<1e6 && abs(p.y)<1e6 && abs(p.z)<1e6) ? 1.0 : 0.0;
+        ${colored ? "vCval = ("+opts.colorBody+");" : ""}
+        vec4 _vp = modelViewMatrix * vec4(p,1.0);
+        vViewPos = _vp.xyz;
+        gl_Position = projectionMatrix * _vp;
+      }`;
+    litFrag = `
+      precision highp float;
+      ${decls}
+      uniform mat3 uNormalMat;
+      uniform vec3 uColor; uniform vec3 uLightDir;
+      uniform float uAmb; uniform float uDif; uniform float uSpe; uniform float uShine;
+      ${colored ? "uniform vec3 uColorLo; uniform vec3 uColorHi; uniform float uCMin; uniform float uCMax;" : ""}
+      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk; ${colored?"varying float vCval;":""}
+      void main(){
+        if(vOk<0.5) discard;
+        vec3 N;
+        ${analytic ? `
+        float x=vDomain.x; float y=vDomain.y;
+        float fx = ${shade.fx};
+        float fy = ${shade.fy};
+        // math-space height-field normal (-f_x,-f_y,1) → three (x,z,y) → view via uNormalMat
+        vec3 Nthree = vec3(-fx, 1.0, -fy);
+        N = normalize(uNormalMat * Nthree);
+        ` : `
+        N = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
+        `}
+        vec3 V = normalize(-vViewPos);
+        if(dot(N,V) < 0.0) N = -N;                 // face the camera (DoubleSide)
+        vec3 L = normalize((viewMatrix * vec4(uLightDir, 0.0)).xyz);
+        float dif = max(dot(N,L), 0.0);
+        vec3 H = normalize(L + V);
+        float spe = pow(max(dot(N,H), 0.0), uShine);
+        ${colored
+          ? "float _sp=(uCMax-uCMin); float _t=(abs(_sp)<1e-12)?0.0:clamp((vCval-uCMin)/_sp,0.0,1.0); vec3 albedo=mix(uColorLo,uColorHi,_t);"
+          : "vec3 albedo = uColor;"}
+        vec3 col = uAmb*albedo + uDif*dif*albedo + uSpe*spe*vec3(1.0);
+        col = pow(clamp(col,0.0,1.0), vec3(1.0/2.2));
+        gl_FragColor = vec4(col, 0.92);
+      }`;
+  }
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: lit ? litVert : vert,
+    fragmentShader: lit ? litFrag : frag,
     side:THREE.DoubleSide, transparent:true, wireframe:!!wireframe });
+  // The screen-space-derivative fallback (dFdx/dFdy) needs the derivatives
+  // extension on WebGL1; harmless/ignored on WebGL2 where they're core.
+  if(lit) mat.extensions = { derivatives: true };
   mat._uniformNames = uniformNames;
   mat._uPrefix = uPrefix;
+  mat._lit = lit;   // assembleSurfGPU keys the per-frame normal-matrix update on this
   return mat;
 }
 

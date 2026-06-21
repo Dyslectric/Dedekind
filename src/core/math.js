@@ -314,7 +314,30 @@ function splitTopLevel(s, delim = ",") {
   return out;
 }
 
+// Symbolic derivative as SOURCE TEXT (not compiled), memoized by (body, var).
+// `compiledDerivative` above returns a compiled evaluator for CPU sampling; the
+// GPU normal path instead needs the derivative EXPRESSION so it can be handed to
+// exprToGLSL and inlined into a shader. Returns the derivative source string, or
+// null when the body can't be differentiated (caller then uses the dFdx/dFdy
+// screen-space fallback).
+const _derivSrcCache = new Map();
+function derivativeExpr(bodyText, varName) {
+  if (typeof bodyText !== "string" || !bodyText.length) return null;
+  const key = varName + " " + bodyText;
+  const hit = _derivSrcCache.get(key);
+  if (hit !== undefined) return hit;
+  let src = null;
+  try { src = math.derivative(math.parse(bodyText), varName).toString(); }
+  catch { src = null; }
+  if (_derivSrcCache.size >= 2000) {
+    const firstKey = _derivSrcCache.keys().next().value;
+    _derivSrcCache.delete(firstKey);
+  }
+  _derivSrcCache.set(key, src);
+  return src;
+}
+
 export {
   math, parse,
-  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, linspace, makeFn, splitTopLevel
+  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, linspace, makeFn, splitTopLevel, derivativeExpr
 };

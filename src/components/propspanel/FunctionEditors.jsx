@@ -118,6 +118,15 @@ export function ScalarFnEditor({ node, scope, onChange }){
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
         Draws grid lines over the surface. Turning it off renders a single shaded mesh — faster for dense or animated surfaces.
       </div>
+      <PR label="shading">
+        <select value={node.props.shading||"classic"} onChange={e=>set("shading",e.target.value==="classic"?"":e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="classic">Classic (flat directional)</option>
+          <option value="lit">Lit (per-pixel Blinn-Phong)</option>
+        </select>
+      </PR>
+      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+        Lit shades per fragment with a key light and a specular highlight, using exact analytic surface normals (computed from the symbolic derivatives of <em>f</em>) where possible, falling back to screen-space normals otherwise. Highlights track the true surface, not the mesh facets.
+      </div>
     </Sec>}
   </>;
 }

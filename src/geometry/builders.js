@@ -4,13 +4,15 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import { resolveNum, safeEval, linspace, splitTopLevel } from "../core/math.js";
+import { resolveNum, safeEval, linspace, splitTopLevel, derivativeExpr } from "../core/math.js";
 import { compileToJS } from "../core/jit.js";
 import { exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
 
 // Target on-screen thickness for 1-space curves in 3D cameras (CSS pixels).
 const CURVE_3D_PX = 2.6;
+// Scratch matrix for per-frame view-space normal-matrix recompute on lit surfaces.
+const _normMV = new THREE.Matrix4();
 
 // When a surface is composed from user fnDefs, exprToGLSL inlines them and the
 // scalars inside those fnDef bodies become shader uniforms by name. Those scalars
@@ -59,6 +61,24 @@ function buildSurfGPU(kind, p, scope, color){
              vec3 P = vec3(${sx}, ${sy}, ${sz});`;
   } else return null;
 
+  // ── Opt-in per-fragment lighting (Stages 1/2/4). When p.shading==="lit", build
+  // a `shade` descriptor: for a graph surface z=f(x,y) we transpile the SYMBOLIC
+  // derivatives f_x,f_y so the fragment shader computes an exact analytic normal;
+  // if either derivative can't be taken or transpiled (null), the shader falls
+  // back to screen-space dFdx/dFdy. paramsurf always uses the fallback (no
+  // closed-form normal for an arbitrary parametric map). Derivative uniforms are
+  // collected into the SAME set so their sliders are declared + resolvable.
+  let shade=null;
+  if(p.shading==="lit"){
+    let fxG=null, fyG=null;
+    if(kind==="surf3d"){
+      const fxs=derivativeExpr(p.expr,"x"), fys=derivativeExpr(p.expr,"y");
+      if(fxs) fxG=exprToGLSL(fxs, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+      if(fys) fyG=exprToGLSL(fys, new Set(["x","y"]), uniforms, GLSL_UNIFORM_PREFIX, fnTable);
+    }
+    shade={ fx:fxG, fy:fyG };
+  }
+
   // Composed surface: bail to CPU if an inlined fnDef pulled in a scalar we can't
   // resolve (so it never renders with a zeroed coefficient).
   if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
@@ -70,7 +90,7 @@ function buildSurfGPU(kind, p, scope, color){
     ? { uMin:p.xMin, uMax:p.xMax, vMin:p.yMin, vMax:p.yMax }
     : { uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax };
   return assembleSurfGPU(bodyP, [...uniforms], ascope, color, ures, vres, showWire,
-    null, { uDomU:[umin,umax], uDomV:[vmin,vmax],
+    shade ? { shade } : null, { uDomU:[umin,umax], uDomV:[vmin,vmax],
             expr:domExpr, defs:{ uMin:umin, uMax:umax, vMin:vmin, vMax:vmax } }, p.wireOnly===true);
 }
 // Given a GLSL body that sets `vec3 P` (math-order x,y,z) from grid coords d∈[0,1]²,
@@ -97,6 +117,17 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   }
   const matFill = makeSurfaceShader(bodyP, uNames, scope, color, false, colorOpts, domain, GLSL_UNIFORM_PREFIX);
   const mesh = new THREE.Mesh(geo, matFill);
+  // Lit surfaces light per-fragment in VIEW space and need the object→view normal
+  // matrix in the FRAGMENT stage (three only exposes normalMatrix to the vertex
+  // stage). Recompute it here each frame from the live camera so it stays correct
+  // as the camera orbits and through the renderer's mirror group (negative scale).
+  if(matFill._lit){
+    mesh.onBeforeRender = (renderer, scene, camera) => {
+      const u = matFill.uniforms.uNormalMat; if(!u) return;
+      _normMV.multiplyMatrices(camera.matrixWorldInverse, mesh.matrixWorld);
+      u.value.getNormalMatrix(_normMV);
+    };
+  }
   // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
   // shader, so three.js's CPU-side bounding volume (a tiny 1×1 patch) does NOT
   // reflect where the surface actually is. Without disabling frustum culling the
