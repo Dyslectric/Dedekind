@@ -9,6 +9,7 @@ import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
 import { marchingSquares } from "../geometry/implicit.js";
 import { hexToThree } from "../geometry/three-helpers.js";
+import { exprToGLSL } from "../geometry/glsl.js";
 import { planeFrame, projectPt, projectPts } from "./project2d.js";
 import { advectSeeds } from "../geometry/flow.js";
 
@@ -460,9 +461,78 @@ function build2DQuiver3d(np, pscope, color, px, fr){
 }
 
 
+// GPU 2D implicit curve. Instead of marching squares on the CPU (which re-runs
+// every frame a slider moves), we draw a quad covering the domain and let a
+// fragment shader evaluate F(a,b) = lhs − rhs per pixel, shading an antialiased
+// band where F crosses zero. The curve width is kept constant in screen space
+// via fwidth (screen-space derivative of F), which also naturally fades the line
+// where the gradient is steep. Slider-driven coefficients are uniforms, so a drag
+// updates a uniform rather than rebuilding geometry. Returns null when the
+// expression can't be transpiled to GLSL (caller falls back to marching squares).
+function build2DImplicitGPU(tNode, eqNode, pscope, color, fr){
+  const p=eqNode.props||{};
+  const varA=(p.varA||"x").trim()||"x", varB=(p.varB||"y").trim()||"y";
+  const fExpr=`(${p.lhs??"0"}) - (${p.rhs??"0"})`;
+  const uniforms=new Set();
+  // map the equation's two plane variables to the shader's a,b coords
+  const g=exprToGLSL(fExpr, new Set([varA,varB]), uniforms);
+  if(g==null) return null;
+  // rename varA/varB to the shader locals a,b (exprToGLSL emits them verbatim)
+  // We declare them as the function params below, so just guard reserved names.
+  const tp=tNode.props||{};
+  const aMin=resolveNum(tp.aMin,pscope,-5), aMax=resolveNum(tp.aMax,pscope,5);
+  const bMin=resolveNum(tp.bMin,pscope,-5), bMax=resolveNum(tp.bMax,pscope,5);
+
+  // quad geometry in the camera plane: 4 corners at the domain box, world-placed
+  // through the same projectPt the rest of the 2D renderer uses.
+  const corners=[[aMin,bMin],[aMax,bMin],[aMax,bMax],[aMin,bMax]];
+  const wpos=[]; const apos=[];
+  for(const [a,b] of corners){ const [u,v]=projectPt(fr,a,b,0); wpos.push(u,v,0); apos.push(a,b); }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(wpos,3));
+  geo.setAttribute("ab", new THREE.Float32BufferAttribute(apos,2));
+  geo.setIndex([0,1,2, 0,2,3]);
+
+  const uobj={ uColor:{value:new THREE.Color(hexToThree(color))} };
+  // exclude the two plane variables (they're function params, not uniforms)
+  const planeVars=new Set([varA,varB]);
+  for(const u of uniforms){ if(!planeVars.has(u)) uobj[u]={value:Number(pscope[u])||0}; }
+  const decls=[...uniforms].filter(u=>!planeVars.has(u)).map(u=>`uniform float ${u};`).join("\n");
+  const vert=`
+    attribute vec2 ab; varying vec2 vAb;
+    void main(){ vAb=ab; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+  // Declare the field function's parameters with the equation's OWN variable names
+  // (varA/varB, e.g. x and y) so the transpiled expression's identifiers resolve.
+  const frag=`precision highp float;
+    ${decls}
+    uniform vec3 uColor; varying vec2 vAb;
+    float F(float ${varA}, float ${varB}){ return ${g}; }
+    void main(){
+      float f=F(vAb.x, vAb.y);
+      // screen-space gradient magnitude of f → constant-width line
+      float w=fwidth(f);
+      if(w<1e-12){ discard; }
+      float d=abs(f)/w;            // distance to the zero set in pixels
+      float alpha=1.0 - smoothstep(0.75, 1.75, d);  // ~1.5px line, antialiased
+      if(alpha<=0.003) discard;
+      gl_FragColor=vec4(uColor, alpha);
+    }`;
+  const mat=new THREE.ShaderMaterial({uniforms:uobj,vertexShader:vert,fragmentShader:frag,
+    transparent:true,depthTest:false,side:THREE.DoubleSide,extensions:{derivatives:true}});
+  mat._uniformNames=[...uniforms].filter(u=>!planeVars.has(u));
+  const mesh=new THREE.Mesh(geo,mat);
+  mesh.frustumCulled=false;
+  mesh.renderOrder=2;
+  return [mesh];
+}
+
 function build2DImplicit(tNode, eqNode, pscope, color, px, fr){
   // 3D implicit surfaces require a 3D camera; nothing meaningful to draw in 2D.
   if((eqNode.props.dims||"2d")==="3d") return [];
+  // Prefer the GPU shader path; fall back to CPU marching squares if the
+  // expression can't be transpiled to GLSL.
+  const gpu=build2DImplicitGPU(tNode, eqNode, pscope, color, fr);
+  if(gpu) return gpu;
   const tp=tNode.props||{};
   const aMin=resolveNum(tp.aMin,pscope,-5), aMax=resolveNum(tp.aMax,pscope,5);
   const bMin=resolveNum(tp.bMin,pscope,-5), bMax=resolveNum(tp.bMax,pscope,5);
@@ -767,8 +837,23 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     live.add(childId);
     const cached=cache.get(childId);
     if(cached && cached.sig===sig){
-      // cache hit — reuse existing objects untouched
-      for(const o of cached.objs) plotObjs.push(o);
+      // cache hit — reuse existing objects. For GPU shader plots (the 2D implicit
+      // curve), refresh scalar uniforms from the current scope so slider-driven
+      // coefficients update live without rebuilding geometry. This is the 2D
+      // analogue of the 3D raymarch's updateGpuUniforms-on-hit.
+      let uScope=null;
+      for(const o of cached.objs){
+        const names=o.material&&o.material._uniformNames;
+        if(names&&names.length){
+          if(!uScope){
+            uScope=resolveScope(childId,nodes,animVals||{});
+            // fold in scalars from a wired equation (coefficients live there)
+            for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(d&&d.type==="equation"){ Object.assign(uScope, resolveScope(d.id,nodes,animVals||{})); } }
+          }
+          for(const nm of names){ const u=o.material.uniforms[nm]; if(u) u.value=Number(uScope[nm])||0; }
+        }
+        plotObjs.push(o);
+      }
       continue;
     }
     // miss — dispose old objects (if any) and rebuild this one plot

@@ -10,14 +10,21 @@ import { exprToGLSL } from "../geometry/glsl.js";
 // cheap. Returns true when BOTH sides transpile.
 const _glslOkCache = new Map();
 function eqTranspiles(eqNode){
-  if(!eqNode || (eqNode.props?.dims||"2d")!=="3d") return false;
+  if(!eqNode) return false;
   const q=eqNode.props||{};
-  const key=`${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`;
+  const is3d=(q.dims||"2d")==="3d";
+  const key=`${q.dims}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC}`;
   const hit=_glslOkCache.get(key);
   if(hit!==undefined) return hit;
   let ok=false;
   try{
-    const axis=new Set([(q.varA||"x").trim()||"x",(q.varB||"y").trim()||"y",(q.varC||"z").trim()||"z"]);
+    // 3D uses varA/varB/varC; 2D uses varA/varB. Both go through the GPU shader
+    // path now (3D raymarch, 2D fragment-shaded contour), so both keep their
+    // scalar coefficients as live uniforms rather than baking them into the
+    // cache signature.
+    const axis = is3d
+      ? new Set([(q.varA||"x").trim()||"x",(q.varB||"y").trim()||"y",(q.varC||"z").trim()||"z"])
+      : new Set([(q.varA||"x").trim()||"x",(q.varB||"y").trim()||"y"]);
     const f=`(${q.lhs ?? "0"}) - (${q.rhs ?? "0"})`;
     ok = exprToGLSL(f, axis, new Set()) != null;
   }catch{ ok=false; }

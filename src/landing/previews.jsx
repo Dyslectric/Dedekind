@@ -635,7 +635,473 @@ Object.assign(SCENES, {
   "tut-integral-area": tutIntegralAreaScene,
   "tut-frame-tube": tutFrameTubeScene,
   "tut-frame-moving": tutFrameMovingScene,
+  "tut-combine-inputs": tutCombineInputsScene,
+  "tut-curve-family": tutCurveFamilyScene,
+  "tut-taylor": tutTaylorScene,
+  "tut-curvature-feel": tutCurvatureFeelScene,
+  "tut-logistic-r": tutLogisticRScene,
+  "tut-combine-one": tutCombineOneScene,
+  "tut-combine-two": tutCombineTwoScene,
+  "tut-combine-surface": tutCombineSurfaceScene,
+  "tut-combine-lissajous": tutCombineLissajousScene,
+  "tut-conic-family": tutConicFamilyScene,
+  "tut-surface-family": tutSurfaceFamilyScene,
+  "tut-logistic-fixed2": tutLogisticFixed2Scene,
+  "tut-logistic-fixed4": tutLogisticFixed4Scene,
+  "tut-cobweb": tutCobwebScene,
+  "tut-flow-source": tutFlowSourceScene,
+  "tut-flow-saddle": tutFlowSaddleScene,
+  "tut-flow-shear": tutFlowShearScene,
+  "tut-flow-morph": tutFlowMorphScene,
+  "tut-flow-lines": tutFlowLinesScene,
+  "tut-flow-surface": tutFlowSurfaceScene,
+  "tut-flow-pendulum": tutFlowPendulumScene,
+  "tut-flow-3d": tutFlow3dScene,
+  "tut-fixed-attract": tutFixedAttractScene,
+  "tut-fixed-repel": tutFixedRepelScene,
+  "tut-fixed-center": tutFixedCenterScene,
+  "tut-limitcycle": tutLimitCycleScene,
+  "tut-lorenz": tutLorenzScene,
+  "tut-rossler": tutRosslerScene,
 });
+
+// The Rössler attractor: x'=−y−z, y'=x+ay, z'=b+z(x−c), classic a=b=0.2, c=5.7.
+// Same cheap reveal approach as Lorenz: integrate once as a recursive points
+// sequence, reveal a growing prefix with the sequenced animator.
+function tutRosslerScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="the Rössler attractor";cam.props.showOpenBtn=false;
+  cam.props.targetX="0";cam.props.targetY="0";cam.props.targetZ="6";
+  cam.props.orbRadius="42";cam.props.orbTheta="0.5";cam.props.orbPhi="1.15";
+  cam.props.spin="loop";cam.props.spinPeriod="40";
+  const f=makeNode("animator",{x:40,y:360});f.name="f";f.value=0;
+  f.props.min="0";f.props.max="1";f.props.period="18";f.props.loop="loop";f.playing=true;
+  const pts=makeNode("points",{x:620,y:160});pts.label="Rössler trajectory";pts.color="#ffcf6e";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="1, 1, 1";
+  pts.props.recStep=
+    "x[n-1] + 0.02*(-y[n-1] - z[n-1]), "+
+    "y[n-1] + 0.02*(x[n-1] + 0.2*y[n-1]), "+
+    "z[n-1] + 0.02*(0.2 + z[n-1]*(x[n-1] - 5.7))";
+  pts.props.recCount="6000";pts.props.drawLines=true;pts.props.radius="0";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#ffcf6e";pts.props.colorHi="#ff6ec7";
+  pts.props.sequenced=true;pts.props.seqVar="f";
+  pts.attachments=[f.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[f.id]:f,[pts.id]:pts},camId:cam.id,animated:true};
+}
+
+// Dynamical systems: fixed points & stability ────────────────────────────────
+
+// an attracting spiral: everything winds inward to the origin.
+function tutFixedAttractScene(){
+  return _flow2d({label:"a stable spiral (attracting)", vx:"-x - y", vy:"x - y", size:2.6,
+    seedX:"2.3*cos(6.2832*t)", seedY:"2.3*sin(6.2832*t)", seedRes:12, steps:260, stepSize:0.03, output:"lines"});
+}
+// a repelling spiral: everything winds outward.
+function tutFixedRepelScene(){
+  return _flow2d({label:"an unstable spiral (repelling)", vx:"x - y", vy:"x + y", size:2.6,
+    seedX:"0.25*cos(6.2832*t)", seedY:"0.25*sin(6.2832*t)", seedRes:12, steps:150, stepSize:0.03, output:"lines"});
+}
+// a center: closed orbits, neither attracting nor repelling (the boundary case).
+function tutFixedCenterScene(){
+  return _flow2d({label:"a center (closed orbits)", vx:"-y", vy:"x", size:2.6,
+    seedX:"0.5 + 1.7*t", seedY:"0", seedRes:6, steps:260, stepSize:0.03, output:"lines"});
+}
+
+// Dynamical systems: limit cycles (Van der Pol) ──────────────────────────────
+// x' = y, y' = μ(1−x²)y − x. For μ>0 every trajectory spirals onto one isolated
+// closed loop, the limit cycle — the signature of self-sustained oscillation.
+function tutLimitCycleScene(){
+  const mu=makeNode("slider",{x:20,y:300});mu.name="mu";mu.label="μ · nonlinearity";mu.value=1;
+  mu.props.min="0.2";mu.props.max="3";mu.props.step="0.02";
+  return _flow2d({label:"Van der Pol limit cycle", vx:"y", vy:"mu*(1 - x*x)*y - x", size:3.4,
+    seedX:"0.1 + 3.0*t", seedY:"0.1", seedRes:9, steps:420, stepSize:0.02, output:"lines",
+    sliders:[mu], animated:false});
+}
+
+// Dynamical systems: continuous chaos (Lorenz) ───────────────────────────────
+// The Lorenz system σ(y−x), x(ρ−z)−y, xy−βz with the classic σ=10, ρ=28, β=8/3.
+// We integrate the trajectory ONCE as a recursive points sequence (Euler step,
+// small h), then reveal a growing prefix with the points node's O(1) sequenced
+// reveal driven by an animator. This avoids re-integrating thousands of steps
+// every frame (which is what made the earlier flow-node version stutter and never
+// finish). The camera targets the attractor's center (≈ z=25).
+function tutLorenzScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="the Lorenz attractor";cam.props.showOpenBtn=false;
+  cam.props.targetX="0";cam.props.targetY="0";cam.props.targetZ="25";
+  cam.props.orbRadius="62";cam.props.orbTheta="0.6";cam.props.orbPhi="1.35";
+  cam.props.spin="loop";cam.props.spinPeriod="40";
+  // reveal fraction 0→1 loops; the points node shows that prefix of the path
+  const f=makeNode("animator",{x:40,y:360});f.name="f";f.value=0;
+  f.props.min="0";f.props.max="1";f.props.period="16";f.props.loop="loop";f.playing=true;
+  const pts=makeNode("points",{x:620,y:160});pts.label="Lorenz trajectory";pts.color="#5ad1e6";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="0.1, 0, 0";
+  // Euler step, h=0.005: xₙ = xₙ₋₁ + h·f(xₙ₋₁)
+  pts.props.recStep=
+    "x[n-1] + 0.005*(10*(y[n-1]-x[n-1])), "+
+    "y[n-1] + 0.005*(x[n-1]*(28-z[n-1]) - y[n-1]), "+
+    "z[n-1] + 0.005*(x[n-1]*y[n-1] - (8/3)*z[n-1])";
+  pts.props.recCount="5000";pts.props.drawLines=true;pts.props.radius="0";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  pts.props.sequenced=true;pts.props.seqVar="f";
+  pts.attachments=[f.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[f.id]:f,[pts.id]:pts},camId:cam.id,animated:true};
+}
+
+// Applications: flow scenes ──────────────────────────────────────────────────
+
+// helper: a 2D flow scene (field quiver + integrated streamlines from a seed line)
+function _flow2d(opts){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label=opts.label;cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize=String(opts.size||3);
+  if(opts.cx!=null){cam.props.planeOx=String(opts.cx);cam.props.planeOy=String(opts.cy||0);}
+  const extraSliders=opts.sliders||[];
+  const field=makeNode("fnMap",{x:300,y:120});field.label="V(x,y)";field.props.inDim="2";field.props.outDim="2";
+  field.props.out0=opts.vx;field.props.out1=opts.vy;
+  if(extraSliders.length) field.attachments=extraSliders.map(s=>s.id);
+  const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seeds";seeds.props.degree="1";
+  seeds.props.exprX=opts.seedX||"-2.4 + 4.8*t";seeds.props.exprY=opts.seedY||"-2.2";seeds.props.exprZ="0";
+  seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res=String(opts.seedRes||13);
+  const flow=makeNode("flow",{x:640,y:200});flow.label="streamlines";flow.color="#5be0c0";
+  flow.props.steps=String(opts.steps||220);flow.props.stepSize=String(opts.stepSize||0.04);flow.props.output=opts.output||"surface";
+  flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
+  flow.attachments=[field.id,seeds.id];
+  // companion quiver of the same field
+  const qfn=makeNode("fnMap",{x:300,y:520});qfn.props.inDim="2";qfn.props.outDim="2";
+  qfn.props.out0=opts.vx;qfn.props.out1=opts.vy;
+  if(extraSliders.length) qfn.attachments=extraSliders.map(s=>s.id);
+  const quiver=makeNode("transformer",{x:640,y:460});quiver.label="field";quiver.color="#ffb454";
+  quiver.props.mode="field";quiver.props.inAxis0="x";quiver.props.inAxis1="y";
+  const ext=opts.size||3;
+  quiver.props.aMin=String(-ext);quiver.props.aMax=String(ext);quiver.props.bMin=String(-ext);quiver.props.bMax=String(ext);
+  quiver.props.res="11";quiver.props.arrowLen="0.32";quiver.props.normalize=true;
+  quiver.attachments=[qfn.id];
+  const scene={[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow,[qfn.id]:qfn,[quiver.id]:quiver};
+  for(const s of extraSliders) scene[s.id]=s;
+  cam.attachments=[flow.id,quiver.id];
+  return {scene,camId:cam.id,animated:!!opts.animated};
+}
+// Step: a source/sink — arrows point outward, streamlines radiate.
+function tutFlowSourceScene(){
+  return _flow2d({label:"a source", vx:"x", vy:"y", size:2.6,
+    seedX:"2.2*cos(6.2832*t)", seedY:"2.2*sin(6.2832*t)", seedRes:16, steps:90, stepSize:0.02, output:"lines"});
+}
+// Step: a saddle — flow in along one axis, out along the other.
+function tutFlowSaddleScene(){
+  return _flow2d({label:"a saddle", vx:"x", vy:"-y", size:2.6,
+    seedX:"-2.4 + 4.8*t", seedY:"-2.3", seedRes:15, steps:200, stepSize:0.03, output:"lines"});
+}
+// Step: a shear — horizontal speed grows with height.
+function tutFlowShearScene(){
+  return _flow2d({label:"a shear flow", vx:"y", vy:"0", size:2.6,
+    seedX:"-2.4", seedY:"-2.4 + 4.8*t", seedRes:15, steps:160, stepSize:0.03, output:"lines"});
+}
+// Step: a slider morphs the field from pure rotation to spiral.
+function tutFlowMorphScene(){
+  const a=makeNode("slider",{x:20,y:300});a.name="a";a.label="a · inward pull";a.value=0;
+  a.props.min="-0.6";a.props.max="0.6";a.props.step="0.01";
+  return _flow2d({label:"drag a: swirl ↔ spiral", vx:"-y + a*x", vy:"x + a*y", size:2.8,
+    seedX:"2.4*cos(6.2832*t)", seedY:"2.4*sin(6.2832*t)", seedRes:14, steps:240, stepSize:0.03,
+    output:"lines", sliders:[a]});
+}
+// Deeper page: lines output (discrete trajectories).
+function tutFlowLinesScene(){
+  return _flow2d({label:"trajectories as lines", vx:"-y + 0.25*x", vy:"x + 0.25*y", size:3,
+    seedX:"0.3 + 2.4*t", seedY:"0.1", seedRes:9, steps:240, stepSize:0.035, output:"lines"});
+}
+// Deeper page: surface output (the seeds sweep a filled stream surface).
+function tutFlowSurfaceScene(){
+  return _flow2d({label:"trajectories as a surface", vx:"-y + 0.25*x", vy:"x + 0.25*y", size:3,
+    seedX:"0.3 + 2.4*t", seedY:"0.1", seedRes:24, steps:240, stepSize:0.035, output:"surface"});
+}
+// Deeper page: a pendulum phase portrait, a physically meaningful field.
+function tutFlowPendulumScene(){
+  // state (θ, ω): θ' = ω, ω' = −sin θ (undamped pendulum). Closed orbits near the
+  // center, over-the-top rotation outside the separatrix.
+  return _flow2d({label:"pendulum phase portrait", vx:"y", vy:"-sin(x)", size:3.2,
+    seedX:"-3 + 6*t", seedY:"0.05", seedRes:16, steps:360, stepSize:0.03, output:"lines"});
+}
+// Deeper page: a 3D flow (reuse the helicoidal stream surface pattern).
+function tutFlow3dScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="a 3D flow";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.8";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const field=makeNode("fnMap",{x:300,y:120});field.props.inDim="3";field.props.outDim="3";
+  field.props.out0="-y";field.props.out1="x";field.props.out2="0.6";
+  const seeds=makeNode("paramSpace",{x:300,y:320});seeds.label="seed line";seeds.props.degree="1";
+  seeds.props.exprX="t";seeds.props.exprY="0";seeds.props.exprZ="0";seeds.props.tMin="0";seeds.props.tMax="1";seeds.props.res="24";
+  const flow=makeNode("flow",{x:640,y:200});flow.label="stream surface";flow.color="#5be0c0";
+  flow.props.steps="320";flow.props.stepSize="0.03";flow.props.output="surface";
+  flow.props.gradient=true;flow.props.gradA="#5be0c0";flow.props.gradB="#5b9cf6";
+  flow.attachments=[field.id,seeds.id];
+  cam.attachments=[flow.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[field.id]:field,[seeds.id]:seeds,[flow.id]:flow},camId:cam.id,animated:false};
+}
+
+// A cobweb diagram. The orbit zigzags between the map curve y=f(x) and the
+// diagonal y=x. A cobweb is a sequence that alternates: move vertically to the
+// curve, then horizontally to the diagonal, repeat. That alternation is a depth-1
+// recurrence keyed on the parity of n (no new node type needed): on odd steps
+// keep x and set y=f(x) (vertical), on even steps keep y and set x=y (horizontal).
+// We draw it over the map curve and the diagonal for the classic picture.
+function tutCobwebScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="cobweb: orbit on the map";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="0.6";cam.props.planeOx="0.5";cam.props.planeOy="0.5";
+  const r=makeNode("slider",{x:20,y:340});r.name="r";r.label="r · growth rate";r.value=3.2;
+  r.props.min="2.6";r.props.max="4.0";r.props.step="0.005";
+  // the map curve y = r·x(1−x) over [0,1]
+  const mapFn=makeNode("fnMap",{x:340,y:80});mapFn.label="f(x)=r·x(1−x)";mapFn.color="#7a8499";
+  mapFn.props.inDim="1";mapFn.props.outDim="1";mapFn.props.out0="r*x*(1-x)";mapFn.attachments=[r.id];
+  const mapTr=makeNode("transformer",{x:680,y:80});mapTr.label="map";mapTr.color="#7a8499";
+  mapTr.props.mode="graph";mapTr.props.inAxis0="x";mapTr.props.outAxis0="y";
+  mapTr.props.aMin="0";mapTr.props.aMax="1";mapTr.props.res="200";mapTr.attachments=[mapFn.id];
+  // the diagonal y = x
+  const diagFn=makeNode("fnMap",{x:340,y:220});diagFn.label="y=x";diagFn.color="#3a4256";
+  diagFn.props.inDim="1";diagFn.props.outDim="1";diagFn.props.out0="x";
+  const diagTr=makeNode("transformer",{x:680,y:220});diagTr.label="diagonal";diagTr.color="#3a4256";
+  diagTr.props.mode="graph";diagTr.props.inAxis0="x";diagTr.props.outAxis0="y";
+  diagTr.props.aMin="0";diagTr.props.aMax="1";diagTr.props.res="2";diagTr.attachments=[diagFn.id];
+  // the cobweb zigzag itself, as a recurrence alternating on parity of n
+  const odd="(mod(n,2)==1)", even="(mod(n,2)==0)";
+  const pts=makeNode("points",{x:680,y:360});pts.label="cobweb";pts.color="#ffcf6e";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="0.15, 0.15";
+  // x_next: odd→keep x (vertical), even→jump to y (horizontal)
+  // y_next: odd→f(x) (vertical),  even→keep y (horizontal)
+  pts.props.recStep=
+    `${odd}*x[n-1] + ${even}*y[n-1], `+
+    `${odd}*(r*x[n-1]*(1-x[n-1])) + ${even}*y[n-1]`;
+  pts.props.recCount="160";pts.props.drawLines=true;pts.props.radius="0";
+  pts.attachments=[r.id];
+  cam.attachments=[mapTr.id,diagTr.id,pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[r.id]:r,
+    [mapFn.id]:mapFn,[mapTr.id]:mapTr,[diagFn.id]:diagFn,[diagTr.id]:diagTr,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// Algebraic: more family scenes ──────────────────────────────────────────────
+
+// A conic family: x²/1 + y²/c going from ellipse (c>0) through to hyperbola (c<0).
+function tutConicFamilyScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag c: ellipse ↔ hyperbola";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="4";
+  const c=makeNode("slider",{x:20,y:320});c.name="c";c.label="c";c.value=1;
+  c.props.min="-3";c.props.max="3";c.props.step="0.02";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="x² + c·y² = 1 (scaled)";eq.color="#9b8cff";
+  // x^2 + (1/c) y^2 = 1 is awkward at c=0; use x^2 + sign-carrying c*y^2 form:
+  eq.props.dims="2d";eq.props.lhs="x^2 + c*y^2";eq.props.rhs="1";eq.props.varA="x";eq.props.varB="y";
+  eq.attachments=[c.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.aMin="-4";tr.props.aMax="4";tr.props.bMin="-4";tr.props.bMax="4";tr.props.res="320";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[c.id]:c,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// A 3D surface family: the Clebsch-style cubic deformed by a slider.
+function tutSurfaceFamilyScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="drag t through the family";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="6";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const t=makeNode("slider",{x:20,y:320});t.name="t";t.label="t · deformation";t.value=0;
+  t.props.min="-1";t.props.max="1";t.props.step="0.01";
+  const eq=makeNode("equation",{x:360,y:160});eq.label="cubic(t)";eq.color="#9b8cff";
+  eq.props.dims="3d";eq.props.lhs="x^3 + y^3 + z^3 + t - 0.6*(x+y+z)";eq.props.rhs="3*x*y*z";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";eq.attachments=[t.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.aMin="-2";tr.props.aMax="2";tr.props.bMin="-2";tr.props.bMax="2";tr.props.cMin="-2";tr.props.cMax="2";
+  tr.props.res="150";tr.props.colorMode="normal";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[t.id]:t,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
+// Applications: more logistic scenes ─────────────────────────────────────────
+function _logisticAt(label, r){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label=label;cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="3";cam.props.planeOy="0.5";
+  const pts=makeNode("points",{x:620,y:160});pts.label=`r = ${r}`;pts.color="#ffcf6e";
+  pts.props.kind="points";pts.props.mode="recursive";
+  pts.props.recInit="2.6, 0.3";
+  pts.props.recStep=`x[n-1] + 0.014, ${r}*y[n-1]*(1 - y[n-1])`;
+  pts.props.recCount="100";pts.props.drawLines=false;pts.props.radius="3";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+}
+// a 2-cycle (period 2) at r=3.2 and a 4-cycle at r=3.5
+function tutLogisticFixed2Scene(){ return _logisticAt("period 2 (r = 3.2)", "3.2"); }
+function tutLogisticFixed4Scene(){ return _logisticAt("period 4 (r = 3.5)", "3.5"); }
+
+// The editor: combining inputs — full progression ────────────────────────────
+
+// Step A: a single slider scaling a wave (the starting point).
+function tutCombineOneScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="one slider";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  const A=makeNode("slider",{x:20,y:320});A.name="A";A.label="A · amplitude";A.value=1.5;
+  A.props.min="0.1";A.props.max="2.8";A.props.step="0.01";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="A·sin(x)";fn.color="#a6e3a1";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="A*sin(x)";fn.attachments=[A.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="300";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[A.id]:A,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step B: two sliders that interact (a sum of two waves — beats).
+function tutCombineTwoScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="two frequencies add";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  const k1=makeNode("slider",{x:20,y:320});k1.name="k1";k1.label="k₁";k1.value=3;
+  k1.props.min="1";k1.props.max="8";k1.props.step="0.05";
+  const k2=makeNode("slider",{x:20,y:400});k2.name="k2";k2.label="k₂";k2.value=4;
+  k2.props.min="1";k2.props.max="8";k2.props.step="0.05";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="sin(k₁x)+sin(k₂x)";fn.color="#9b8cff";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="sin(k1*x) + sin(k2*x)";fn.attachments=[k1.id,k2.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="400";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[k1.id]:k1,[k2.id]:k2,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step C: sliders shaping a 2D surface (two inputs, two knobs).
+function tutCombineSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="shape a surface";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="12";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const kx=makeNode("slider",{x:20,y:320});kx.name="kx";kx.label="kx · x-waves";kx.value=1;
+  kx.props.min="0.3";kx.props.max="4";kx.props.step="0.05";
+  const ky=makeNode("slider",{x:20,y:400});ky.name="ky";ky.label="ky · y-waves";ky.value=1;
+  ky.props.min="0.3";ky.props.max="4";ky.props.step="0.05";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="sin(kx·x)·cos(ky·y)";fn.color="#7ad7ff";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="sin(kx*x)*cos(ky*y)";fn.attachments=[kx.id,ky.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#7ad7ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.14";tr.props.aMax="3.14";tr.props.bMin="-3.14";tr.props.bMax="3.14";tr.props.res="90";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[kx.id]:kx,[ky.id]:ky,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// Step D (capstone): a Lissajous curve, two parametric coordinates each with its
+// own frequency slider plus a phase — sliders composing into a 2D path.
+function tutCombineLissajousScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="a Lissajous figure";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.5";
+  const a=makeNode("slider",{x:20,y:300});a.name="a";a.label="a · x-frequency";a.value=3;
+  a.props.min="1";a.props.max="7";a.props.step="1";
+  const b=makeNode("slider",{x:20,y:380});b.name="b";b.label="b · y-frequency";b.value=2;
+  b.props.min="1";b.props.max="7";b.props.step="1";
+  // phase loops on its own so the figure continuously weaves; frequencies stay draggable
+  const ph=makeNode("animator",{x:20,y:460});ph.name="ph";ph.label="φ · phase";ph.value=0;
+  ph.props.min="0";ph.props.max="6.2832";ph.props.period="14";ph.props.loop="loop";ph.playing=true;
+  const ps=makeNode("paramSpace",{x:520,y:160});ps.label="Lissajous";ps.color="#ffcf6e";
+  ps.props.degree="1";ps.props.exprX="sin(a*t + ph)";ps.props.exprY="sin(b*t)";ps.props.exprZ="0";
+  ps.props.tMin="0";ps.props.tMax="6.2832";ps.props.res="600";ps.attachments=[a.id,b.id,ph.id];
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b,[ph.id]:ph,[ps.id]:ps},camId:cam.id,animated:true};
+}
+
+// The editor: combining inputs (three sliders on one wave) ───────────────────
+function tutCombineInputsScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag A, k, φ";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.2";
+  const A=makeNode("slider",{x:20,y:300});A.name="A";A.label="A · amplitude";A.value=1.5;
+  A.props.min="0.1";A.props.max="2.8";A.props.step="0.01";
+  const k=makeNode("slider",{x:20,y:380});k.name="k";k.label="k · frequency";k.value=2;
+  k.props.min="0.5";k.props.max="6";k.props.step="0.05";
+  const ph=makeNode("slider",{x:20,y:460});ph.name="ph";ph.label="φ · phase";ph.value=0;
+  ph.props.min="0";ph.props.max="6.2832";ph.props.step="0.02";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="A·sin(k·x + φ)";fn.color="#a6e3a1";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.out0="A*sin(k*x + ph)";
+  fn.attachments=[A.id,k.id,ph.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#a6e3a1";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";
+  tr.props.aMin="-6.28";tr.props.aMax="6.28";tr.props.res="300";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[A.id]:A,[k.id]:k,[ph.id]:ph,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Algebraic: families of curves (slide a through a cubic family) ──────────────
+function tutCurveFamilyScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag a: y² = x³ + a·x";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="4";
+  const a=makeNode("slider",{x:20,y:320});a.name="a";a.label="a · family parameter";a.value=-1;
+  a.props.min="-2";a.props.max="2";a.props.step="0.02";
+  // elliptic-curve family y^2 = x^3 + a x  (singular at a=0, splits/joins as a varies)
+  const eq=makeNode("equation",{x:360,y:160});eq.label="y² − x³ − a·x";eq.color="#9b8cff";
+  eq.props.dims="2d";eq.props.lhs="y^2";eq.props.rhs="x^3 + a*x";eq.props.varA="x";eq.props.varB="y";
+  eq.attachments=[a.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#9b8cff";
+  tr.props.mode="graph";tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";tr.props.res="300";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Analytic: approximating functions (Taylor terms via a slider) ──────────────
+function tutTaylorScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag N: Taylor terms";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.6";
+  const N=makeNode("slider",{x:20,y:320});N.name="N";N.label="N · terms";N.value=3;
+  N.props.min="0";N.props.max="10";N.props.step="1";
+  // Taylor partial sum of sin(x) = sum_{j=0}^{N} (-1)^j x^(2j+1)/(2j+1)!
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="Taylor sin(x)";fn.color="#7ad7ff";
+  fn.props.inDim="1";fn.props.outDim="1";
+  fn.props.out0="summation((-1)^j * x^(2*j+1) / factorial(2*j+1), j, 0, N)";
+  fn.attachments=[N.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="curve";tr.color="#7ad7ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";
+  tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.res="240";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Differential: curvature you can feel (sliders bend a surface) ──────────────
+function tutCurvatureFeelScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="drag the bend";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  const a=makeNode("slider",{x:20,y:320});a.name="a";a.label="a · bend";a.value=0.4;
+  a.props.min="-1";a.props.max="1";a.props.step="0.01";
+  const b=makeNode("slider",{x:20,y:400});b.name="b";b.label="b · twist";b.value=0.2;
+  b.props.min="-1";b.props.max="1";b.props.step="0.01";
+  // a saddle-ish height field whose two curvatures are set by a and b
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="a·x² − b·y²";fn.color="#c4b5fd";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="a*x^2 - b*y^2";
+  fn.attachments=[a.id,b.id];
+  const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#c4b5fd";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-2.4";tr.props.aMax="2.4";tr.props.bMin="-2.4";tr.props.bMax="2.4";tr.props.res="80";
+  tr.props.colorMode="normal";
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// Applications: tuning a system (logistic r slider through period-doubling) ───
+function tutLogisticRScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag r: 2.8 → 4.0";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="3";cam.props.planeOy="0.5";
+  const r=makeNode("slider",{x:20,y:320});r.name="r";r.label="r · growth rate";r.value=3.2;
+  r.props.min="2.6";r.props.max="4.0";r.props.step="0.005";
+  const pts=makeNode("points",{x:620,y:160});pts.label="xₙ₊₁ = r·xₙ(1−xₙ)";pts.color="#ffcf6e";
+  pts.props.kind="points";pts.props.mode="recursive";
+  // plot the orbit as (n stepped across the view, x_n); r comes from the slider
+  pts.props.recInit="2.6, 0.3";
+  pts.props.recStep="x[n-1] + 0.014, r*y[n-1]*(1 - y[n-1])";
+  pts.props.recCount="100";pts.props.drawLines=false;pts.props.radius="3";
+  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
+  pts.attachments=[r.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[r.id]:r,[pts.id]:pts},camId:cam.id,animated:false};
+}
 
 // Analytic geometry: sums, integrals, series ─────────────────────────────────
 
@@ -724,28 +1190,36 @@ function tutPointsListScene(){
 // Step 2: a formula over an index i generates many points (a spiral).
 function tutPointsIndexScene(){
   const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="point(i), i = 0…359";cam.props.showOpenBtn=false;
+  const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="drag the angle";cam.props.showOpenBtn=false;
   cam.props.orbRadius="11";cam.props.orbTheta="0.9";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const g=makeNode("slider",{x:20,y:340});g.name="g";g.label="g · divergence angle";g.value=2.399963;
+  g.props.min="2.3";g.props.max="2.5";g.props.step="0.0005";
   const pts=makeNode("points",{x:620,y:160});pts.label="phyllotaxis";pts.color="#9b8cff";
   pts.props.kind="points";pts.props.mode="index";
-  pts.props.idxPoint="2.6*sqrt(i/360)*cos(i*2.399), 2.6*sqrt(i/360)*sin(i*2.399), (i/360)*2 - 1";
+  pts.props.idxPoint="2.6*sqrt(i/360)*cos(i*g), 2.6*sqrt(i/360)*sin(i*g), (i/360)*2 - 1";
   pts.props.idxCount="360";pts.props.drawLines=false;pts.props.radius="0.06";
   pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
+  pts.attachments=[g.id];
   cam.attachments=[pts.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+  return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g,[pts.id]:pts},camId:cam.id,animated:false};
 }
 // Step 3: a recurrence — each point from the previous (a converging spiral).
 function tutPointsRecursiveScene(){
   const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="x[n] from x[n−1]";cam.props.showOpenBtn=false;
+  const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="drag decay & turn";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="5";
+  const d=makeNode("slider",{x:20,y:320});d.name="d";d.label="d · decay";d.value=0.96;
+  d.props.min="0.85";d.props.max="1.0";d.props.step="0.002";
+  const w=makeNode("slider",{x:20,y:400});w.name="w";w.label="w · turn per step";w.value=0.4;
+  w.props.min="0.1";w.props.max="1.2";w.props.step="0.01";
   const pts=makeNode("points",{x:620,y:160});pts.label="orbit";pts.color="#7ad7ff";
   pts.props.kind="points";pts.props.mode="recursive";
   pts.props.recInit="3, 0";
-  pts.props.recStep="0.96*(x[n-1]*cos(0.4) - y[n-1]*sin(0.4)), 0.96*(x[n-1]*sin(0.4) + y[n-1]*cos(0.4))";
-  pts.props.recCount="90";pts.props.drawLines=true;pts.props.radius="3.5";
+  pts.props.recStep="d*(x[n-1]*cos(w) - y[n-1]*sin(w)), d*(x[n-1]*sin(w) + y[n-1]*cos(w))";
+  pts.props.recCount="120";pts.props.drawLines=true;pts.props.radius="3.5";
+  pts.attachments=[d.id,w.id];
   cam.attachments=[pts.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+  return {scene:{[project.id]:project,[cam.id]:cam,[d.id]:d,[w.id]:w,[pts.id]:pts},camId:cam.id,animated:false};
 }
 
 // Algebraic geometry: combining surfaces ─────────────────────────────────────
@@ -798,14 +1272,18 @@ function tutOrbitAttractorScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="a strange attractor";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="4";
+  // animate the number of plotted iterations so the attractor fills in over time
+  const n=makeNode("animator",{x:40,y:340});n.name="N";n.value=80;
+  n.props.min="80";n.props.max="1500";n.props.period="9";n.props.loop="loop";n.playing=true;
   const pts=makeNode("points",{x:620,y:160});pts.label="iterated map";pts.color="#c4b5fd";
   pts.props.kind="points";pts.props.mode="recursive";
   pts.props.recInit="0.1, 0.1";
   pts.props.recStep="sin(-1.4*y[n-1]) + 1.6*cos(-1.4*x[n-1]), sin(1.6*x[n-1]) + 0.7*cos(1.6*y[n-1])";
-  pts.props.recCount="1500";pts.props.drawLines=false;pts.props.radius="1.6";
+  pts.props.recCount="N";pts.props.drawLines=false;pts.props.radius="1.6";
   pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  pts.attachments=[n.id];
   cam.attachments=[pts.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
+  return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
 }
 
 // Algebraic geometry: singular points and nodes ──────────────────────────────
