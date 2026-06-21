@@ -27,6 +27,11 @@ import { ViewportStrip, ViewportSwitch, DetachedWindow, useIsMobile } from "./co
 import { PropsPanelWindow } from "./components/primitives.jsx";
 import { Landing } from "./landing/Landing.jsx";
 import { Tutorials, isTutorialsHash } from "./landing/Tutorials.jsx";
+import { lazy, Suspense } from "react";
+// Benchmark harness is a dev/perf tool — lazy-load it so it splits into its own
+// chunk and never ships to normal visitors (only downloads on the #bench route).
+const Benchmarks = lazy(()=>import("./bench/Benchmarks.jsx").then(m=>({default:m.Benchmarks})));
+const isBenchHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "bench";
 
 // ── Share page ───────────────────────────────────────────────────────────────
 // Renders a single camera from a shared payload. `camIdOverride` lets the mobile
@@ -820,6 +825,13 @@ function Root(){
 }
 
 export default function App(){
+  // Benchmark harness (#bench): gated before any hook so the rules of hooks hold
+  // (this component returns early and runs no hooks of its own on the bench path).
+  if(isBenchHash(window.location.hash)) return <Suspense fallback={<div style={{minHeight:"100vh",background:"#070810"}}/>}><Benchmarks/></Suspense>;
+  return <MainApp/>;
+}
+
+function MainApp(){
   const isMobile=useIsMobile();
   const hash=window.location.hash.slice(1);
   const parsed=useMemo(()=>{

@@ -55,3 +55,17 @@ headless, so shader-path changes are reasoned + tested structurally, not eyeball
   gain.
 
 All 108 tutorial plots build, 0 broken. Consolidated regression: 11/11 pass.
+
+## In-app benchmark harness (#bench)
+
+A self-contained perf page reachable at the `#bench` hash, lazy-loaded into its
+own ~3.6KB gz chunk so it never ships to normal visitors. Measures the things a
+headless environment can't:
+1. **Page load** — PerformanceNavigationTiming + per-chunk transfer sizes (confirm
+   the dead-worker chunk is gone).
+2. **Compute (CPU)** — runs the derivative-memoization and comma-split benchmarks
+   live on your hardware.
+3. **WebGL context lifecycle** — mounts/unmounts 6 live viewports over 8 cycles;
+   watch GPU memory in the browser task manager to validate the dispose +
+   forceContextLoss fix (should plateau, not climb).
+4. **Live render FPS** — sustained frame rate under an animated raymarched scene.
