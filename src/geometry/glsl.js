@@ -63,13 +63,30 @@ function _glslPow(a, b, bNode){
 // builtin cannot collide. Callers that pass a prefix must declare the uniforms as
 // `${prefix}${name}` while still reading their values from scope[name]. Default ""
 // keeps the bare-name behavior (used by the transpilability probes in scope.js).
+// fnTable: optional map name → {params:[...], expr:"..."} of user fnDefs. When a
+// FunctionNode names an entry, its body is INLINED (parameters substituted by the
+// argument ASTs) so composed surfaces (built from helper functions) can ride the
+// GPU path instead of falling back to CPU. Recursion is depth/cycle guarded.
 // Returns GLSL string or null.
-function exprToGLSL(expr, vars, uniforms, prefix=""){
+function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
   let root; try { root = math.parse(expr); } catch { return null; }
-  const walk = (node) => {
+  // Substitute parameter SymbolNodes in an fnDef body AST with the call's argument
+  // ASTs, so the inlined body references the caller's expressions/vars directly.
+  const substitute = (node, bind) => {
+    switch(node.type){
+      case "SymbolNode": return bind[node.name] || node;
+      case "ConstantNode": return node;
+      case "ParenthesisNode": return new math.ParenthesisNode(substitute(node.content, bind));
+      case "OperatorNode": return new math.OperatorNode(node.op, node.fn, node.args.map(a=>substitute(a,bind)), node.implicit);
+      case "FunctionNode": return new math.FunctionNode(node.fn.name, node.args.map(a=>substitute(a,bind)));
+      default: return node;
+    }
+  };
+  const walk = (node, depth) => {
+    if(depth > 64) return null;     // runaway inlining guard
     switch(node.type){
       case "ConstantNode": return typeof node.value==="number" ? _glslNum(node.value) : null;
-      case "ParenthesisNode": { const c=walk(node.content); return c==null?null:"("+c+")"; }
+      case "ParenthesisNode": { const c=walk(node.content, depth); return c==null?null:"("+c+")"; }
       case "SymbolNode": {
         if(vars.has(node.name)) return node.name;
         if(_GLSL_CONST[node.name]) return _GLSL_CONST[node.name];
@@ -80,25 +97,25 @@ function exprToGLSL(expr, vars, uniforms, prefix=""){
         return null;
       }
       case "OperatorNode": {
-        if(node.fn==="unaryMinus"){ const a=walk(node.args[0]); return a==null?null:"(-"+a+")"; }
-        if(node.fn==="unaryPlus"){ return walk(node.args[0]); }
-        if(node.op==="^"){ const a=walk(node.args[0]),b=walk(node.args[1]); return (a==null||b==null)?null:_glslPow(a,b,node.args[1]); }
-        if(["+","-","*","/"].includes(node.op)){ const a=walk(node.args[0]),b=walk(node.args[1]); return (a==null||b==null)?null:"("+a+node.op+b+")"; }
+        if(node.fn==="unaryMinus"){ const a=walk(node.args[0], depth); return a==null?null:"(-"+a+")"; }
+        if(node.fn==="unaryPlus"){ return walk(node.args[0], depth); }
+        if(node.op==="^"){ const a=walk(node.args[0], depth),b=walk(node.args[1], depth); return (a==null||b==null)?null:_glslPow(a,b,node.args[1]); }
+        if(["+","-","*","/"].includes(node.op)){ const a=walk(node.args[0], depth),b=walk(node.args[1], depth); return (a==null||b==null)?null:"("+a+node.op+b+")"; }
         return null;
       }
       case "FunctionNode": {
         const n=node.fn.name;
         // 1-arg standard functions
-        if(_GLSL_FN1[n]&&node.args.length===1){ const a=walk(node.args[0]); if(a==null)return null; const g=_GLSL_FN1[n]===1?n:_GLSL_FN1[n]; return g+"("+a+")"; }
+        if(_GLSL_FN1[n]&&node.args.length===1){ const a=walk(node.args[0], depth); if(a==null)return null; const g=_GLSL_FN1[n]===1?n:_GLSL_FN1[n]; return g+"("+a+")"; }
         // 2-arg standard functions
         if(_GLSL_FN2[n]&&node.args.length===2){
-          const a=walk(node.args[0]),b=walk(node.args[1]); if(a==null||b==null)return null;
+          const a=walk(node.args[0], depth),b=walk(node.args[1], depth); if(a==null||b==null)return null;
           if(n==="pow") return _glslPow(a,b,node.args[1]);
           return _GLSL_FN2[n]+"("+a+","+b+")";
         }
         // composite / derived functions expressible via GLSL primitives
         if(node.args.length===1){
-          const a=walk(node.args[0]); if(a==null)return null;
+          const a=walk(node.args[0], depth); if(a==null)return null;
           switch(n){
             case "square": return `(${a})*(${a})`;
             case "cube":   return `(${a})*(${a})*(${a})`;
@@ -111,18 +128,46 @@ function exprToGLSL(expr, vars, uniforms, prefix=""){
           }
         }
         if(node.args.length===2){
-          const a=walk(node.args[0]),b=walk(node.args[1]); if(a==null||b==null)return null;
+          const a=walk(node.args[0], depth),b=walk(node.args[1], depth); if(a==null||b==null)return null;
           switch(n){
             case "hypot":  return `sqrt((${a})*(${a})+(${b})*(${b}))`;
             case "log":    return `(log(${a})/log(${b}))`;   // log(value, base)
           }
+        }
+        // user fnDef → inline its body with parameters bound to the call args.
+        if(fnTable && fnTable[n] && fnTable[n].params.length===node.args.length){
+          const def=fnTable[n];
+          let body; try { body = math.parse(def.expr); } catch { return null; }
+          const bind={};
+          // Wrap each argument AST in parentheses-equivalent by substituting the
+          // node directly; the substituted body is then transpiled, so argument
+          // expressions are emitted inline (GLSL CSEs identical subexpressions).
+          for(let i=0;i<def.params.length;i++) bind[def.params[i]]=node.args[i];
+          const inlined=substitute(body, bind);
+          return walk(inlined, depth+1);
         }
         return null;
       }
       default: return null;
     }
   };
-  return walk(root);
+  return walk(root, 0);
+}
+
+// Build an fnTable (name → {params, expr}) from a resolved scope's fnDef closures
+// (the closures carry _fnName/_fnParams/_fnExpr metadata, see makeFn). Pass the
+// result as exprToGLSL's fnTable argument to inline user functions into the GPU
+// path. Returns null if the scope has no fnDefs (so callers can cheaply skip).
+function fnTableFromScope(scope){
+  if(!scope) return null;
+  let table=null;
+  for(const k in scope){
+    const v=scope[k];
+    if(typeof v==="function" && v._fnExpr!=null && Array.isArray(v._fnParams)){
+      (table||(table={}))[v._fnName||k]={ params:v._fnParams, expr:v._fnExpr };
+    }
+  }
+  return table;
 }
 
 // Reserved prefix for user-derived (slider/constant/animator) uniforms in
@@ -131,5 +176,5 @@ function exprToGLSL(expr, vars, uniforms, prefix=""){
 const GLSL_UNIFORM_PREFIX = "usr_";
 
 export {
-  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX
+  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope
 };
