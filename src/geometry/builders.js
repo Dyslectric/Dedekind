@@ -815,7 +815,15 @@ function buildRawGeom3d(p, scope, color){
   geo.computeVertexNormals();
   const c3=hexToThree(color);
   const vCol=useCol||hasA;
-  const mat=new THREE.MeshPhongMaterial({color:vCol?0xffffff:c3,vertexColors:vCol,side:THREE.DoubleSide,transparent:true,opacity:hasA?1:0.82,shininess:36,flatShading:!useCol});
+  // Only enter the transparent render pass when there is REAL per-vertex alpha
+  // (hasA). A solid surface left at transparent:true with opacity 0.82 forces
+  // three.js to depth-sort it per-object; when a surface is built from two meshes
+  // (e.g. the upper/lower triangles of a lattice), the two meshes sort in a fixed
+  // order and one triangle of every quad blends differently from its partner — the
+  // "half of each quad" artifact. Opaque solid surfaces sort per-fragment via the
+  // depth buffer and don't show it.
+  const mat=new THREE.MeshPhongMaterial({color:vCol?0xffffff:c3,vertexColors:vCol,side:THREE.DoubleSide,
+    transparent:hasA, opacity:1, shininess:36, flatShading:!useCol});
   const mesh=new THREE.Mesh(geo,mat);
   if(p.showWire===false) return [mesh];
   const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geo), new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.35}));
