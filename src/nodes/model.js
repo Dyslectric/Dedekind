@@ -32,7 +32,6 @@ const TYPE_META={
   flow:     {tag:"FLW",  tc:"#9ff",   bg:"#061818",hdr:"#082020"},
   glyphField:{tag:"GLY", tc:"#5ec",   bg:"#06180f",hdr:"#0a2418"},
   // ── Unified kinds ──
-  scalarFn:  {tag:"f()",  tc:"#6df",   bg:"#0c1820",hdr:"#10202e"},
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
   points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   rawGeom:   {tag:"RAW",  tc:"#9fd6a0",bg:"#0e1810",hdr:"#122218"},
@@ -83,16 +82,6 @@ function makeNode(type,pos){
       arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff"},attachments:[]},
 
     // ── Unified kinds ──────────────────────────────────────────────────────
-    // scalarFn: a scalar-valued function of `dims` spatial inputs.
-    //   dims 1 → y(x) curve, dims 2 → z(x,y) surface, dims 3 → f(x,y,z) sampled
-    //   as a value-coloured point cloud.
-    scalarFn:{label:"f(x)",color:"__AUTO__",props:{
-      dims:"1",
-      expr:"sin(x)",
-      xMin:"-5",xMax:"5",yMin:"-4",yMax:"4",zMin:"-3",zMax:"3",
-      res:"40",
-      colorByValue:false,colorLo:"#3a6df0",colorHi:"#f0533a",
-    },attachments:[]},
     // paramSpace: a parameterized manifold of `degree` 1 (curve), 2 (surface),
     // or 3 (volume), mapped into 3-D Euclidean space.
     paramSpace:{label:"Curve",color:"__AUTO__",props:{

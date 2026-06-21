@@ -77,51 +77,6 @@ export function EquationEditor({ node, scope, onChange }){
     </Sec>
   </>;
 }
-
-// scalarFn — unified scalar-valued function: y(x), z(x,y), or f(x,y,z).
-export function ScalarFnEditor({ node, scope, onChange }){
-  const{ui,S}=useUI();
-  const dims=String(node.props.dims||"1");
-  const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
-  const label = dims==="1"?"y(x)":dims==="2"?"z(x,y)":"f(x,y,z)";
-  return <>
-    <Sec title="Dimensions">
-      <PR label="inputs">
-        <select value={dims} onChange={e=>set("dims",e.target.value)} style={{...S.inp,width:"100%"}}>
-          <option value="1">1 — curve  y(x)</option>
-          <option value="2">2 — surface  z(x,y)</option>
-          <option value="3">3 — volume  f(x,y,z)</option>
-        </select>
-      </PR>
-      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        How many spatial inputs the function takes. 1→a curve, 2→a surface, 3→a value-coloured point cloud.
-      </div>
-    </Sec>
-    <Sec title="Expression">
-      <PR label={label}><XF v={node.props.expr} sc={scope} onChange={v=>set("expr",v)}/></PR>
-    </Sec>
-    <Sec title="Domain">
-      {[["x₀","xMin"],["x₁","xMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      {dims!=="1"&&[["y₀","yMin"],["y₁","yMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      {dims==="3"&&[["z₀","zMin"],["z₁","zMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
-    </Sec>
-    {dims==="3"&&<Sec title="Colour by value">
-      <PR label="enable"><Toggle v={!!node.props.colorByValue} onChange={v=>set("colorByValue",v)}/></PR>
-      {node.props.colorByValue&&<>
-        <PR label="low"><ColorRow v={node.props.colorLo||"#3a6df0"} onChange={v=>set("colorLo",v)}/></PR>
-        <PR label="high"><ColorRow v={node.props.colorHi||"#f0533a"} onChange={v=>set("colorHi",v)}/></PR>
-      </>}
-    </Sec>}
-    {dims==="2"&&<Sec title="Display">
-      <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>
-      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        Draws grid lines over the surface. Turning it off renders a single shaded mesh — faster for dense or animated surfaces. For per-pixel lighting and materials, render the function through an <strong style={{color:TYPE_META.transformer.tc}}>fnMap → Transformer</strong> (graph mode) and use its Shading section.
-      </div>
-    </Sec>}
-  </>;
-}
-
 // paramSpace — unified parameterized manifold: curve (t), surface (u,v), or
 // volume (u,v,w).
 export function ParamSpaceEditor({ node, scope, onChange }){

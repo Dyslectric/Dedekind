@@ -136,6 +136,50 @@ function deserializeProject(str) {
 // vocabulary the renderers use. We mutate type+props in place; ids, colors,
 // attachments and labels are preserved. quiver2d/quiver3d/flow/plane are left
 // as-is (they remain first-class kinds).
+// ── Remove the scalarFn kind: expand graph surfaces into fnMap + transformer ──
+// scalarFn (and the very old fn1d/surf3d that used to migrate into it) bundled a
+// pure map with its renderer, which isn't canonical — a graph z=f(x,y) is an
+// fnMap (the map) wired into a transformer (the renderer that holds the plot +
+// shading parameters). This expands each such node 1→2: the original id BECOMES
+// the transformer (so anything attached to it — a camera — stays wired), and a
+// fresh fnMap carries the expression and its scalar/function dependencies. A
+// wired domain stays on the transformer. dims 1→curve, 2→surface, 3→value cloud.
+function migrateGraphSurfaces(nodes){
+  const out={};
+  for(const [id,n] of Object.entries(nodes)){
+    const t=n.type;
+    if(t!=="scalarFn" && t!=="fn1d" && t!=="surf3d"){ out[id]=n; continue; }
+    const p=n.props||{};
+    let dims;
+    if(t==="fn1d") dims=1;
+    else if(t==="surf3d") dims=2;
+    else { const d=parseInt(p.dims,10); dims=(d===2||d===3)?d:1; }
+    const expr = p.expr ?? (dims===1?"sin(x)":"sin(x)*cos(y)");
+    const xMin=p.xMin??(dims===1?"-5":"-4"), xMax=p.xMax??(dims===1?"5":"4");
+    const yMin=p.yMin??"-4", yMax=p.yMax??"4", zMin=p.zMin??"-3", zMax=p.zMax??"3";
+    const res=p.res??(dims===1?"300":"40");
+    const mapId=uid();
+    const px=(n.pos&&n.pos.x)||300, py=(n.pos&&n.pos.y)||160;
+    // Expression deps (scalars/functions) go to the map; a domain is a plot
+    // parameter, so it stays on the transformer.
+    const mapDeps=[], trDeps=[mapId];
+    for(const depId of (n.attachments||[])){
+      if(nodes[depId] && nodes[depId].type==="domain") trDeps.push(depId);
+      else mapDeps.push(depId);
+    }
+    out[mapId]={ id:mapId, type:"fnMap", name:"", label:(n.label?n.label+" ":"")+"map",
+      color:n.color||"__AUTO__", pos:{x:px-200,y:py}, attachments:mapDeps,
+      props:{ inDim:String(dims), outDim:"1", out0:expr, out1:"0", out2:"0", out3:"0" } };
+    const trProps={ mode:"graph",
+      inAxis0:"x", inAxis1: dims>=2?"y":"none", inAxis2: dims>=3?"z":"none",
+      outAxis0: dims===1?"y" : dims===2?"z" : "color", outAxis1:"none", outAxis2:"none", outAxis3:"none",
+      aMin:xMin, aMax:xMax, bMin:yMin, bMax:yMax, cMin:zMin, cMax:zMax, res };
+    if(dims===3){ trProps.colorLo=p.colorLo||"#3a6df0"; trProps.colorHi=p.colorHi||"#f0533a"; trProps.colorMin=""; trProps.colorMax=""; }
+    out[id]={ ...n, type:"transformer", props:trProps, attachments:trDeps };
+  }
+  return out;
+}
+
 function migrateUnifiedKinds(nodes){
   const out={};
   for(const[id,n]of Object.entries(nodes)){
@@ -188,18 +232,6 @@ function legacyDataToExplicit(data, isGlyph){
 function migrateOneToUnified(n){
   const p=n.props||{};
   switch(n.type){
-    case "fn1d":
-      return {...n,type:"scalarFn",props:{
-        dims:"1",expr:p.expr??"sin(x)",
-        xMin:p.xMin??"-5",xMax:p.xMax??"5",yMin:"-4",yMax:"4",zMin:"-3",zMax:"3",
-        res:p.res??"300",colorByValue:false,colorLo:"#3a6df0",colorHi:"#f0533a",
-      }};
-    case "surf3d":
-      return {...n,type:"scalarFn",props:{
-        dims:"2",expr:p.expr??"sin(x)*cos(y)",
-        xMin:p.xMin??"-4",xMax:p.xMax??"4",yMin:p.yMin??"-4",yMax:p.yMax??"4",
-        zMin:"-3",zMax:"3",res:p.res??"40",colorByValue:false,colorLo:"#3a6df0",colorHi:"#f0533a",
-      }};
     case "curve3d":
       return {...n,type:"paramSpace",props:{
         degree:"1",exprX:p.exprX??"cos(t)",exprY:p.exprY??"sin(t)",exprZ:p.exprZ??"t/4",
@@ -265,6 +297,9 @@ function migrateOneToUnified(n){
 // attachments point at cameras. We move those scalars onto every plot under
 // each referenced camera (and onto the camera itself, for camera-prop deps).
 function migrateModel(nodes){
+  // Step 0: expand graph surfaces (scalarFn / fn1d / surf3d) into fnMap +
+  // transformer — the scalarFn kind is retired in favour of map + renderer.
+  nodes = migrateGraphSurfaces(nodes);
   // Step 1: legacy granular plot kinds → unified authoring kinds (always).
   nodes = migrateUnifiedKinds(nodes);
 

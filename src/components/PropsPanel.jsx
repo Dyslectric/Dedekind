@@ -9,7 +9,7 @@ import { PanelHeader } from "./propspanel/PanelHeader.jsx";
 import { SelectionActions } from "./propspanel/SelectionActions.jsx";
 import { ProjectSection, UsedBySection, InputsSection } from "./propspanel/DependencySections.jsx";
 import { ConstantEditor, ExprEditor, SliderEditor, AnimatorEditor, FnDefEditor } from "./propspanel/ScalarEditors.jsx";
-import { FnMapEditor, EquationEditor, ScalarFnEditor, ParamSpaceEditor } from "./propspanel/FunctionEditors.jsx";
+import { FnMapEditor, EquationEditor, ParamSpaceEditor } from "./propspanel/FunctionEditors.jsx";
 import { TransformerEditor } from "./propspanel/TransformerEditor.jsx";
 import { PointsEditor } from "./propspanel/PointsEditor.jsx";
 import { RawGeomEditor } from "./propspanel/RawGeomEditor.jsx";
@@ -98,7 +98,6 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Function map / equation / unified scalar fn / parameterized space ── */}
         {node.type==="fnMap"&&<FnMapEditor {...ed}/>}
         {node.type==="equation"&&<EquationEditor {...ed}/>}
-        {node.type==="scalarFn"&&<ScalarFnEditor {...ed}/>}
         {node.type==="paramSpace"&&<ParamSpaceEditor {...ed}/>}
 
         {/* ── Transformer ── */}

@@ -27,26 +27,6 @@ function normalizeNode(node){
   if(!node) return node;
   const p=node.props||{};
   switch(node.type){
-    case "scalarFn": {
-      const dims=normDims(p.dims,1);
-      if(dims===1){
-        return { type:"fn1d", props:{
-          expr:p.expr, xMin:p.xMin, xMax:p.xMax, res:p.res,
-        }};
-      }
-      if(dims===2){
-        return { type:"surf3d", props:{
-          expr:p.expr, xMin:p.xMin, xMax:p.xMax, yMin:p.yMin, yMax:p.yMax, res:p.res,
-          showWire:p.showWire,
-        }};
-      }
-      // dims===3 → sampled scalar volume rendered as a value-coloured point cloud
-      return { type:"__scalarVol", props:{
-        expr:p.expr, xMin:p.xMin, xMax:p.xMax, yMin:p.yMin, yMax:p.yMax,
-        zMin:p.zMin, zMax:p.zMax, res:p.res,
-        colorByValue:p.colorByValue, colorLo:p.colorLo, colorHi:p.colorHi,
-      }};
-    }
     case "paramSpace": {
       const degree=normDims(p.degree,1);
       if(degree>=3){
@@ -212,6 +192,6 @@ function assembleGlyphText(p, mode){
 }
 
 // Is this one of the unified authoring kinds?
-function isUnifiedKind(type){ return type==="scalarFn"||type==="paramSpace"||type==="points"; }
+function isUnifiedKind(type){ return type==="paramSpace"||type==="points"; }
 
 export { normalizeNode, normalizedNode, isUnifiedKind, projectGlyphTextToPlane };

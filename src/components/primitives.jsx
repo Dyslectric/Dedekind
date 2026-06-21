@@ -27,7 +27,7 @@ function Swatch({label,v,def,onChange}){
 function Toggle({v,onChange}){const{ui,S}=useUI();return<button onClick={()=>onChange(!v)} style={{...S.btnSm,color:v?ui.uiGood:ui.uiDanger,borderColor:(v?ui.uiGood:ui.uiDanger)+"44",minWidth:40}}>{v?"on":"off"}</button>;}
 function NodeAddGrid({onAddNode, projectNode}){
   const{ui,S}=useUI();
-  const labelOf={camera:"Camera",constant:"Constant",slider:"Slider",animator:"Animator",fnDef:"Function",domain:"Domain",fnMap:"Map ƒ",transformer:"Transformer",scalarFn:"Scalar fn",paramSpace:"Param space",points:"Points/Glyphs",plane:"Plane",quiver2d:"Quiver 2D",quiver3d:"Quiver 3D",flow:"Flow"};
+  const labelOf={camera:"Camera",constant:"Constant",slider:"Slider",animator:"Animator",fnDef:"Function",domain:"Domain",fnMap:"Map ƒ",transformer:"Transformer",paramSpace:"Param space",points:"Points/Glyphs",plane:"Plane",quiver2d:"Quiver 2D",quiver3d:"Quiver 3D",flow:"Flow"};
   const rows=ADDABLE_KINDS.map(group=>group.filter(t=>kindEnabled(projectNode,t))).filter(g=>g.length);
   if(!rows.length) return null;
   return<div>
