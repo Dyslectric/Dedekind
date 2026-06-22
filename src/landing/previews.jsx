@@ -926,26 +926,38 @@ function sierpinskiOctaScene(){
 }
 
 // TEXTURED IMPLICIT SURFACE: a morphing gyroid level set, ray-marched on the GPU,
-// with an image TRIPLANAR-mapped onto it. An implicit F(x,y,z)=0 has no UV, so the
-// texture is projected from the x/y/z planes at each hit point and blended by the
-// surface normal. An animator morphs the level (rhs = 0.8·sin t) so the textured
-// fractal-like sheet flows — a genuinely trippy plot.
+// with a trippy plasma TRIPLANAR-mapped onto it (an implicit F=0 has no UV, so the
+// texture is projected from the x/y/z planes at each hit and blended by the normal)
+// plus a triplanar normal map for relief — and it reacts to the scene lights: a
+// point light swings around it while a sun sweeps, both driven by an animator. A
+// second animator morphs the level (rhs = 0.8·sin t) so the whole thing flows.
 function implicitTexScene(){
   const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1240,y:120}));cam.label="textured gyroid";
-  cam.props.orbRadius="13";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="52";
-  const anim=makeNode("animator",{x:40,y:340});anim.name="t";anim.value=0;
-  anim.props.min="0";anim.props.max="6.283";anim.props.period="16";anim.props.loop="loop";anim.playing=true;
+  const cam=previewCam(makeNode("camera3d",{x:1240,y:120}));cam.label="trippy gyroid";
+  cam.props.orbRadius="13";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="58";
+  const tM=makeNode("animator",{x:40,y:120});tM.name="t";tM.value=0;
+  tM.props.min="0";tM.props.max="6.283";tM.props.period="16";tM.props.loop="loop";tM.playing=true;
+  const ph=makeNode("animator",{x:40,y:520});ph.name="phase";ph.value=0;
+  ph.props.min="0";ph.props.max="6.283";ph.props.period="9";ph.props.loop="loop";ph.playing=true;
   const eq=makeNode("equation",{x:360,y:140});eq.label="gyroid";eq.color="#c6a0f6";
   eq.props.dims="3d";eq.props.lhs="sin(x)*cos(y)+sin(y)*cos(z)+sin(z)*cos(x)";eq.props.rhs="0.8*sin(t)";
   eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
-  eq.attachments=[anim.id];
-  const tex=makeNode("texture",{x:360,y:340});tex.label="tile";tex.color="#f5bde6";tex.props.src="builtin:dedekind";tex.props.wrap="repeat";
+  eq.attachments=[tM.id];
+  const tex=makeNode("texture",{x:360,y:320});tex.label="plasma";tex.color="#f5bde6";tex.props.src="builtin:plasma";tex.props.wrap="repeat";
+  const nrm=makeNode("texture",{x:360,y:440});nrm.label="bump";nrm.color="#a6da95";nrm.props.role="normal";nrm.props.src="builtin:pyramid-normal";nrm.props.wrap="repeat";
+  const lamp=makeNode("light",{x:1080,y:120});lamp.label="swinging lamp";lamp.color="#ffd28a";
+  lamp.props.kind="point";lamp.props.color="#ffe0b0";lamp.props.intensity="2.2";lamp.props.falloff="0.012";
+  lamp.props.posX="9*cos(phase)";lamp.props.posY="9*sin(phase)";lamp.props.posZ="4+2*sin(0.5*phase)";
+  lamp.attachments=[ph.id];
+  const sun=makeNode("light",{x:1080,y:300});sun.label="moving sun";sun.color="#8fb7ff";
+  sun.props.kind="directional";sun.props.color="#9fc0ff";sun.props.intensity="0.5";
+  sun.props.dirX="cos(0.5*phase)";sun.props.dirY="sin(0.5*phase)";sun.props.dirZ="0.6";
+  sun.attachments=[ph.id];
   const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch · triplanar";tr.color="#c6a0f6";
   tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
-  tr.props.res="160";tr.props.colorMode="texture";tr.props.uvScaleU="0.45";
-  tr.attachments=[eq.id,tex.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tex.id]:tex,[tr.id]:tr},camId:cam.id,animated:true};
+  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.45";tr.props.matNormalStrength="0.6";
+  tr.attachments=[eq.id,tex.id,nrm.id];cam.attachments=[tr.id,lamp.id,sun.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[tM.id]:tM,[ph.id]:ph,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
 }
 
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three

@@ -121,8 +121,10 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     // Scene lights illuminate lit surfaces. Their VALUES ride as live uniforms
     // (no rebuild on change); only the count + kinds are structural, so fold just
     // that into the cache signature. null → the shader's single fixed key light.
-    const litPlot = p.shading==="lit" && (node.type==="surf3d"||node.type==="paramsurf"||node.type==="transformer");
-    const sceneLights = (litPlot && lights && lights.length) ? lights : null;
+    // A transformer always takes the lights (graph-lit OR ray-marched implicit);
+    // surf3d/paramsurf only when shaded lit.
+    const wantsLights = node.type==="transformer" || (p.shading==="lit" && (node.type==="surf3d"||node.type==="paramsurf"));
+    const sceneLights = (wantsLights && lights && lights.length) ? lights : null;
     const lightSig = sceneLights ? `|L:${sceneLights.length}:${sceneLights.map(l=>l.kind[0]).join("")}` : "";
     // Geometry signature (folds wired fnMap/paramSpace/equation expressions and
     // their scopes) — shared with the 2-D scene cache so both invalidate alike.

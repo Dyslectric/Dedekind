@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "./glsl.js";
-import { hexToThree } from "./three-helpers.js";
+import { hexToThree, setLightUniforms } from "./three-helpers.js";
 
 // ── Ray-marched implicit surface ──────────────────────────────────────────────
 // Renders the level set F(x,y,z)=0 directly in a fragment shader instead of
@@ -29,7 +29,7 @@ import { hexToThree } from "./three-helpers.js";
 //           implicit surface has no intrinsic UV, so it's TRIPLANAR-mapped: the
 //           texture is projected from the x/y/z planes at the hit's math position
 //           and blended by the (squared) surface normal — works on any level set.
-function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
+function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, ntex=null, lights=null){
   const p = eqNode.props || {};
   const vA = (p.varA || "x").trim() || "x";
   const vB = (p.varB || "y").trim() || "y";
@@ -97,12 +97,18 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
     uColorShift:{value: resolveNum(tp.colorShift, scope, 0)},
     uGradScale:{value: 0.5},
   };
-  const hasTex = !!tex;
-  if(hasTex){
-    uniformsObj.uTex = { value: tex };
-    // one scale for all three planes; reuse the transformer's UV-tile control
-    uniformsObj.uTriScale = { value: resolveNum(tp.uvScaleU, scope, 0.5) };
+  const hasTex = !!tex, hasNorm = !!ntex, uvAny = hasTex || hasNorm;
+  // one tile scale for all three projection planes; reuse the UV-tile control
+  if(uvAny) uniformsObj.uTriScale = { value: resolveNum(tp.uvScaleU, scope, 0.5) };
+  if(hasTex) uniformsObj.uTex = { value: tex };
+  if(hasNorm){
+    uniformsObj.uNormTex = { value: ntex };
+    uniformsObj.uNormStrength = { value: resolveNum(tp.matNormalStrength, scope, 1) };
   }
+  // Wired scene lights → per-light uniforms (uL{i}Dir/Pos/Col/Fall). When none,
+  // the shader keeps its single fixed key light.
+  const sceneLights = (lights && lights.length) ? lights : null;
+  if(sceneLights) setLightUniforms(uniformsObj, sceneLights, scope);
   for(const n of freeUniforms) uniformsObj[GLSL_UNIFORM_PREFIX+n]={value:Number(ascope[n])||0};
 
   const vert = `
@@ -149,7 +155,12 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
     uniform float uColorShift; // hue offset (animated over time in iridescent mode)
     uniform float uGradScale;  // gradient-mode: log-compression scale
     ${uniDecls}
-    ${hasTex ? "uniform sampler2D uTex; uniform float uTriScale;" : ""}
+    ${uvAny ? "uniform float uTriScale;" : ""}
+    ${hasTex ? "uniform sampler2D uTex;" : ""}
+    ${hasNorm ? "uniform sampler2D uNormTex; uniform float uNormStrength;" : ""}
+    ${sceneLights ? sceneLights.map((lt,i)=> lt.kind==="point"
+      ? `uniform vec3 uL${i}Pos; uniform vec3 uL${i}Col; uniform float uL${i}Fall;`
+      : `uniform vec3 uL${i}Dir; uniform vec3 uL${i}Col;`).join("\n    ") : ""}
     ${fieldFn}
     ${hasTex ? `
     // Triplanar texture: an implicit surface has no UV, so project the texture
@@ -163,6 +174,22 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
       vec3 cy = texture2D(uTex, mp.zx*uTriScale).rgb;
       vec3 cz = texture2D(uTex, mp.xy*uTriScale).rgb;
       return cx*bw.x + cy*bw.y + cz*bw.z;
+    }` : ""}
+    ${hasNorm ? `
+    // Triplanar normal map: perturb the math-space normal by the (xy) offset of
+    // the normal texture on each projection plane, weighted like the albedo, then
+    // map the result back to world space. No tangent basis needed.
+    vec3 triplanarNormal(vec3 mp, vec3 nW){
+      vec3 nM = vec3(nW.x, -nW.z, nW.y);
+      vec3 bw = abs(nM); bw *= bw; bw /= max(bw.x+bw.y+bw.z, 1e-4);
+      vec2 ox = (texture2D(uNormTex, mp.yz*uTriScale).xy*2.0-1.0)*uNormStrength;
+      vec2 oy = (texture2D(uNormTex, mp.zx*uTriScale).xy*2.0-1.0)*uNormStrength;
+      vec2 oz = (texture2D(uNormTex, mp.xy*uTriScale).xy*2.0-1.0)*uNormStrength;
+      vec3 pert = vec3(0.0, ox.x, ox.y)*bw.x   // plane X spans (y,z)
+                + vec3(oy.y, 0.0, oy.x)*bw.y   // plane Y spans (z,x)
+                + vec3(oz.x, oz.y, 0.0)*bw.z;  // plane Z spans (x,y)
+      vec3 nP = normalize(nM + pert);
+      return normalize(vec3(nP.x, nP.z, -nP.y));
     }` : ""}
     // Plotted content lives in a group oriented so WORLD relates to MATH as:
     //   world = (math.x, math.z, −math.y)  ⇒  math = (world.x, −world.z, world.y)
@@ -316,6 +343,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
           nrm = normalize(acc / wsum + 1e-6);
         }
       }
+      ${hasNorm ? "nrm = triplanarNormal(threeToMath(pHit), nrm);   // triplanar bump" : ""}
 
       // ── visible crossing seam ────────────────────────────────────────────────
       // At a self-intersection two sheets cross; right at the seam the gradient
@@ -379,10 +407,21 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
         }
         if(s01 >= 0.0) base = iridescence(s01 + uColorShift);
       }
-      // two-sided lambert + key light, matching the mesh shaders' look
+      // two-sided lambert. With wired scene lights, accumulate them in WORLD space
+      // (same light-vector convention as the surface shaders) so an implicit surface
+      // reacts to the same moving lights as everything else; otherwise a fixed key.
+      ${sceneLights ? `
+      vec3 col = base*0.2;
+      ${sceneLights.map((lt,i)=> lt.kind==="point"
+        ? `{ vec3 _d=uL${i}Pos-pHit; float _r2=dot(_d,_d); vec3 L=_d*inversesqrt(max(_r2,1e-12));
+          float _att=1.0/(1.0+uL${i}Fall*_r2);
+          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_att; }`
+        : `{ vec3 L=normalize(uL${i}Dir); col += base*uL${i}Col*(0.85*abs(dot(nrm,L))); }`).join("\n      ")}
+      ` : `
       vec3 L = normalize(vec3(0.4,0.9,0.5));
       float diff = 0.5 + 0.5*abs(dot(nrm, L));
       vec3 col = base*diff;
+      `}
       col = mix(col, col*0.35, seam);            // seam darkening
       gl_FragColor = vec4(col, 1.0);
       // write correct scene depth so the surface composits with other geometry
@@ -398,7 +437,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
   mat.extensions = { fragDepth:true };
   const mesh=new THREE.Mesh(geo, mat);
   mesh.frustumCulled=false;
-  mesh._gpuSurface = { uNames: freeUniforms, uPrefix: GLSL_UNIFORM_PREFIX };  // lets updateGpuUniforms animate sliders live
+  mesh._gpuSurface = { uNames: freeUniforms, uPrefix: GLSL_UNIFORM_PREFIX, lights: sceneLights };  // updateGpuUniforms animates sliders + lights live
   mesh._raymarch = true;
   // The fragment shader needs the live projection matrix (which three doesn't pass
   // to fragment shaders). Refresh it from whatever camera renders this mesh, every

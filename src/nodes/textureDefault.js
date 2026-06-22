@@ -66,12 +66,28 @@ ${_brickCells((x,y,w,h)=>{ const b=_BV;
 </svg>`;
 const DEFAULT_BRICK_NORMAL_SRC = "data:image/svg+xml;utf8," + encodeURIComponent(BRICK_NORMAL_SVG);
 
+// Trippy procedural plasma: fractal turbulence (Perlin noise across all colour
+// channels) boosted to high saturation, with stitchTiles so it tiles seamlessly —
+// a marbled rainbow that reads beautifully triplanar-mapped onto a level set. The
+// final feColorMatrix forces alpha to 1 (turbulence writes noise into alpha too).
+const PLASMA_SVG =
+`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<filter id="pl" x="0" y="0" width="100%" height="100%">
+<feTurbulence type="turbulence" baseFrequency="0.018" numOctaves="4" seed="11" stitchTiles="stitch"/>
+<feColorMatrix type="saturate" values="3"/>
+<feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1"/>
+</filter>
+<rect width="256" height="256" filter="url(#pl)"/>
+</svg>`;
+const DEFAULT_PLASMA_SRC = "data:image/svg+xml;utf8," + encodeURIComponent(PLASMA_SVG);
+
 // Built-in texture library: a texture node can point at one of these by a short
 // "builtin:<name>" id instead of an embedded data-URI. Unlike a data-URI, the id
 // survives serialization (it isn't stripped as media), so a project that uses a
 // built-in texture stays self-contained AND shareable. textures.js resolves the id.
 const BUILTIN_TEXTURES = {
   dedekind: DEFAULT_TEXTURE_SRC,
+  plasma: DEFAULT_PLASMA_SRC,
   "pyramid-normal": DEFAULT_NORMAL_SRC,
   brick: DEFAULT_BRICK_SRC,
   "brick-normal": DEFAULT_BRICK_NORMAL_SRC,
@@ -83,5 +99,5 @@ function resolveBuiltinTexture(src){
 
 export {
   DEFAULT_TEXTURE_SRC, DEFAULT_NORMAL_SRC, DEFAULT_BRICK_SRC, DEFAULT_BRICK_NORMAL_SRC,
-  BUILTIN_TEXTURES, resolveBuiltinTexture,
+  DEFAULT_PLASMA_SRC, BUILTIN_TEXTURES, resolveBuiltinTexture,
 };

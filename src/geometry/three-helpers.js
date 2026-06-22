@@ -372,5 +372,5 @@ function syncThreeLights(root, lights){
 }
 
 export {
-  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights
+  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights, setLightUniforms
 };
