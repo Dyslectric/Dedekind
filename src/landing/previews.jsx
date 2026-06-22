@@ -804,6 +804,59 @@ function listCubeScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
 
+// CULMINATION: one scene, every system at once. A normal-mapped brick sphere
+// (texture albedo + brick normal map, sampled at its own u,v) sits inside a
+// wireframe cage whose edges REFERENCE a shared vertex list by index, with an
+// RGB-coloured orbit curve weaving past — all lit by a warm point light orbiting
+// the scene (driven by an animator) plus a cool directional fill on the camera.
+function showcaseScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1280,y:120}));cam.label="culmination";
+  cam.props.orbRadius="10";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="46";
+
+  // ── central brick sphere: textured albedo + matching normal map, lit ──
+  const sph=makeNode("paramSpace",{x:380,y:100});sph.label="brick sphere";sph.color="#e6c9a8";
+  sph.props.degree="2";
+  sph.props.exprXu="1.7*cos(u)*sin(v)";sph.props.exprYu="1.7*sin(u)*sin(v)";sph.props.exprZu="1.7*cos(v)";
+  sph.props.uMin="0";sph.props.uMax="2*pi";sph.props.vMin="0";sph.props.vMax="pi";sph.props.uRes="150";sph.props.vRes="90";
+  sph.props.showWire=false;sph.props.shading="lit";sph.props.matColorMode="texture";
+  sph.props.uvScaleU="5";sph.props.uvScaleV="2.5";sph.props.matNormalStrength="1.1";
+  const tex=makeNode("texture",{x:120,y:80});tex.label="brick";tex.color="#c98a6a";tex.props.src="builtin:brick";tex.props.wrap="repeat";
+  const nrm=makeNode("texture",{x:120,y:210});nrm.label="brick normal";nrm.color="#a6da95";nrm.props.role="normal";nrm.props.src="builtin:brick-normal";nrm.props.wrap="repeat";
+  sph.attachments=[tex.id,nrm.id];
+
+  // ── list-defined cube cage: edges reference a shared vertex list by index ──
+  const V=makeNode("list",{x:380,y:340});V.name="V";V.label="cage verts";V.color="#f7d9a0";
+  V.props.expr="[[-2.7,-2.7,-2.7],[2.7,-2.7,-2.7],[2.7,2.7,-2.7],[-2.7,2.7,-2.7],[-2.7,-2.7,2.7],[2.7,-2.7,2.7],[2.7,2.7,2.7],[-2.7,2.7,2.7]]";
+  const E=makeNode("list",{x:380,y:470});E.name="E";E.label="cage edges";E.color="#f7d9a0";
+  E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
+  const cage=makeNode("points",{x:720,y:380});cage.label="cage";cage.color="#7f9cf5";
+  cage.props.kind="points";cage.props.mode="fromlist";cage.props.ptsList="V";cage.props.edgeList="E";cage.props.drawLines=false;cage.props.radius="5";
+  cage.attachments=[V.id,E.id];
+
+  // ── RGB orbit curve ──
+  const cv=makeNode("paramSpace",{x:380,y:600});cv.label="orbit";cv.color="#5b9cf6";
+  cv.props.degree="1";
+  cv.props.exprX="3.5*cos(t)";cv.props.exprY="3.5*sin(t)";cv.props.exprZ="1.6*sin(2*t)";
+  cv.props.tMin="0";cv.props.tMax="2*pi";cv.props.res="400";
+  cv.props.colorMode="rgb";cv.props.colorR="0.5+0.5*sin(t)";cv.props.colorG="0.5+0.5*sin(t+2.1)";cv.props.colorB="0.5+0.5*sin(t+4.2)";
+
+  // ── animated scene lights on the camera ──
+  const anim=makeNode("animator",{x:40,y:340});anim.name="phase";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="9";anim.props.loop="loop";anim.playing=true;
+  const warm=makeNode("light",{x:380,y:740});warm.label="orbit lamp";warm.color="#ffd28a";
+  warm.props.kind="point";warm.props.color="#ffdcb0";warm.props.intensity="2.5";warm.props.falloff="0.03";
+  warm.props.posX="5*cos(phase)";warm.props.posY="5*sin(phase)";warm.props.posZ="3";
+  warm.attachments=[anim.id];
+  const cool=makeNode("light",{x:380,y:870});cool.label="sky fill";cool.color="#8fb7ff";
+  cool.props.kind="directional";cool.props.color="#9fb8ff";cool.props.intensity="0.45";
+  cool.props.dirX="-0.4";cool.props.dirY="-0.3";cool.props.dirZ="0.7";
+
+  cam.attachments=[sph.id,cage.id,cv.id,warm.id,cool.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[sph.id]:sph,[tex.id]:tex,[nrm.id]:nrm,
+    [V.id]:V,[E.id]:E,[cage.id]:cage,[cv.id]:cv,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -849,6 +902,7 @@ Object.assign(SCENES, {
   "lights-param": lightsParamScene,
   "brick-sphere": brickSphereScene,
   "list-cube": listCubeScene,
+  "showcase": showcaseScene,
   "curve-rgb": curveRgbScene,
 });
 
