@@ -49,8 +49,11 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             <option value="gradient">Gradient |∇F| (highlights singularities)</option>
             <option value="normal">Normal direction (orientation)</option>
             <option value="iridescent">Iridescent (animated)</option>
+            <option value="texture">Texture (triplanar — wire a Texture node)</option>
           </select>
         </PR>
+        {node.props.colorMode==="texture" &&
+          <PR label="texture tile"><EI v={node.props.uvScaleU??"0.5"} sc={scope} onChange={v=>set("uvScaleU",v)} placeholder="0.5"/></PR>}
         {(node.props.colorMode||"flat")!=="flat" && (node.props.colorMode!=="iridescent") &&
           <PR label="hue shift"><EI v={node.props.colorShift??"0"} sc={scope} onChange={v=>set("colorShift",v)} placeholder="0"/></PR>}
         <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
@@ -60,6 +63,7 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             if(m==="gradient") return "Hue encodes |∇F|; singular points (nodes, cusps, where the gradient vanishes) stand out as a distinct band.";
             if(m==="normal") return "Hue encodes surface orientation — useful for reading curvature.";
             if(m==="iridescent") return "Decorative oil-slick palette that shimmers over time (not a measured quantity).";
+            if(m==="texture") return "A wired Texture node, triplanar-mapped: projected from the x/y/z planes and blended by the surface normal (no UV needed). Set the tile scale above.";
             return "Surface drawn in its single flat color. Pick a mode to encode depth, gradient, or orientation as hue.";
           })()}
           {" Applies to GPU-rendered implicit surfaces."}

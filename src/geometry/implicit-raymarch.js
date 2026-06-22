@@ -25,7 +25,11 @@ import { hexToThree } from "./three-helpers.js";
 //   scope : resolved scope (slider/animator values become live uniforms)
 //   color : surface base color (hex)
 //   resolveNum: numeric prop resolver (passed in to avoid an import cycle)
-function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
+//   tex   : optional THREE texture (a wired colour Texture/Video node). An
+//           implicit surface has no intrinsic UV, so it's TRIPLANAR-mapped: the
+//           texture is projected from the x/y/z planes at the hit's math position
+//           and blended by the (squared) surface normal — works on any level set.
+function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null){
   const p = eqNode.props || {};
   const vA = (p.varA || "x").trim() || "x";
   const vB = (p.varB || "y").trim() || "y";
@@ -88,10 +92,17 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
       tp.colorMode==="depth" ? 1.0 :
       tp.colorMode==="gradient" ? 2.0 :
       tp.colorMode==="normal" ? 3.0 :
-      tp.colorMode==="iridescent" ? 4.0 : 0.0 },
+      tp.colorMode==="iridescent" ? 4.0 :
+      (tp.colorMode==="texture" && tex) ? 5.0 : 0.0 },
     uColorShift:{value: resolveNum(tp.colorShift, scope, 0)},
     uGradScale:{value: 0.5},
   };
+  const hasTex = !!tex;
+  if(hasTex){
+    uniformsObj.uTex = { value: tex };
+    // one scale for all three planes; reuse the transformer's UV-tile control
+    uniformsObj.uTriScale = { value: resolveNum(tp.uvScaleU, scope, 0.5) };
+  }
   for(const n of freeUniforms) uniformsObj[GLSL_UNIFORM_PREFIX+n]={value:Number(ascope[n])||0};
 
   const vert = `
@@ -138,7 +149,21 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
     uniform float uColorShift; // hue offset (animated over time in iridescent mode)
     uniform float uGradScale;  // gradient-mode: log-compression scale
     ${uniDecls}
+    ${hasTex ? "uniform sampler2D uTex; uniform float uTriScale;" : ""}
     ${fieldFn}
+    ${hasTex ? `
+    // Triplanar texture: an implicit surface has no UV, so project the texture
+    // from the three axis planes at the MATH-space hit point and blend by the
+    // squared surface normal (the dominant axis wins). nW is the WORLD normal;
+    // map it back to math space to match the projection coords.
+    vec3 triplanar(vec3 mp, vec3 nW){
+      vec3 nM = vec3(nW.x, -nW.z, nW.y);
+      vec3 bw = abs(nM); bw *= bw; bw *= bw; bw /= max(bw.x+bw.y+bw.z, 1e-4);
+      vec3 cx = texture2D(uTex, mp.yz*uTriScale).rgb;
+      vec3 cy = texture2D(uTex, mp.zx*uTriScale).rgb;
+      vec3 cz = texture2D(uTex, mp.xy*uTriScale).rgb;
+      return cx*bw.x + cy*bw.y + cz*bw.z;
+    }` : ""}
     // Plotted content lives in a group oriented so WORLD relates to MATH as:
     //   world = (math.x, math.z, −math.y)  ⇒  math = (world.x, −world.z, world.y)
     // (math X→right, Z→up, Y→away; right-handed.)
@@ -335,7 +360,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
         } else if(uColorMode < 3.5){
           // normal direction → orientation. Pack the unit normal into a hue phase.
           s01 = fract(0.5 + 0.5*atan(nrm.y, nrm.x)/3.14159 + 0.25*nrm.z);
-        } else {
+        } else if(uColorMode < 4.5){
           // iridescent: decorative oil-slick from position + normal (not a measured
           // quantity — purely aesthetic). Animated phase comes from uColorShift,
           // which the host advances over time for this mode.
@@ -346,6 +371,10 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum){
           vec3 ir = mix(iridescence(s01+uColorShift), iridescence(s01*2.7+0.3+uColorShift), 0.35);
           base = ir;
           // skip the generic palette mapping below for this branch
+          s01 = -1.0;
+        } else {
+          // texture: triplanar-mapped albedo from a wired Texture node.
+          ${hasTex ? "base = triplanar(threeToMath(pHit), nrm);" : ""}
           s01 = -1.0;
         }
         if(s01 >= 0.0) base = iridescence(s01 + uColorShift);

@@ -180,7 +180,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       // Prefer GPU ray marching: it renders the level set directly in a fragment
       // shader (no mesh extraction, no field readback), crisp at any zoom. Falls
       // back to the marching-cubes mesh when the expression can't transpile to GLSL.
-      const rm = buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum);
+      const rm = buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex);
       if(rm){
         // Mark the array as a GPU surface so the rebuild cache-hit path runs
         // updateGpuUniforms on it — this is what animates the morph parameter

@@ -925,6 +925,29 @@ function sierpinskiOctaScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[floor.id]:floor,[anim.id]:anim,[lamp.id]:lamp,[sun.id]:sun},camId:cam.id,animated:true};
 }
 
+// TEXTURED IMPLICIT SURFACE: a morphing gyroid level set, ray-marched on the GPU,
+// with an image TRIPLANAR-mapped onto it. An implicit F(x,y,z)=0 has no UV, so the
+// texture is projected from the x/y/z planes at each hit point and blended by the
+// surface normal. An animator morphs the level (rhs = 0.8·sin t) so the textured
+// fractal-like sheet flows — a genuinely trippy plot.
+function implicitTexScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1240,y:120}));cam.label="textured gyroid";
+  cam.props.orbRadius="13";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="52";
+  const anim=makeNode("animator",{x:40,y:340});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="16";anim.props.loop="loop";anim.playing=true;
+  const eq=makeNode("equation",{x:360,y:140});eq.label="gyroid";eq.color="#c6a0f6";
+  eq.props.dims="3d";eq.props.lhs="sin(x)*cos(y)+sin(y)*cos(z)+sin(z)*cos(x)";eq.props.rhs="0.8*sin(t)";
+  eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  eq.attachments=[anim.id];
+  const tex=makeNode("texture",{x:360,y:340});tex.label="tile";tex.color="#f5bde6";tex.props.src="builtin:dedekind";tex.props.wrap="repeat";
+  const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch · triplanar";tr.color="#c6a0f6";
+  tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
+  tr.props.res="160";tr.props.colorMode="texture";tr.props.uvScaleU="0.45";
+  tr.attachments=[eq.id,tex.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tex.id]:tex,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -972,6 +995,7 @@ Object.assign(SCENES, {
   "list-cube": listCubeScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
+  "implicit-tex": implicitTexScene,
   "curve-rgb": curveRgbScene,
 });
 
