@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "./glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU, fractalHelpersFor } from "./glsl.js";
 import { hexToThree, setLightUniforms } from "./three-helpers.js";
 
 // ── Ray-marched implicit surface ──────────────────────────────────────────────
@@ -119,9 +119,13 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
       gl_Position = projectionMatrix * viewMatrix * wp;
     }`;
 
+  // Looping fractal distance-estimator helpers (mandelbulb/mandelbox/menger/julia)
+  // referenced by the field, injected ahead of it so fieldF can call them.
+  const fractalDefs = fractalHelpersFor(glslF);
   // The field, written as a GLSL function of math coords (the axis vars are the
   // function's locals). We substitute the user's var names directly.
   const fieldFn = `
+    ${fractalDefs}
     float fieldF(vec3 m){
       float ${vA} = m.x; float ${vB} = m.y; float ${vC} = m.z;
       return (${glslF});

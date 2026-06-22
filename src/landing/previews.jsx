@@ -236,66 +236,80 @@ function barthScene(){
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
-// IMPLICIT METAMORPHOSIS: one level set f(x,y,z)=0 whose function is an animator-
-// driven crossfade through six classic algebraic surfaces — sphere, torus,
-// tanglecube, chair, heart and Goursat — so the form melts continuously from one
-// into the next and loops. Each surface is its own named fnDef; the blend weight
-// w(s,c) is a unit triangle, so at any instant only two surfaces are active and
-// their weights sum to one (a partition of unity). The whole thing rides the GPU
-// raymarcher: the morph clock s is the ONLY shader uniform, so the metamorphosis
-// animates with zero geometry rebuild, and two lights orbit on a second animator.
-// It is a small, legible graph — open it and read the equation straight off.
+// FRACTAL METAMORPHOSIS: one ray-marched level set f(x,y,z)=0 whose field melts,
+// on an animator clock, through five distance-estimated fractals — a calm sphere,
+// the Mandelbulb, the Mandelbox, the Menger sponge and a quaternion Julia set —
+// and loops. Each fractal is a real ITERATED distance estimator (a GLSL loop, via
+// the mandelbulb/mandelbox/menger/juliaq intrinsics), wrapped in a named fnDef.
+// The blend weight w(s,c) is a unit triangle (a partition of unity: only two
+// fractals are ever active and they sum to 1); infl(s) subtracts a phase-bump so
+// the form melts through a rounded blob across each crossfade instead of popping.
+// Every shape parameter is its own animator, so each fractal is also alive in
+// place: the Mandelbulb power breathes 3→8, the Mandelbox scale folds, the Julia
+// constant c orbits. ALL of it rides the GPU raymarcher as live uniforms (s, pw,
+// mbScale, jt) — zero geometry rebuild — with two lights orbiting on lt. A small
+// graph that opens and reads cleanly.
 function metamorphScene(){
-  const project=makeProjectNode("Implicit Metamorphosis");
-  const cam=previewCam(makeNode("camera3d",{x:1320,y:120}));cam.label="metamorphosis";
-  cam.props.orbRadius="6.6";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
-  // morph clock: 0..6, one unit per surface, looping (0 and 6 are both the sphere).
-  const s=makeNode("animator",{x:40,y:80});s.name="s";s.label="s · morph clock";s.value=0;
-  s.props.min="0";s.props.max="6";s.props.period="42";s.props.loop="loop";s.playing=true;
-  // light-orbit clock.
-  const lt=makeNode("animator",{x:40,y:200});lt.name="lt";lt.label="lt · light orbit";lt.value=0;
+  const project=makeProjectNode("Fractal Metamorphosis");
+  const cam=previewCam(makeNode("camera3d",{x:1360,y:120}));cam.label="fractal metamorphosis";
+  cam.props.orbRadius="5.4";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  // morph clock: 0..5, one unit per fractal, looping (0 and 5 are both the sphere).
+  const s=makeNode("animator",{x:40,y:60});s.name="s";s.label="s · morph clock";s.value=0;
+  s.props.min="0";s.props.max="5";s.props.period="45";s.props.loop="loop";s.playing=true;
+  // per-fractal parameter animators — each fractal breathes while it is on screen.
+  const pw=makeNode("animator",{x:40,y:170});pw.name="pw";pw.label="pw · bulb power";pw.value=6;
+  pw.props.min="3";pw.props.max="8";pw.props.period="22";pw.props.loop="pingpong";pw.playing=true;
+  const mbScale=makeNode("animator",{x:40,y:280});mbScale.name="mbScale";mbScale.label="mbScale · box fold";mbScale.value=-1.8;
+  mbScale.props.min="-2.4";mbScale.props.max="-1.6";mbScale.props.period="26";mbScale.props.loop="pingpong";mbScale.playing=true;
+  const jt=makeNode("animator",{x:40,y:390});jt.name="jt";jt.label="jt · julia c";jt.value=0;
+  jt.props.min="0";jt.props.max="6.283";jt.props.period="19";jt.props.loop="loop";jt.playing=true;
+  const lt=makeNode("animator",{x:40,y:500});lt.name="lt";lt.label="lt · light orbit";lt.value=0;
   lt.props.min="0";lt.props.max="6.283";lt.props.period="15";lt.props.loop="loop";lt.playing=true;
   // blend weight: a unit triangle centred at c, so neighbours overlap and sum to 1.
-  const w=makeNode("fnDef",{x:340,y:60});w.name="w";w.label="w(s,c) · blend weight";w.color="#9aa6c8";
+  const w=makeNode("fnDef",{x:360,y:40});w.name="w";w.label="w(s,c) · blend weight";w.color="#9aa6c8";
   w.props.params="s,c";w.props.expr="max(0, 1 - abs(s - c))";
-  // inflation: zero at every integer s (the exact surfaces) and peaking between
-  // them. Subtracting it carves a guaranteed interior during a crossfade, so when
-  // two surfaces' insides don't overlap the form melts through a blob instead of
-  // briefly vanishing. q = fractional part of s; 4·q·(1−q) peaks at 1 mid-stage.
-  const infl=makeNode("fnDef",{x:340,y:-30});infl.name="infl";infl.label="infl(s) · melt";infl.color="#9aa6c8";
-  infl.props.params="s";infl.props.expr="4*(s - floor(s))*(1 - (s - floor(s)))";
-  // the six surfaces, each a named level set f = 0 (scaled to a comparable size).
-  const mk=(name,label,col,y,expr)=>{ const n=makeNode("fnDef",{x:340,y});n.name=name;n.label=label;n.color=col;n.props.params="x,y,z";n.props.expr=expr;return n; };
-  const sphere = mk("sphere", "sphere",          "#7cc8ff",170,"x^2 + y^2 + z^2 - 2");
-  const torus  = mk("torus",  "torus",           "#7ad7c0",250,"(sqrt(x^2+y^2) - 1.1)^2 + z^2 - 0.35");
-  const tangle = mk("tangle", "tanglecube",      "#b8a0ff",330,"(x^4 - 5*x^2 + y^4 - 5*y^2 + z^4 - 5*z^2 + 11.8)/6");
-  const chair  = mk("chair",  "chair",           "#ffd479",410,"((x^2+y^2+z^2 - 0.95*1.44)^2 - 0.8*((z-1.2)^2 - 2*x^2)*((z+1.2)^2 - 2*y^2))/3");
-  const heart  = mk("heart",  "heart",           "#ff6ea8",490,"(((x/1.3)^2 + 2.25*(y/1.3)^2 + (z/1.3)^2 - 1)^3 - (x/1.3)^2*(z/1.3)^3 - 0.1125*(y/1.3)^2*(z/1.3)^3)/2");
-  const goursat= mk("goursat","Goursat surface", "#9fd6a0",570,"x^4 + y^4 + z^4 - 1.5*(x^2+y^2+z^2) + 0.8");
-  // the morphing equation: a weighted sum of the six surfaces = 0. The trailing
-  // w(s,6)·sphere closes the loop (target 6 is the sphere again), so s:0→6 returns
-  // home seamlessly.
-  const eq=makeNode("equation",{x:740,y:300});eq.label="Σ w(s,k)·fₖ = 0";eq.color="#c6a0f6";
+  // inflation: zero at every integer s (the exact fractals) and peaking between
+  // them. Subtracting this phase-bump carves a rounded interior across a crossfade,
+  // so the form melts through a blob instead of thinning to nothing where two
+  // fractals don't overlap. q = fractional part of s; 1.2·q·(1−q) peaks mid-stage.
+  const infl=makeNode("fnDef",{x:360,y:-40});infl.name="infl";infl.label="infl(s) · melt";infl.color="#9aa6c8";
+  infl.props.params="s";infl.props.expr="1.2*(s - floor(s))*(1 - (s - floor(s)))";
+  // the fractals, each a named distance estimator (the intrinsics emit GLSL loops),
+  // framed to a comparable size inside the sampling box.
+  const sph    =makeNode("fnDef",{x:360,y:150});sph.name="sph";sph.label="sph · sphere";sph.color="#7cc8ff";
+  sph.props.params="x,y,z";sph.props.expr="sqrt(x^2+y^2+z^2) - 1.45";
+  const bulbF  =makeNode("fnDef",{x:360,y:230});bulbF.name="bulbF";bulbF.label="bulbF · Mandelbulb";bulbF.color="#b8a0ff";
+  bulbF.props.params="x,y,z,pw";bulbF.props.expr="mandelbulb(x, y, z, pw)";
+  const boxF   =makeNode("fnDef",{x:360,y:310});boxF.name="boxF";boxF.label="boxF · Mandelbox";boxF.color="#ffd479";
+  boxF.props.params="x,y,z,scale";boxF.props.expr="mandelbox(1.7*x, 1.7*y, 1.7*z, scale)/1.7";
+  const mengerF=makeNode("fnDef",{x:360,y:390});mengerF.name="mengerF";mengerF.label="mengerF · Menger sponge";mengerF.color="#9fd6a0";
+  mengerF.props.params="x,y,z";mengerF.props.expr="menger(0.95*x, 0.95*y, 0.95*z)/0.95";
+  const juliaF =makeNode("fnDef",{x:360,y:470});juliaF.name="juliaF";juliaF.label="juliaF · quaternion Julia";juliaF.color="#ff6ea8";
+  juliaF.props.params="x,y,z,jt";juliaF.props.expr="juliaq(x, y, z, 0.34*sin(jt), 0.42*cos(0.7*jt), 0.38*sin(1.3*jt))";
+  // the morphing equation: a weighted blend of the five fractal fields = 0. The
+  // trailing w(s,5)·sph closes the loop (target 5 is the sphere again), so s:0→5
+  // returns home seamlessly. pw / mbScale / jt drive each fractal in place.
+  const eq=makeNode("equation",{x:780,y:320});eq.label="Σ w(s,k)·fractalₖ = 0";eq.color="#c6a0f6";
   eq.props.dims="3d";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";eq.props.rhs="0";
-  eq.props.lhs="w(s,0)*sphere(x,y,z) + w(s,1)*torus(x,y,z) + w(s,2)*tangle(x,y,z) + w(s,3)*chair(x,y,z) + w(s,4)*heart(x,y,z) + w(s,5)*goursat(x,y,z) + w(s,6)*sphere(x,y,z) - infl(s)";
-  eq.attachments=[s.id,w.id,infl.id,sphere.id,torus.id,tangle.id,chair.id,heart.id,goursat.id];
+  eq.props.lhs="w(s,0)*sph(x,y,z) + w(s,1)*bulbF(x,y,z,pw) + w(s,2)*boxF(x,y,z,mbScale) + w(s,3)*mengerF(x,y,z) + w(s,4)*juliaF(x,y,z,jt) + w(s,5)*sph(x,y,z) - infl(s)";
+  eq.attachments=[s.id,pw.id,mbScale.id,jt.id,w.id,infl.id,sph.id,bulbF.id,boxF.id,mengerF.id,juliaF.id];
   // ray-march it, iridescent so the shifting normals read as colour under the lights.
-  const tr=makeNode("transformer",{x:1060,y:300});tr.label="raymarch · iridescent";tr.color="#c6a0f6";
+  const tr=makeNode("transformer",{x:1100,y:320});tr.label="raymarch · iridescent";tr.color="#c6a0f6";
   tr.props.mode="graph";
-  tr.props.aMin="-2.6";tr.props.aMax="2.6";tr.props.bMin="-2.6";tr.props.bMax="2.6";tr.props.cMin="-2.6";tr.props.cMax="2.6";
-  tr.props.res="160";tr.props.colorMode="iridescent";
+  tr.props.aMin="-1.8";tr.props.aMax="1.8";tr.props.bMin="-1.8";tr.props.bMax="1.8";tr.props.cMin="-1.8";tr.props.cMax="1.8";
+  tr.props.res="120";tr.props.colorMode="iridescent";
   tr.attachments=[eq.id];
   // two orbiting lights driven by lt.
-  const warm=makeNode("light",{x:1060,y:80});warm.label="warm key";warm.color="#ffd28a";
-  warm.props.kind="point";warm.props.color="#ffd2a8";warm.props.intensity="2.2";warm.props.falloff="0.02";
-  warm.props.posX="3.6*cos(lt)";warm.props.posY="3.6*sin(lt)";warm.props.posZ="2.6";
+  const warm=makeNode("light",{x:1100,y:90});warm.label="warm key";warm.color="#ffd28a";
+  warm.props.kind="point";warm.props.color="#ffd2a8";warm.props.intensity="2.2";warm.props.falloff="0.03";
+  warm.props.posX="3.0*cos(lt)";warm.props.posY="3.0*sin(lt)";warm.props.posZ="2.2";
   warm.attachments=[lt.id];
-  const cool=makeNode("light",{x:1060,y:170});cool.label="cool fill";cool.color="#8fb7ff";
+  const cool=makeNode("light",{x:1100,y:180});cool.label="cool fill";cool.color="#8fb7ff";
   cool.props.kind="directional";cool.props.color="#86a8ff";cool.props.intensity="0.55";
   cool.props.dirX="-0.5";cool.props.dirY="-0.35";cool.props.dirZ="0.7";
   cam.attachments=[tr.id,warm.id,cool.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[lt.id]:lt,[w.id]:w,[infl.id]:infl,
-    [sphere.id]:sphere,[torus.id]:torus,[tangle.id]:tangle,[chair.id]:chair,[heart.id]:heart,[goursat.id]:goursat,
+  return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[pw.id]:pw,[mbScale.id]:mbScale,[jt.id]:jt,[lt.id]:lt,
+    [w.id]:w,[infl.id]:infl,[sph.id]:sph,[bulbF.id]:bulbF,[boxF.id]:boxF,[mengerF.id]:mengerF,[juliaF.id]:juliaF,
     [eq.id]:eq,[tr.id]:tr,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 function whitneyScene(){

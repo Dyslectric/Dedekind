@@ -12,6 +12,92 @@ const _GLSL_FN1 = { sin:1,cos:1,tan:1,asin:1,acos:1,atan:1,sinh:1,cosh:1,tanh:1,
   asinh:1,acosh:1,atanh:1,trunc:"trunc",exp2:"exp2",log2:"log2",radians:"radians",degrees:"degrees" };
 const _GLSL_FN2 = { pow:"pow",atan2:"atan",mod:"mod",min:"min",max:"max",step:"step" };
 const _GLSL_CONST = { pi:"3.141592653589793",e:"2.718281828459045",tau:"6.283185307179586",phi:"1.618033988749895" };
+// ── Fractal distance-estimator intrinsics ────────────────────────────────────
+// Genuine fractals need ITERATION, which a closed-form expression can't express,
+// so these are recognized as function calls that emit a GLSL helper with a real
+// loop. They are only defined inside the ray-march shader (implicit-raymarch.js
+// injects fractalHelpersFor(glsl) before the field function), so they are meant
+// for an `equation` rendered through a transformer. Each takes the sample point
+// as its first three arguments; the rest are shape parameters (which can be
+// wired sliders/animators → live uniforms). They return a distance estimate
+// (≈0 on the surface), which the ray-marcher's sphere-trace / graze step renders.
+//   mandelbulb(x,y,z, power)   — the 3-D Mandelbrot (animate the power)
+//   mandelbox(x,y,z, scale)    — box+sphere folding fractal (animate the scale)
+//   menger(x,y,z)              — Menger-sponge SDF (signed)
+//   juliaq(x,y,z, cx,cy,cz)    — quaternion Julia set (animate c)
+const FRACTAL_INTRINSICS = {
+  mandelbulb:{ argc:4, emit:A=>`frMandelbulb(vec3(${A[0]},${A[1]},${A[2]}),${A[3]})` },
+  mandelbox: { argc:4, emit:A=>`frMandelbox(vec3(${A[0]},${A[1]},${A[2]}),${A[3]})` },
+  menger:    { argc:3, emit:A=>`frMenger(vec3(${A[0]},${A[1]},${A[2]}))` },
+  juliaq:    { argc:6, emit:A=>`frJulia(vec3(${A[0]},${A[1]},${A[2]}),vec3(${A[3]},${A[4]},${A[5]}))` },
+};
+// GLSL bodies for the helpers each intrinsic emits (plus the _frBox SDF the
+// Menger sponge needs). Standard distance estimators.
+const FRACTAL_GLSL = {
+  _frBox: `float _frBox(vec3 p, vec3 b){ vec3 q=abs(p)-b; return length(max(q,0.0))+min(max(q.x,max(q.y,q.z)),0.0); }`,
+  frMandelbulb: `float frMandelbulb(vec3 pos,float power){
+    vec3 z=pos; float dr=1.0; float r=0.0;
+    for(int i=0;i<8;i++){
+      r=length(z); if(r>2.0) break;
+      float th=acos(clamp(z.z/max(r,1e-6),-1.0,1.0));
+      float ph=atan(z.y,z.x);
+      float zr=pow(r,power);
+      dr=pow(r,power-1.0)*power*dr+1.0;
+      th*=power; ph*=power;
+      z=zr*vec3(sin(th)*cos(ph),sin(th)*sin(ph),cos(th))+pos;
+    }
+    return 0.5*log(max(r,1e-6))*r/max(dr,1e-6);
+  }`,
+  frMandelbox: `float frMandelbox(vec3 pos,float scale){
+    vec3 z=pos; float dr=1.0;
+    for(int i=0;i<9;i++){
+      z=clamp(z,-1.0,1.0)*2.0-z;
+      float r2=dot(z,z);
+      float f = r2<0.25 ? 4.0 : (r2<1.0 ? 1.0/r2 : 1.0);
+      z=z*f*scale+pos;
+      dr=dr*abs(scale)*f+1.0;
+    }
+    return length(z)/abs(dr);
+  }`,
+  frMenger: `float frMenger(vec3 p){
+    float d=_frBox(p,vec3(1.2));
+    float s=1.0;
+    for(int i=0;i<5;i++){
+      vec3 a=mod(p*s,2.0)-1.0;
+      s*=3.0;
+      vec3 r=abs(1.0-3.0*abs(a));
+      float da=max(r.x,r.y), db=max(r.y,r.z), dc=max(r.z,r.x);
+      float c=(min(da,min(db,dc))-1.0)/s;
+      d=max(d,c);
+    }
+    return d;
+  }`,
+  frJulia: `float frJulia(vec3 pos,vec3 c){
+    vec4 z=vec4(pos,0.0); vec4 cc=vec4(c,0.0);
+    float dr=1.0; float mz=dot(z,z);
+    for(int i=0;i<9;i++){
+      dr=2.0*sqrt(max(mz,1e-12))*dr+1.0;
+      vec4 nz;
+      nz.x=z.x*z.x-dot(z.yzw,z.yzw);
+      nz.yzw=2.0*z.x*z.yzw;
+      z=nz+cc;
+      mz=dot(z,z);
+      if(mz>4.0) break;
+    }
+    float r=sqrt(max(mz,1e-12));
+    return 0.5*r*log(max(r,1e-6))/max(dr,1e-6);
+  }`,
+};
+// Given a transpiled GLSL string, return the helper definitions it references, in
+// dependency order (so a caller can prepend them to the shader). Empty if none.
+function fractalHelpersFor(glsl){
+  if(!glsl) return "";
+  const need=new Set();
+  for(const k of Object.keys(FRACTAL_GLSL)){ if(glsl.indexOf(k+"(")>=0) need.add(k); }
+  if(need.has("frMenger")) need.add("_frBox");
+  const order=["_frBox","frMandelbulb","frMandelbox","frMenger","frJulia"];
+  return order.filter(k=>need.has(k)).map(k=>FRACTAL_GLSL[k]).join("\n");
+}
 function _glslNum(v){ let s=String(v); if(!/[.eE]/.test(s)) s+=".0"; return s; }
 
 // GLSL's pow(x,y) is undefined for x<0 (returns NaN on most GPUs), so a plain
@@ -134,6 +220,12 @@ function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
             case "log":    return `(log(${a})/log(${b}))`;   // log(value, base)
           }
         }
+        // fractal distance-estimator intrinsic → emit a call to the looping GLSL
+        // helper (defined by the ray-march shader). The point is the first 3 args.
+        if(FRACTAL_INTRINSICS[n] && node.args.length===FRACTAL_INTRINSICS[n].argc){
+          const A=node.args.map(a=>walk(a, depth)); if(A.some(x=>x==null)) return null;
+          return FRACTAL_INTRINSICS[n].emit(A);
+        }
         // user fnDef → inline its body with parameters bound to the call args.
         if(fnTable && fnTable[n] && fnTable[n].params.length===node.args.length){
           const def=fnTable[n];
@@ -233,5 +325,5 @@ function augmentScopeForGPU(scope){
 const GLSL_UNIFORM_PREFIX = "usr_";
 
 export {
-  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, fnTableSig, augmentScopeForGPU
+  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, fnTableSig, augmentScopeForGPU, fractalHelpersFor
 };

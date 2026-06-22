@@ -18,18 +18,19 @@ import { getShowcaseScene } from "./previews.jsx";
 const isDemoSceneHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "demoscene";
 
 const KIND = "metamorph";
-// The six surfaces, in the order the morph clock s (0..6) sweeps them. Used only
+// The five fractals, in the order the morph clock s (0..5) sweeps them. Used only
 // to label what's on screen; the math itself lives in the project graph.
-const STAGES = ["Sphere","Torus","Tanglecube","Chair","Heart","Goursat surface"];
-const STAGE_SECS = 7;                 // must match the project: s period (42) / 6
-const LOOP_SECS  = STAGE_SECS*6;      // one full pass through all six
+const STAGES = ["Sphere","Mandelbulb","Mandelbox","Menger Sponge","Quaternion Julia"];
+const STAGE_SECS = 9;                 // must match the project: s period (45) / 5
+const LOOP_SECS  = STAGE_SECS*5;      // one full pass through all five
 
 const GREETS =
-  "DEDEKIND ◈ IMPLICIT METAMORPHOSIS — one equation f(x,y,z)=0, six classic "+
-  "surfaces, crossfaded by an animator and ray-marched on the GPU — sphere into "+
-  "torus into tanglecube into chair into heart into Goursat and back, forever — "+
-  "every form is a named function you can open and edit — SPACE pause · ESC exit "+
-  "· OPEN PROJECT to take it apart ◈ ◈ ◈     ";
+  "DEDEKIND ◈ FRACTAL METAMORPHOSIS — one ray-marched equation f(x,y,z)=0 melting "+
+  "through five distance-estimated fractals on the GPU — Mandelbulb into Mandelbox "+
+  "into Menger sponge into quaternion Julia and back, forever, every iteration a "+
+  "real shader loop — the power breathes, the box folds, the Julia constant orbits "+
+  "— every fractal is a named function you can open and edit — SPACE pause · ESC "+
+  "exit · OPEN PROJECT to take it apart ◈ ◈ ◈     ";
 
 // The live stage: builds the morph project once, runs its animators (gated by
 // `paused`) and gently orbits the camera, suppressing all viewport chrome.
@@ -147,7 +148,7 @@ export function DemoScene(){
       {/* lower-third title — names the surface currently in view */}
       <div style={{position:"absolute",left:"min(6vw,64px)",bottom:"min(15vh,140px)",pointerEvents:"none",
         opacity:titleVis,transform:`translateY(${(1-titleVis)*14}px)`,transition:"opacity 0.12s linear"}}>
-        <div style={{fontSize:13,letterSpacing:3,color:"#7e92c8",marginBottom:6}}>IMPLICIT METAMORPHOSIS</div>
+        <div style={{fontSize:13,letterSpacing:3,color:"#7e92c8",marginBottom:6}}>FRACTAL METAMORPHOSIS</div>
         <div style={{fontSize:"clamp(28px,5.5vw,72px)",fontWeight:700,color:"#eef2ff",letterSpacing:0.5,
           textShadow:"0 2px 28px rgba(120,150,255,0.5)"}}>{STAGES[idx]}</div>
         <div style={{marginTop:8,fontSize:"clamp(11px,1.5vw,17px)",color:"#9fb4e8",letterSpacing:1.5}}>{"→ "}{next}</div>
