@@ -899,18 +899,22 @@ function sierpinskiOctaScene(){
   g.props.colorG="512+512*sin(1.5*y+2.1)";
   g.props.colorB="512+512*sin(1.5*z+4.2)";
   g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];
-  // The raw mesh now reacts to scene lights: a warm key and a cool fill from
-  // opposite sides shade the facets (over the rainbow vertex colour) so the form
-  // reads as the camera orbits. Static (no animator) so the depth-6 mesh isn't
-  // re-stamped per frame.
-  const warm=makeNode("light",{x:1080,y:120});warm.label="warm key";warm.color="#ffd28a";
-  warm.props.kind="directional";warm.props.color="#ffd2a0";warm.props.intensity="1.0";
-  warm.props.dirX="0.5";warm.props.dirY="0.3";warm.props.dirZ="0.8";
-  const cool=makeNode("light",{x:1080,y:260});cool.label="cool fill";cool.color="#8fb7ff";
-  cool.props.kind="directional";cool.props.color="#7fa8ff";cool.props.intensity="0.55";
-  cool.props.dirX="-0.6";cool.props.dirY="-0.4";cool.props.dirZ="0.3";
-  cam.attachments=[g.id,warm.id,cool.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:false};
+  // The raw mesh reacts to scene lights: a point light swings around it while a
+  // directional "sun" sweeps its direction, so the facets (over the rainbow vertex
+  // colour) shimmer as the lights move. An animator drives both; the big centre
+  // lists are cache-fingerprinted, so the depth-6 mesh is NOT re-stamped per frame.
+  const anim=makeNode("animator",{x:40,y:600});anim.name="phase";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="11";anim.props.loop="loop";anim.playing=true;
+  const lamp=makeNode("light",{x:1080,y:120});lamp.label="swinging lamp";lamp.color="#ffd28a";
+  lamp.props.kind="point";lamp.props.color="#ffd2a0";lamp.props.intensity="2.0";
+  lamp.props.posX="7*cos(phase)";lamp.props.posY="7*sin(phase)";lamp.props.posZ="4*sin(0.5*phase)";
+  lamp.attachments=[anim.id];
+  const sun=makeNode("light",{x:1080,y:260});sun.label="moving sun";sun.color="#8fb7ff";
+  sun.props.kind="directional";sun.props.color="#bcd0ff";sun.props.intensity="0.6";
+  sun.props.dirX="cos(0.6*phase)";sun.props.dirY="sin(0.6*phase)";sun.props.dirZ="0.55";
+  sun.attachments=[anim.id];
+  cam.attachments=[g.id,lamp.id,sun.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[anim.id]:anim,[lamp.id]:lamp,[sun.id]:sun},camId:cam.id,animated:true};
 }
 
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three

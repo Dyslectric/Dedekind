@@ -110,7 +110,21 @@ function resolveNodeValue(node, nodes, animVals, building){
     // A list binds its name to an ARRAY value (numbers, or rows like [x,y,z] for a
     // vector/point list). It's the one scope value that isn't a number; downstream
     // expressions index it (L[k]) or fold it (sum(L)). Empty/invalid → [].
-    case "list":     return evalArray(node.props?.expr, ownScope(node.id,nodes,animVals,building)) || [];
+    case "list": {
+      // A list binds its name to an ARRAY value. Evaluating a big array literal
+      // through mathjs is O(n) and would re-run every animated frame (via
+      // buildScopeForCamera) even when the list is unchanged — so cache the result
+      // on the node, keyed by the expr (reference-stable while unedited) and a
+      // small fingerprint of its own-scope scalars. Invalidates when either changes.
+      const expr=node.props?.expr;
+      if(expr==null) return [];
+      const sc=ownScope(node.id,nodes,animVals,building);
+      let sk=""; for(const key in sc){ const val=sc[key]; if(typeof val==="number") sk+=key+":"+val+";"; }
+      if(node._lcExpr===expr && node._lcKey===sk) return node._lcVal;
+      const v=evalArray(expr, sc) || [];
+      node._lcExpr=expr; node._lcKey=sk; node._lcVal=v;
+      return v;
+    }
     case "fnDef": {
       if(!node.name || !node.props?.expr) return undefined;
       const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
@@ -316,6 +330,20 @@ function plotSignature(node, p, scope, nodes, animVals){
   }
   return geomSignature({...node,props:pSig},sigScope);
 }
+// Cheap, change-sensitive fingerprint of a (possibly nested) numeric array: the
+// element count plus an FNV-1a hash over each number's 64-bit pattern. Used so a
+// plot referencing a large list can be cache-compared per frame without a full
+// JSON encode. Distinct contents → distinct fingerprint with overwhelming odds.
+const _fpBuf=new Float64Array(1), _fpInt=new Uint32Array(_fpBuf.buffer);
+function listFingerprint(v){
+  let h=0x811c9dc5>>>0, n=0;
+  const walk=(a)=>{ for(let i=0;i<a.length;i++){ const e=a[i];
+    if(Array.isArray(e)) walk(e);
+    else { _fpBuf[0]=(typeof e==="number"?e:Number(e))||0;
+      h=Math.imul(h^_fpInt[0],0x01000193)>>>0; h=Math.imul(h^_fpInt[1],0x01000193)>>>0; n++; } } };
+  walk(v);
+  return n+":"+(h>>>0);
+}
 // Build a signature fragment from the scalar values this node actually depends
 // on, so geometry rebuilds when a slider/animator it uses changes — but not when
 // an unrelated scalar changes. We scan the node's raw expression text for each
@@ -346,9 +374,11 @@ function scopeSig(node, scope){
       if(typeof v==="number"){
         parts.push(k+"="+v);
       } else if(Array.isArray(v)){
-        // A list value: fold its contents in so a plot rebuilds when the list
-        // changes (and not otherwise). JSON is a stable, comparable encoding.
-        parts.push(k+"="+JSON.stringify(v));
+        // A list value: fold a cheap, change-sensitive fingerprint (count + an
+        // FNV-1a hash over the raw float bits) rather than JSON — so a plot that
+        // references a big list (e.g. a 46k-vertex table) can be cache-checked
+        // every animated frame without stringifying ~1MB each time.
+        parts.push(k+"="+listFingerprint(v));
       } else if(typeof v==="function" && v._fnExpr!=null){
         // Guard against recursive/self-referential function definitions.
         const fnKey=k+":"+(v._fnName||"");
