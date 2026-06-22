@@ -1210,6 +1210,7 @@ function domainColorScene(label, re, im, R, palette){
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
+  if(palette==="glow") tr.props.matUnlit=true;             // pure colour, no lighting tint
   const M=`hypot((${re}),(${im}))`, A=`atan2((${im}),(${re}))`;
   const V=`(${M}/(${M}+1))`;                                   // 0 at a zero, →1 far out
   const [r,g,b]= palette==="glow" ? _glowColorExprs(M, A) : _phaseColorExprs(A, V, palette);
@@ -1311,17 +1312,17 @@ function _littlewoodField(maxD){
   return F;
 }
 function littlewoodFieldScene(){
-  const maxD=4, R=2.2;
+  const maxD=6, R=2.2;
   const F=_littlewoodField(maxD);
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="coefficient roots as a live field";cam.props.showOpenBtn=false;
   cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
   cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
   const va=makeNode("slider",{x:40,y:240});va.name="va";va.label="va · coeff A";va.value=1;
-  va.props.min="-2";va.props.max="2";va.props.step="0.1";
+  va.props.min="-2";va.props.max="2";va.props.step="0.01";
   const vb=makeNode("slider",{x:40,y:330});vb.name="vb";vb.label="vb · coeff B";vb.value=-1;
-  vb.props.min="-2";vb.props.max="2";vb.props.step="0.1";
-  const deg=makeNode("slider",{x:40,y:420});deg.name="deg";deg.label="deg · max degree";deg.value=4;
+  vb.props.min="-2";vb.props.max="2";vb.props.step="0.01";
+  const deg=makeNode("slider",{x:40,y:420});deg.name="deg";deg.label="deg · max degree";deg.value=6;
   deg.props.min="2";deg.props.max=String(maxD);deg.props.step="1";
   const eps=makeNode("slider",{x:40,y:510});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
   eps.props.min="0.004";eps.props.max="0.25";eps.props.step="0.002";
@@ -1330,7 +1331,7 @@ function littlewoodFieldScene(){
   const tr=makeNode("transformer",{x:720,y:160});tr.label="min |poly|";tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
-  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";tr.props.matUnlit=true;
   const V=`(eps/(eps+(${F})))`;                            // glow: 1 at a root, fading out
   tr.props.matR=`0.55*${V}`;tr.props.matG=`0.85*${V}`;tr.props.matB=`${V}`;
   tr.attachments=[fn.id,va.id,vb.id,deg.id,eps.id];cam.attachments=[tr.id];
@@ -1506,7 +1507,7 @@ function dcMovableRootsScene(){
   const tr=makeNode("transformer",{x:720,y:160});tr.label="f(z) zeros";tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
-  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";tr.props.matUnlit=true;
   const M="hypot(x-ax1,y-ay1)*hypot(x-ax2,y-ay2)*hypot(x-ax3,y-ay3)";
   const A="atan2(y-ay1,x-ax1)+atan2(y-ay2,x-ax2)+atan2(y-ay3,x-ax3)";
   const [r,g,b]=_glowColorExprs(M, A);

@@ -48,6 +48,10 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   // byte-identical to before (no regression). Never lit for the wireframe pass.
   const shade = (!wireframe && opts && opts.shade) ? opts.shade : null;
   const lit = !!shade;
+  // Unlit material: the surface keeps its rgb/ramp albedo path but skips lighting
+  // entirely, so the colour is shown exactly as authored (used by the domain-colour
+  // / glow plots where lighting would tint the pure colours).
+  const unlit = lit && !!shade.unlit;
   // Wired scene lights (resolved descriptors). When none, the lit path keeps its
   // original single fixed key light, so existing projects shade identically.
   const lights = (lit && shade.lights && shade.lights.length) ? shade.lights : null;
@@ -198,7 +202,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     // world space and are taken into view with the built-in viewMatrix, so no CPU
     // normal-matrix refresh is needed for lights. Each light's colour already folds
     // in its intensity. Falls back below to the single key light when none wired.
-    const lightAccumGLSL = lights ? `vec3 col = uAmb*albedo;\n` + lights.map((lt,i)=> lt.kind==="point"
+    const lightAccumGLSL = unlit ? `vec3 col = albedo;` : lights ? `vec3 col = uAmb*albedo;\n` + lights.map((lt,i)=> lt.kind==="point"
       ? `        { vec3 _pp=(viewMatrix*vec4(uL${i}Pos,1.0)).xyz; vec3 _dl=_pp-vViewPos;
           float _r2=dot(_dl,_dl); vec3 L=_dl*inversesqrt(max(_r2,1e-12));
           float _att=1.0/(1.0+uL${i}Fall*_r2);

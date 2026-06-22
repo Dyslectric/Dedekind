@@ -269,7 +269,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     }
     const specG=tp.matSpec?exprToGLSL(tp.matSpec,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
     const emitG=tp.matEmit?exprToGLSL(tp.matEmit,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
-    const shade={ fx:fxG, fy:fyG, specExpr:specG, emitExpr:emitG, emitColor:tp.matEmitColor };
+    const shade={ fx:fxG, fy:fyG, specExpr:specG, emitExpr:emitG, emitColor:tp.matEmitColor, unlit:tp.matUnlit===true };
     const uvObj={ scaleU:resolveNum(tp.uvScaleU,scope,1), scaleV:resolveNum(tp.uvScaleV,scope,1),
                   offU:resolveNum(tp.uvOffU,scope,0), offV:resolveNum(tp.uvOffV,scope,0),
                   rot:resolveNum(tp.uvRot,scope,0) };
