@@ -991,7 +991,7 @@ function implicitTexScene(){
   sun.attachments=[ph.id];
   const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch · triplanar";tr.color="#c6a0f6";
   tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
-  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.45";tr.props.matNormalStrength="0.6";
+  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.45";tr.props.matNormalStrength="0.9";
   tr.attachments=[eq.id,tex.id,nrm.id];cam.attachments=[tr.id,lamp.id,sun.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[tM.id]:tM,[ph.id]:ph,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -1094,7 +1094,7 @@ function texSchwarzScene(){
   const sun=makeNode("light",{x:1080,y:300});sun.label="sun";sun.color="#8fb7ff";sun.props.kind="directional";sun.props.color="#9fc0ff";sun.props.intensity="0.5";sun.props.dirX="-0.4";sun.props.dirY="-0.3";sun.props.dirZ="0.7";
   const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch · triplanar";tr.color="#e6c9a8";
   tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
-  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.5";tr.props.matNormalStrength="0.7";
+  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.5";tr.props.matNormalStrength="0.9";
   tr.attachments=[eq.id,tex.id,nrm.id];cam.attachments=[tr.id,lamp.id,sun.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[ph.id]:ph,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
 }

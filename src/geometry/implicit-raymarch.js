@@ -182,12 +182,16 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
     vec3 triplanarNormal(vec3 mp, vec3 nW){
       vec3 nM = vec3(nW.x, -nW.z, nW.y);
       vec3 bw = abs(nM); bw *= bw; bw /= max(bw.x+bw.y+bw.z, 1e-4);
-      vec2 ox = (texture2D(uNormTex, mp.yz*uTriScale).xy*2.0-1.0)*uNormStrength;
-      vec2 oy = (texture2D(uNormTex, mp.zx*uTriScale).xy*2.0-1.0)*uNormStrength;
-      vec2 oz = (texture2D(uNormTex, mp.xy*uTriScale).xy*2.0-1.0)*uNormStrength;
+      vec2 ox = texture2D(uNormTex, mp.yz*uTriScale).xy*2.0-1.0;
+      vec2 oy = texture2D(uNormTex, mp.zx*uTriScale).xy*2.0-1.0;
+      vec2 oz = texture2D(uNormTex, mp.xy*uTriScale).xy*2.0-1.0;
       vec3 pert = vec3(0.0, ox.x, ox.y)*bw.x   // plane X spans (y,z)
                 + vec3(oy.y, 0.0, oy.x)*bw.y   // plane Y spans (z,x)
                 + vec3(oz.x, oz.y, 0.0)*bw.z;  // plane Z spans (x,y)
+      // Project the perturbation onto the surface's tangent plane so ALL of it
+      // tilts the normal (any component along nM would just be lost to normalize),
+      // then scale up so the relief actually reads under lighting.
+      pert = (pert - nM*dot(nM, pert)) * (1.8*uNormStrength);
       vec3 nP = normalize(nM + pert);
       return normalize(vec3(nP.x, nP.z, -nP.y));
     }` : ""}
