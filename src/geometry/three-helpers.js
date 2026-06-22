@@ -280,15 +280,21 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         ${lightAccumGLSL}
         ${emitExpr ? `col += clamp(${emitExpr}, 0.0, 8.0) * uEmitColor;` : ""}
         col = pow(clamp(col,0.0,1.0), vec3(1.0/2.2));
-        gl_FragColor = vec4(col, 0.92);
+        gl_FragColor = vec4(col, 1.0);
       }`;
   }
 
+  // Lit surfaces are opaque: they output alpha 1, so they must NOT enter the
+  // transparent pass. A double-sided translucent surface draws its front and back
+  // faces in geometry order and blends them, so when the camera flips above/below
+  // the surface that order reverses and the shading visibly jumps. Opaque +
+  // depth-buffered sorts per fragment and is stable from any angle. Non-lit
+  // gradient/flat surfaces keep their slight translucency.
   const mat = new THREE.ShaderMaterial({
     uniforms,
     vertexShader: lit ? litVert : vert,
     fragmentShader: lit ? litFrag : frag,
-    side:THREE.DoubleSide, transparent:true, wireframe:!!wireframe });
+    side:THREE.DoubleSide, transparent:!lit, depthWrite:true, wireframe:!!wireframe });
   // The screen-space-derivative fallback (dFdx/dFdy) needs the derivatives
   // extension on WebGL1; harmless/ignored on WebGL2 where they're core.
   if(lit) mat.extensions = { derivatives: true };

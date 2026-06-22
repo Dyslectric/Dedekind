@@ -1184,10 +1184,12 @@ function _phaseColorExprs(A, V, palette){
 // Reads as "white points on a hued field that fades out", the inverse of the classic
 // black-zero portrait. Given the modulus expression M and argument A.
 function _glowColorExprs(M, A){
+  // Halo hue: three saturated anchors red/green/blue 120° apart (no white anchor —
+  // the white comes only from the core where the saturation goes to 0).
   const w=(off)=>`(0.5+0.5*cos((${A})-${off}))^3`;          // ^3 → punchier, more saturated
-  const wR=w("0"), wG=w("1.5708"), wB=w("3.14159"), wW=w("4.71239");
-  const den=`((${wR})+(${wG})+(${wB})+(${wW}))`;
-  const hR=`((${wR})+(${wW}))/${den}`, hG=`((${wG})+(${wW}))/${den}`, hB=`((${wB})+(${wW}))/${den}`;
+  const wR=w("0"), wG=w("2.0944"), wB=w("4.18879");
+  const den=`((${wR})+(${wG})+(${wB}))`;
+  const hR=`(${wR})/${den}`, hG=`(${wG})/${den}`, hB=`(${wB})/${den}`;
   const b=`(0.6/(0.6+(${M})))`;                             // brightness: 1 at a zero, soft falloff
   const s=`((${M})/((${M})+0.14))`;                         // saturation: 0 at a zero (white core)
   return [
@@ -1297,10 +1299,13 @@ function _littlewoodField(maxD){
     return {re:re.join("")||"0", im:im.join("")||"0"}; };
   const ri=[]; for(let k=0;k<=maxD;k++) ri.push(reim(k));
   const terms=[];
-  for(let d=2; d<=maxD; d++){ const combos=1<<d;          // c_d=+1, c_0..c_{d-1} vary
+  // Each coefficient is one of two slider-set values, va or vb (so va=1, vb=-1 are
+  // the Littlewood polynomials; va=1, vb=0 the Newman polynomials; any pair works).
+  // The leading coefficient is fixed to va to drop the global-scale redundancy.
+  for(let d=2; d<=maxD; d++){ const combos=1<<d;          // c_0..c_{d-1} each pick va/vb
     const gate=`+1e6*max(0,${d}-deg)`;                     // off when deg < d
-    for(let c=0;c<combos;c++){ const re=[`(${ri[d].re})`], im=[`(${ri[d].im})`];
-      for(let k=0;k<d;k++){ const s=((c>>k)&1)?"+":"-"; re.push(`${s}(${ri[k].re})`); im.push(`${s}(${ri[k].im})`); }
+    for(let c=0;c<combos;c++){ const re=[`va*(${ri[d].re})`], im=[`va*(${ri[d].im})`];
+      for(let k=0;k<d;k++){ const v=((c>>k)&1)?"va":"vb"; re.push(`+${v}*(${ri[k].re})`); im.push(`+${v}*(${ri[k].im})`); }
       terms.push(`((${re.join("")})^2+(${im.join("")})^2${gate})`); } }
   let F=terms[0]; for(let t=1;t<terms.length;t++) F=`min(${F},${terms[t]})`;
   return F;
@@ -1309,23 +1314,27 @@ function littlewoodFieldScene(){
   const maxD=4, R=2.2;
   const F=_littlewoodField(maxD);
   const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="±1 roots as a live field";cam.props.showOpenBtn=false;
+  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="coefficient roots as a live field";cam.props.showOpenBtn=false;
   cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
   cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
-  const deg=makeNode("slider",{x:40,y:300});deg.name="deg";deg.label="deg · max degree";deg.value=4;
+  const va=makeNode("slider",{x:40,y:240});va.name="va";va.label="va · coeff A";va.value=1;
+  va.props.min="-2";va.props.max="2";va.props.step="0.1";
+  const vb=makeNode("slider",{x:40,y:330});vb.name="vb";vb.label="vb · coeff B";vb.value=-1;
+  vb.props.min="-2";vb.props.max="2";vb.props.step="0.1";
+  const deg=makeNode("slider",{x:40,y:420});deg.name="deg";deg.label="deg · max degree";deg.value=4;
   deg.props.min="2";deg.props.max=String(maxD);deg.props.step="1";
-  const eps=makeNode("slider",{x:40,y:420});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
+  const eps=makeNode("slider",{x:40,y:510});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
   eps.props.min="0.004";eps.props.max="0.25";eps.props.step="0.002";
   const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
   fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";
-  const tr=makeNode("transformer",{x:720,y:160});tr.label="min |±1 poly|";tr.color="#8aadf4";
+  const tr=makeNode("transformer",{x:720,y:160});tr.label="min |poly|";tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
   const V=`(eps/(eps+(${F})))`;                            // glow: 1 at a root, fading out
   tr.props.matR=`0.55*${V}`;tr.props.matG=`0.85*${V}`;tr.props.matB=`${V}`;
-  tr.attachments=[fn.id,deg.id,eps.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[deg.id]:deg,[eps.id]:eps},camId:cam.id,animated:false};
+  tr.attachments=[fn.id,va.id,vb.id,deg.id,eps.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[va.id]:va,[vb.id]:vb,[deg.id]:deg,[eps.id]:eps},camId:cam.id,animated:false};
 }
 
 // ── Groups, symmetry and winding ─────────────────────────────────────────────
