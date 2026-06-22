@@ -1179,6 +1179,24 @@ function _phaseColorExprs(A, V, palette){
   ];
 }
 
+// Glow domain colouring: a WHITE core at each zero, a saturated red/green/blue/white
+// halo coloured by the argument, and brightness that falls off as the modulus grows.
+// Reads as "white points on a hued field that fades out", the inverse of the classic
+// black-zero portrait. Given the modulus expression M and argument A.
+function _glowColorExprs(M, A){
+  const w=(off)=>`(0.5+0.5*cos((${A})-${off}))^3`;          // ^3 → punchier, more saturated
+  const wR=w("0"), wG=w("1.5708"), wB=w("3.14159"), wW=w("4.71239");
+  const den=`((${wR})+(${wG})+(${wB})+(${wW}))`;
+  const hR=`((${wR})+(${wW}))/${den}`, hG=`((${wG})+(${wW}))/${den}`, hB=`((${wB})+(${wW}))/${den}`;
+  const b=`(0.6/(0.6+(${M})))`;                             // brightness: 1 at a zero, soft falloff
+  const s=`((${M})/((${M})+0.14))`;                         // saturation: 0 at a zero (white core)
+  return [
+    `${b}*(1-(${s})*(1-(${hR})))`,
+    `${b}*(1-(${s})*(1-(${hG})))`,
+    `${b}*(1-(${s})*(1-(${hB})))`,
+  ];
+}
+
 function domainColorScene(label, re, im, R, palette){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label=label;
@@ -1192,7 +1210,7 @@ function domainColorScene(label, re, im, R, palette){
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
   const M=`hypot((${re}),(${im}))`, A=`atan2((${im}),(${re}))`;
   const V=`(${M}/(${M}+1))`;                                   // 0 at a zero, →1 far out
-  const [r,g,b]=_phaseColorExprs(A, V, palette);
+  const [r,g,b]= palette==="glow" ? _glowColorExprs(M, A) : _phaseColorExprs(A, V, palette);
   tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
   tr.attachments=[fn.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
@@ -1202,9 +1220,9 @@ function dcIdentityScene(){ return domainColorScene("f(z) = z", "x", "y", 3); }
 // z² : a double zero at the origin, the hue winds twice.
 function dcSquareScene(){ return domainColorScene("f(z) = z²", "x^2-y^2", "2*x*y", 2.2); }
 // z⁵ − 1 : the five fifth-roots of unity, evenly spaced on the unit circle.
-function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x^3*y^2+5*x*y^4-1", "5*x^4*y-10*x^2*y^3+y^5", 1.6, "rgbw"); }
+function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x^3*y^2+5*x*y^4-1", "5*x^4*y-10*x^2*y^3+y^5", 1.6, "glow"); }
 // z⁵ − z − 1 : five roots, but a quintic with no solution in radicals (Abel–Ruffini).
-function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7, "rgbw"); }
+function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7, "glow"); }
 
 // ── Littlewood polynomials: roots of every ±1-coefficient polynomial ─────────
 // All polynomials whose coefficients are +1 or -1 (leading coefficient fixed to
@@ -1267,29 +1285,36 @@ function littlewoodScene(){
 // exponentially with degree — practical only to a low degree (here 4), which shows
 // the early structure rather than the full fractal. Re/Im of z^k are written as
 // flat real polynomials in x,y so the expression stays a few kilobytes.
-function _littlewoodField(D){
+// Each degree-d term is gated by `+1e6*max(0, d - deg)`: when the slider deg is
+// below a term's degree d the term blows up and the min ignores it, so the degree
+// slider chooses how many degrees of ±1 polynomials contribute, live. The gate is a
+// shader uniform, so dragging it just updates a uniform (no rebuild).
+function _littlewoodField(maxD){
   const binom=(n,r)=>{ let v=1; for(let i=0;i<r;i++) v=v*(n-i)/(i+1); return Math.round(v); };
   const reim=k=>{ const re=[], im=[];
     for(let j=0;2*j<=k;j++)   re.push(`${j%2?"-":"+"}${binom(k,2*j)}*x^${k-2*j}*y^${2*j}`);
     for(let j=0;2*j+1<=k;j++) im.push(`${j%2?"-":"+"}${binom(k,2*j+1)}*x^${k-2*j-1}*y^${2*j+1}`);
     return {re:re.join("")||"0", im:im.join("")||"0"}; };
-  const ri=[]; for(let k=0;k<=D;k++) ri.push(reim(k));
+  const ri=[]; for(let k=0;k<=maxD;k++) ri.push(reim(k));
   const terms=[];
-  for(let d=2; d<=D; d++){ const combos=1<<d;             // c_d=+1, c_0..c_{d-1} vary
+  for(let d=2; d<=maxD; d++){ const combos=1<<d;          // c_d=+1, c_0..c_{d-1} vary
+    const gate=`+1e6*max(0,${d}-deg)`;                     // off when deg < d
     for(let c=0;c<combos;c++){ const re=[`(${ri[d].re})`], im=[`(${ri[d].im})`];
       for(let k=0;k<d;k++){ const s=((c>>k)&1)?"+":"-"; re.push(`${s}(${ri[k].re})`); im.push(`${s}(${ri[k].im})`); }
-      terms.push(`((${re.join("")})^2+(${im.join("")})^2)`); } }
+      terms.push(`((${re.join("")})^2+(${im.join("")})^2${gate})`); } }
   let F=terms[0]; for(let t=1;t<terms.length;t++) F=`min(${F},${terms[t]})`;
   return F;
 }
 function littlewoodFieldScene(){
-  const D=4, R=2.2;
-  const F=_littlewoodField(D);
+  const maxD=4, R=2.2;
+  const F=_littlewoodField(maxD);
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="±1 roots as a live field";cam.props.showOpenBtn=false;
   cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
   cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
-  const eps=makeNode("slider",{x:40,y:340});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
+  const deg=makeNode("slider",{x:40,y:300});deg.name="deg";deg.label="deg · max degree";deg.value=4;
+  deg.props.min="2";deg.props.max=String(maxD);deg.props.step="1";
+  const eps=makeNode("slider",{x:40,y:420});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
   eps.props.min="0.004";eps.props.max="0.25";eps.props.step="0.002";
   const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
   fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";
@@ -1299,8 +1324,8 @@ function littlewoodFieldScene(){
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
   const V=`(eps/(eps+(${F})))`;                            // glow: 1 at a root, fading out
   tr.props.matR=`0.55*${V}`;tr.props.matG=`0.85*${V}`;tr.props.matB=`${V}`;
-  tr.attachments=[fn.id,eps.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[eps.id]:eps},camId:cam.id,animated:false};
+  tr.attachments=[fn.id,deg.id,eps.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[deg.id]:deg,[eps.id]:eps},camId:cam.id,animated:false};
 }
 
 // ── Groups, symmetry and winding ─────────────────────────────────────────────
@@ -1475,8 +1500,7 @@ function dcMovableRootsScene(){
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
   const M="hypot(x-ax1,y-ay1)*hypot(x-ax2,y-ay2)*hypot(x-ax3,y-ay3)";
   const A="atan2(y-ay1,x-ax1)+atan2(y-ay2,x-ax2)+atan2(y-ay3,x-ax3)";
-  const V=`((${M})/((${M})+1))`;
-  const [r,g,b]=_phaseColorExprs(A, V, "rgbw");
+  const [r,g,b]=_glowColorExprs(M, A);
   tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
   tr.attachments=[fn.id,ax1.id,ay1.id,ax2.id,ay2.id,ax3.id,ay3.id];
   cam.attachments=[tr.id];

@@ -62,6 +62,31 @@ function surfTranspiles(node, scope){
   return ok;
 }
 
+// Memoized check: will a GRAPH transformer render on the GPU (buildTransformerGraphGPU)?
+// It does when its wired fnMap output expressions AND its material colour expressions
+// all transpile to GLSL. On that path the wired sliders/animators are live shader
+// uniforms (position in the vertex shader, colour in the fragment shader), so their
+// VALUES must stay out of the cache signature — only the baked domain bounds / colour
+// ranges do. Dragging a colour slider then refreshes a uniform instead of forcing a
+// full CPU re-transpile + rebuild every frame.
+const _graphGlslCache = new Map();
+function graphTranspiles(p, fnMapNode, scope){
+  if((p.mode||"graph")!=="graph") return false;
+  const fnTable=fnTableFromScope(scope), fnSig=fnTableSig(fnTable);
+  const outs=[]; if(fnMapNode){ const od=Math.max(1,+(fnMapNode.props?.outDim||1)); for(let k=0;k<od;k++) outs.push(fnMapNode.props?.["out"+k] ?? ""); }
+  const mats=[p.matColor,p.matR,p.matG,p.matB,p.matSpec,p.matEmit].filter(e=>e!=null&&e!=="");
+  const key=`${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${outs.join("~")}|${mats.join("~")}|${fnSig}`;
+  const hit=_graphGlslCache.get(key); if(hit!==undefined) return hit;
+  let ok=true;
+  try{
+    const ain=new Set([(p.inAxis0||"x"),(p.inAxis1||"y"),(p.inAxis2||"z"),"x","y","z","u","v"].map(s=>String(s||"").trim()).filter(Boolean));
+    for(const e of outs){ if(e!=null&&e!==""&&exprToGLSL(e,ain,new Set(),"",fnTable)==null){ ok=false; break; } }
+    if(ok){ const amat=new Set(["x","y","z"]); for(const e of mats){ if(exprToGLSL(e,amat,new Set(),"",fnTable)==null){ ok=false; break; } } }
+  }catch{ ok=false; }
+  _graphGlslCache.set(key, ok);
+  return ok;
+}
+
 // ── Scope resolution ─────────────────────────────────────────────────────────
 // `node.attachments` lists the node's UPSTREAM dependencies. A node may only
 // evaluate the scalars/functions/exprs that are DIRECTLY attached to it — not
@@ -277,7 +302,13 @@ function geomSignature(node, scope){
       // function-only signature so only structural/expression changes rebuild;
       // value changes flow through updateGpuUniforms. The mesh-fallback path
       // (non-transpilable) keeps the full scopeSig so it rebuilds on value change.
-      p.__eqRaymarch ? scopeSigFns(node,scope) : scopeSig(node,scope)
+      // A GPU graph transformer (p.__graphGPU) is the same story: position and colour
+      // scalars are live uniforms, so only the baked domain bounds / colour ranges
+      // fold into the signature; the rest ride uniforms (no per-drag re-transpile).
+      p.__eqRaymarch ? scopeSigFns(node,scope)
+        : p.__graphGPU
+          ? scopeSigFns(node,scope)+"|gb:"+[p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,p.colorMin,p.colorMax,p.matColorMin,p.matColorMax].map(e=>resolveNum(e,scope,NaN)).join(",")
+          : scopeSig(node,scope)
     }`;
     case "pointSeq": return `ps|${c}|${p.points}|${p.ptsList||""}|${p.edgeList||""}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${scopeSig(node,scope)}`;
     case "quiver2d": return `q2|${c}|${p.exprX}|${p.exprY}|${resolveNum(p.gridN,scope,12)}|${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
@@ -301,13 +332,14 @@ function plotSignature(node, p, scope, nodes, animVals){
     const structScopes=[];
     const animV=animVals||{};
     const eqDeps=[];
+    let fnMapNode=null, hasParam=false, hasPoints=false;
     for(const depId of (node.attachments||[])){
       const dep=nodes[depId]; if(!dep) continue;
       if(dep.type==="texture"||dep.type==="video"){ texSig+=`${dep.type}|${dep.props?.role||"color"}|${dep.props?.src||""}|${dep.props?.filter||""}|${dep.props?.wrap||""};`; }
-      else if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="fnMap"){ fnMapNode=dep; fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="equation"){ eqDeps.push(dep); structScopes.push(resolveScope(dep.id,nodes,animV)); }
-      else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
-      else if(dep.type==="points"){ const q=dep.props; paramSig=`pts|${q.kind}|${q.mode}|${q.listPoints}|${q.idxPoint}|${q.idxCount}|${q.recInit}|${q.recStep}|${q.recCount}|${q.listGlyphs}|${q.idxGlyph}|${q.idxGlyphCount}|${q.recGlyphInit}|${q.recGlyphStep}|${q.recGlyphCount}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="paramSpace"){ hasParam=true; const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="points"){ hasPoints=true; const q=dep.props; paramSig=`pts|${q.kind}|${q.mode}|${q.listPoints}|${q.idxPoint}|${q.idxCount}|${q.recInit}|${q.recStep}|${q.recCount}|${q.listGlyphs}|${q.idxGlyph}|${q.idxGlyphCount}|${q.recGlyphInit}|${q.recGlyphStep}|${q.recGlyphCount}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
     }
     if(eqDeps.length){
       // A single transpilable equation rides the GPU raymarch path: its scalars are
@@ -325,8 +357,15 @@ function plotSignature(node, p, scope, nodes, animVals){
         }
       }
     }
-    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch};
     sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);
+    // A LIT graph transformer with per-fragment rgb material colour (the domain-
+    // colouring pattern) renders via the GPU graph path when its expressions
+    // transpile; then its position/colour scalars are live uniforms. Gated to this
+    // pattern so the CPU-sampled 2-D graph transformers (curves) are untouched.
+    const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
+      && p.shading==="lit" && p.matColorMode==="rgb"
+      && graphTranspiles(p, fnMapNode, sigScope);
+    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU};
   }
   return geomSignature({...node,props:pSig},sigScope);
 }
