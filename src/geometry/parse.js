@@ -390,9 +390,28 @@ function parsePointsExplicit(props, scope){
   }
   const mode = props.mode || "list";
   const useColor = !!props.useColor;
+  if(mode === "fromlist")  return pointsFromList(props, scope, useColor);
   if(mode === "index")     return pointsIndex(props, scope, useColor);
   if(mode === "recursive") return pointsRecursive(props, scope, useColor);
   return pointsList(props, scope, useColor);
+}
+
+// fromlist: positions come from a wired list (a vector list — rows [x,y[,z]]),
+// referenced by name. The points aren't copied into this node; they ARE the list,
+// so editing the list updates every consumer. A 4th column is the colour scalar
+// when colour is on. The list value is read straight from scope.
+function pointsFromList(props, scope, useColor){
+  const arr = props.ptsList ? scope[props.ptsList] : null;
+  if(!Array.isArray(arr)) return { pts:[], cols:useColor?[]:null };
+  const pts=[], cols=useColor?[]:null;
+  for(const row of arr){
+    if(!Array.isArray(row)) continue;                 // need vector rows [x,y(,z)]
+    const x=+row[0], y=+row[1], z=row.length>2?+row[2]:0;
+    if(!isFinite(x)||!isFinite(y)) continue;
+    pts.push([x,y,isFinite(z)?z:0]);
+    if(useColor){ const c=row.length>3?+row[3]:0; cols.push(isFinite(c)?c:0); }
+  }
+  return { pts, cols };
 }
 
 // list: rows of "x, y[, z][, color]" separated by newlines OR by ';'. A single

@@ -5,7 +5,7 @@ import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/
 import { disposeObjs, addPlotObj, updateGpuUniforms } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
-  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildRawGeom3d
+  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildRawGeom3d, buildSegments3d
 } from "./builders.js";
 import { buildFlowFromSeeds } from "./flow.js";
 import { buildTransformer, sampleParamSpace } from "./transformer.js";
@@ -313,6 +313,16 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       }
       objs=buildPointSeqGPU(pts,node.color||"#ff70bb",resolveNum(p.radius,scope,0.07),p.drawLines!==false,cols);
       if(!objs.length) objs=buildPointSeq3d(pts,node.color||"#ff70bb",resolveNum(p.radius,scope,0.07),p.drawLines!==false);
+      // Edges by index: a wired index-pair list [[i,j],…] (1-based, mathjs-style)
+      // connects points of the vertex list — referenced, not duplicated. So one
+      // shared list of vertices can carry many edge sets.
+      const exEdges=p.__explicit&&p.__explicit.edgeList;
+      if(exEdges && Array.isArray(scope[exEdges]) && pts.length){
+        const segs=[];
+        for(const e of scope[exEdges]){ if(!Array.isArray(e)||e.length<2) continue;
+          const a=pts[Math.round(e[0])-1], b=pts[Math.round(e[1])-1]; if(a&&b) segs.push([a,b]); }
+        if(segs.length){ const seg=buildSegments3d(segs,node.color||"#ff70bb"); if(seg.length) objs=[...objs,...seg]; }
+      }
       if(p.sequenced){ objs._sequenced=true; applySequence(objs,node,scope); }
     }
     if(node.type==="quiver3d"){const gridN=Math.max(2,Math.min(48,resolveNum(p.gridN,scope,5)));objs=buildQuiver3d(p,p.exprX,p.exprY,p.exprZ,gridN,resolveNum(p.xMin,scope,-3),resolveNum(p.xMax,scope,3),resolveNum(p.yMin,scope,-3),resolveNum(p.yMax,scope,3),resolveNum(p.zMin,scope,-3),resolveNum(p.zMax,scope,3),node.color||"#5b9cf6",scope,p.normalize!==false);}

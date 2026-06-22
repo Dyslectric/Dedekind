@@ -265,7 +265,7 @@ function geomSignature(node, scope){
       // (non-transpilable) keeps the full scopeSig so it rebuilds on value change.
       p.__eqRaymarch ? scopeSigFns(node,scope) : scopeSig(node,scope)
     }`;
-    case "pointSeq": return `ps|${c}|${p.points}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${scopeSig(node,scope)}`;
+    case "pointSeq": return `ps|${c}|${p.points}|${p.ptsList||""}|${p.edgeList||""}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${p.sequenced?1:0}|${p.colorMode||"off"}|${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${scopeSig(node,scope)}`;
     case "quiver2d": return `q2|${c}|${p.exprX}|${p.exprY}|${resolveNum(p.gridN,scope,12)}|${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${resolveNum(p.xMin,scope,-3)}|${resolveNum(p.xMax,scope,3)}|${resolveNum(p.yMin,scope,-3)}|${resolveNum(p.yMax,scope,3)}|${resolveNum(p.zMin,scope,-3)}|${resolveNum(p.zMax,scope,3)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "glyphField": return `gl|${c}|${p.pairs}|${resolveNum(p.arrowLen,scope,0.5)}|${p.lenMode||(p.normalize===false?"scaled":"uniform")}|${p.anim||"crest"}|${resolveNum(p.speed,scope,1)}|${p.crestColor||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
@@ -426,7 +426,8 @@ function nodeExprText(node){
     p.out0,p.out1,p.out2,p.out3,p.data,p.colorExpr,p.colorMin,p.colorMax,p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,
     p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig,
     p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA,
-    p.matColor,p.matSpec,p.matEmit,p.matR,p.matG,p.matB,p.colorR,p.colorG,p.colorB];
+    p.matColor,p.matSpec,p.matEmit,p.matR,p.matG,p.matB,p.colorR,p.colorG,p.colorB,
+    p.ptsList,p.edgeList];
   return fields.filter(e=>typeof e==="string"&&e.length).join("\u0001");
 }
 // Extract the set of free variable names appearing in a node's expressions

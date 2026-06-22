@@ -785,6 +785,25 @@ function brickSphereScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[tex.id]:tex,[nrm.id]:nrm,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
+// LISTS: a cube as two shared lists — a vertex list and an edge list of index
+// pairs (1-based). The edges REFERENCE the vertices by index rather than copying
+// coordinates, so the eight corners are one source of truth: edit a vertex and
+// every edge that touches it moves. This is the first-class-list foundation.
+function listCubeScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="cube from lists";
+  cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="22";
+  const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
+  V.props.expr="[[-1.4,-1.4,-1.4],[1.4,-1.4,-1.4],[1.4,1.4,-1.4],[-1.4,1.4,-1.4],[-1.4,-1.4,1.4],[1.4,-1.4,1.4],[1.4,1.4,1.4],[-1.4,1.4,1.4]]";
+  const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
+  E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
+  const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
+  pts.props.drawLines=false;pts.props.radius="6";
+  pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -829,6 +848,7 @@ Object.assign(SCENES, {
   "lights": lightsScene,
   "lights-param": lightsParamScene,
   "brick-sphere": brickSphereScene,
+  "list-cube": listCubeScene,
   "curve-rgb": curveRgbScene,
 });
 

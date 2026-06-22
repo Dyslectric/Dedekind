@@ -38,6 +38,7 @@ export function PointsEditor({ node, scope, onChange, meta }){
       <PR label="source">
         <select value={mode} onChange={e=>set("mode",e.target.value)} style={{...S.inp,width:"100%"}}>
           <option value="list">list (explicit entries)</option>
+          {!isGlyph && <option value="fromlist">from a List node (by reference)</option>}
           <option value="index">by index (i, j, k, n)</option>
           <option value="recursive">recursive (x[n-k]…)</option>
         </select>
@@ -65,6 +66,16 @@ export function PointsEditor({ node, scope, onChange, meta }){
       </div>
       <MathInput v={node.props.listGlyphs||""} sc={scope} multiline onChange={v=>set("listGlyphs",v)}
         placeholder={useColor?"0, 0 | 1, 0 | 0\n1, 1 | 0, 1 | 1":"0, 0 | 1, 0\n1, 1 | 0, 1\n2, 0 | 1, 0"}/>
+    </Sec>}
+
+    {/* ── FROM LIST ── */}
+    {mode==="fromlist" && !isGlyph && <Sec title="Points (from a List)">
+      <div style={{fontSize:13,color:ui.uiFaint,marginBottom:5,lineHeight:1.6}}>
+        Wire a <strong>List</strong> node of vertices (rows <span style={{fontFamily:"monospace"}}>[x, y, z]</span>) into this node, then name it below. The points <em>are</em> the list — edit the list and every consumer updates. An optional edge list of <span style={{fontFamily:"monospace"}}>[i, j]</span> index pairs (1-based) draws segments between referenced vertices.
+      </div>
+      <PR label="vertices"><NameField v={node.props.ptsList||""} width={120} onChange={v=>set("ptsList",v)} placeholder="list name (e.g. V)"/></PR>
+      <PR label="edges"><NameField v={node.props.edgeList||""} width={120} onChange={v=>set("edgeList",v)} placeholder="index-pair list (optional)"/></PR>
+      {useColor && <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>A 4th column on each vertex row is read as the colour scalar.</div>}
     </Sec>}
 
     {/* ── INDEX ── */}

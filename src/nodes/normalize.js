@@ -71,6 +71,7 @@ function normalizeNode(node){
         __colExpr:p.colExpr, __colRecInit:p.colRecInit, __colRecStep:p.colRecStep,
         // raw explicit props so rebuild can re-parse with per-element color:
         __explicit:{ kind, mode, useColor,
+          ptsList:p.ptsList, edgeList:p.edgeList,
           listPoints:p.listPoints, idxPoint:p.idxPoint, idxCount:p.idxCount,
           recInit:p.recInit, recStep:p.recStep, recCount:p.recCount,
           listGlyphs:p.listGlyphs, idxGlyph:p.idxGlyph, idxGlyphCount:p.idxGlyphCount,
@@ -87,6 +88,9 @@ function normalizeNode(node){
       }
       return { type:"pointSeq", props:{
         points: legacy ? p.data : assemblePointText(p, mode), radius:p.radius, drawLines:p.drawLines,
+        // names of wired lists (vertices / edge index-pairs) for fromlist mode —
+        // carried so the signature folds the list contents and rebuilds on change.
+        ptsList:p.ptsList, edgeList:p.edgeList,
         // legacy gradient still available; when useColor we drive it from the slot
         colorMode: useColor ? "gradient" : (p.colorMode||"off"),
         colorExpr:p.colorExpr, colorLo:p.colorLo, colorHi:p.colorHi, colorMin:p.colorMin, colorMax:p.colorMax,
@@ -165,6 +169,9 @@ function stripGlyphRowColor(row, useColor){
 
 function assemblePointText(p, mode){
   const useColor=!!p.useColor;
+  // fromlist: positions live in a wired list, resolved from scope at build time
+  // (the 3D path reads __explicit). No static text to assemble.
+  if(mode==="fromlist") return "";
   if(mode==="index"){
     const tuple=p.idxPoint||"";
     const count=p.idxCount||"64";
