@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { DEFAULT_TEXTURE_SRC, DEFAULT_NORMAL_SRC } from "../nodes/textureDefault.js";
+import { DEFAULT_TEXTURE_SRC, DEFAULT_NORMAL_SRC, resolveBuiltinTexture } from "../nodes/textureDefault.js";
 
 // ── Texture sources ──────────────────────────────────────────────────────────
 // Image + video sources become THREE textures sampled by a surface's shader. The
@@ -40,6 +40,7 @@ function _store(key, tex){
 // fill in when the image finishes loading (three re-uploads on needsUpdate).
 function getStaticTexture(src, filter="linear", wrap="clamp", linear=false){
   if(!src) return null;
+  src = resolveBuiltinTexture(src) || src;       // "builtin:<name>" → its data-URI
   const key = `img|${src}|${filter}|${wrap}|${linear?"lin":"srgb"}`;
   const hit = _cache.get(key); if(hit) return hit;
   const tex = new THREE.Texture();

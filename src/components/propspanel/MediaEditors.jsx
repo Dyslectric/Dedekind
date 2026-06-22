@@ -1,6 +1,7 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { Sec, PR, ColorRow } from "../primitives.jsx";
 import { EI } from "../MathInput.jsx";
+import { BUILTIN_TEXTURES, resolveBuiltinTexture } from "../../nodes/textureDefault.js";
 
 // texture — a static image source (file upload, or a URL/data-URI), exposed as a
 // sampleable texture for a surface's material.
@@ -18,13 +19,19 @@ export function TextureEditor({ node, onChange }){
     <Sec title="Image">
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         <div style={{height:96,borderRadius:6,border:`1px solid ${ui.uiInputBorder}`,overflow:"hidden",
-          background:"#0008 url("+(src||"")+") center/contain no-repeat"}}/>
+          background:"#0008 url("+(resolveBuiltinTexture(src)||src||"")+") center/contain no-repeat"}}/>
         <label style={{...S.btnSm,textAlign:"center",cursor:"pointer",color:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>
           choose image…
           <input type="file" accept="image/*" onChange={onFile} style={{display:"none"}}/>
         </label>
+        <PR label="built-in">
+          <select value={src.startsWith("builtin:")?src:""} onChange={e=>e.target.value&&set("src",e.target.value)} style={{...S.inp,width:"100%"}}>
+            <option value="">— pick a built-in —</option>
+            {Object.keys(BUILTIN_TEXTURES).map(k=><option key={k} value={"builtin:"+k}>{k}</option>)}
+          </select>
+        </PR>
         <PR label="or URL">
-          <input value={src.startsWith("data:")||src.startsWith("blob:")?"":src} onChange={e=>set("src",e.target.value)}
+          <input value={src.startsWith("data:")||src.startsWith("blob:")||src.startsWith("builtin:")?"":src} onChange={e=>set("src",e.target.value)}
             placeholder="https://… or leave the default" style={{...S.inp,width:"100%"}}/>
         </PR>
         <div style={{fontSize:12,color:ui.uiFaint,lineHeight:1.5}}>

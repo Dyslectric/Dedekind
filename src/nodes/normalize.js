@@ -42,7 +42,7 @@ function normalizeNode(node){
           exprX:p.exprXu, exprY:p.exprYu, exprZ:p.exprZu,
           uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax, uRes:p.uRes, vRes:p.vRes,
           showWire:p.showWire, shading:p.shading,
-          matColorMode:p.matColorMode,
+          matColorMode:p.matColorMode, matNormalStrength:p.matNormalStrength,
           uvScaleU:p.uvScaleU, uvScaleV:p.uvScaleV, uvOffU:p.uvOffU, uvOffV:p.uvOffV, uvRot:p.uvRot,
         }};
       }

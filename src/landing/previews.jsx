@@ -753,6 +753,38 @@ function lightsParamScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
+// BRICK SPHERE: the classic shading test. A parametric sphere with a brick albedo
+// texture AND a matching brick normal map (both built-ins, referenced by id so the
+// project stays shareable). The geometry is a smooth sphere — every brick edge and
+// mortar groove is the normal map perturbing the lit normal. A warm point light
+// orbits it so the relief catches the light as it passes.
+function brickSphereScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="brick sphere";
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const ps=makeNode("paramSpace",{x:380,y:140});ps.label="sphere";ps.color="#e6c9a8";
+  ps.props.degree="2";
+  ps.props.exprXu="2*cos(u)*sin(v)";ps.props.exprYu="2*sin(u)*sin(v)";ps.props.exprZu="2*cos(v)";
+  ps.props.uMin="0";ps.props.uMax="2*pi";ps.props.vMin="0";ps.props.vMax="pi";ps.props.uRes="160";ps.props.vRes="100";
+  ps.props.showWire=false;ps.props.shading="lit";ps.props.matColorMode="texture";
+  ps.props.uvScaleU="6";ps.props.uvScaleV="3";ps.props.matNormalStrength="1.1";
+  const tex=makeNode("texture",{x:380,y:340});tex.label="brick";tex.color="#c98a6a";
+  tex.props.src="builtin:brick";tex.props.wrap="repeat";
+  const nrm=makeNode("texture",{x:380,y:470});nrm.label="brick normal";nrm.color="#a6da95";
+  nrm.props.role="normal";nrm.props.src="builtin:brick-normal";nrm.props.wrap="repeat";
+  const anim=makeNode("animator",{x:40,y:360});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="8";anim.props.loop="loop";anim.playing=true;
+  const warm=makeNode("light",{x:380,y:600});warm.label="orbit lamp";warm.color="#ffd28a";
+  warm.props.kind="point";warm.props.color="#ffdcb0";warm.props.intensity="2.4";warm.props.falloff="0.04";
+  warm.props.posX="4.5*cos(t)";warm.props.posY="4.5*sin(t)";warm.props.posZ="2.5";
+  warm.attachments=[anim.id];
+  const cool=makeNode("light",{x:380,y:740});cool.label="sky fill";cool.color="#8fb7ff";
+  cool.props.kind="directional";cool.props.color="#9fb8ff";cool.props.intensity="0.45";
+  cool.props.dirX="-0.4";cool.props.dirY="-0.3";cool.props.dirZ="0.7";
+  ps.attachments=[tex.id,nrm.id];cam.attachments=[ps.id,warm.id,cool.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[tex.id]:tex,[nrm.id]:nrm,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -796,6 +828,7 @@ Object.assign(SCENES, {
   "normal-map": normalMapScene,
   "lights": lightsScene,
   "lights-param": lightsParamScene,
+  "brick-sphere": brickSphereScene,
   "curve-rgb": curveRgbScene,
 });
 
