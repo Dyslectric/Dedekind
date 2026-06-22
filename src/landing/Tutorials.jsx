@@ -299,6 +299,32 @@ const SECTIONS = [
     ],
   },
   {
+    id: "groups",
+    title: "Groups and symmetry",
+    blurb: "A group is a set with a way to combine elements that has an identity and inverses. The cyclic groups, the whole numbers under addition mod n, are the simplest, and they draw themselves: evenly spaced points on a circle with one step repeated. These pages read group structure straight off the picture, stamping a single chord template over every element with the raw-geometry index mode from the editor.",
+    pages: [
+      {
+        slug: "cyclic-groups",
+        title: "Cyclic groups and star polygons",
+        summary: "Mark N points evenly on a circle and join each to the one K steps ahead. Whether you get a single star or several separate polygons is decided by one number, the greatest common divisor of N and K.",
+        steps: [
+          { heading: "Stepping around a circle", body: "Number N points 0 to N − 1 evenly around a circle. They are the elements of the cyclic group of order N, the whole numbers under addition mod N, with 0 at the top. Pick a step K and join each point i to the point K further on, i + K, counting mod N. Repeating the step is just adding K again and again. Here N = 12 and K = 5, one chord drawn from every point by a single index template.", kind: "star-polygon" },
+          { heading: "When one step reaches everything", body: "If K shares no common factor with N, then adding K over and over lands on every point before it returns to 0, so the one step K reaches the whole group and the chords close into a single unbroken star. With N = 12 and K = 5 that is a twelve-pointed star drawn in one stroke. Any K coprime to N does the same, which is why the cyclic group of order N has exactly as many single-step generators as there are numbers below N sharing no factor with it.", kind: "star-polygon" },
+          { heading: "When it reaches only a subgroup", body: "If K and N do share a common factor d, then adding K only ever reaches points a multiple of d apart, so it generates a subgroup rather than the whole group and the figure falls into d separate polygons. Drag to N = 12, K = 3 and three squares appear, since the gcd is 3; K = 4 gives four triangles, K = 8 also four. The number of separate polygons is exactly the greatest common divisor of N and K, each polygon is one coset of the subgroup, and the subgroup itself has N / d points. Polygons times points per polygon is N again, which is Lagrange's theorem drawn out: a subgroup's size always divides the group's.", kind: "star-polygon" },
+        ],
+      },
+      {
+        slug: "modular-multiplication",
+        title: "Modular multiplication",
+        summary: "Switch from adding a fixed step to multiplying by a fixed number. A chord from each point i to the point M · i makes the multiply-by-M map of the circle visible, and the chords crowd along a familiar curve.",
+        steps: [
+          { heading: "Multiply instead of add", body: "Keep the same N points and, instead of stepping by a fixed amount, send each point i to the point M · i, wrapping mod N. Drawing the chord from i to M · i for every point shows the whole multiply-by-M map at once. Because position on the circle is an angle, M · i wraps on its own and needs no separate remainder step. Here N = 200 and M = 2.", kind: "times-table" },
+          { heading: "A cardioid out of straight lines", body: "At M = 2 the chords crowd along a cardioid, the heart-shaped curve. No single chord is curved, but each one is tangent to the cardioid, so together they trace its outline, the curve they envelope. Raise M to 3 and a nephroid appears with two cusps, M = 4 gives three, and multiply-by-M in general envelopes an epicycloid with M − 1 cusps. The roots of unity sat on this same circle under addition; under multiplication the cyclic group draws a whole family of classical curves.", kind: "times-table" },
+        ],
+      },
+    ],
+  },
+  {
     id: "differential",
     title: "Differential geometry",
     blurb: "Smooth shape: parametric surfaces, the normal field, curvature, and surfaces built by motion.",
@@ -400,6 +426,16 @@ const SECTIONS = [
           { heading: "Count V − E + F", body: "Take vertices minus edges plus faces. For the cube: 8 − 12 + 6 = 2. That combination, V − E + F, is the Euler characteristic χ. It looks like a coincidence of the cube, until you try it on something else.", kind: "list-cube" },
           { heading: "A different solid, the same number", body: "Here is an octahedron, built the same way from a vertex list and an edge list: V = 6, E = 12, F = 8. Count again: 6 − 12 + 8 = 2. The same χ = 2 as the cube, even though it has different counts in every column.", kind: "tut-octa-list" },
           { heading: "And the simplest of all", body: "The tetrahedron is the smallest polyhedron there is: V = 4, E = 6, F = 4, so 4 − 6 + 4 = 2 once more. Three solids (cube, octahedron, tetrahedron) with three different vertex, edge, and face counts, and every one gives χ = 2. You get 2 for any convex polyhedron at all, because each is topologically a sphere; χ doesn't see the particular shape, only the surface underneath. Deform a polyhedron however you like short of tearing it and the number holds. That invariance, a number attached to a shape that survives deformation, is where algebraic topology begins.", kind: "tut-tetra-list" },
+        ],
+      },
+      {
+        slug: "winding-number",
+        title: "Winding number and degree",
+        summary: "How many times does a loop wrap around a point? That single integer is a topological invariant, unchanged by any deformation that never crosses the point, and it is the same count the domain-colouring hue wound around each zero.",
+        steps: [
+          { heading: "Counting times around", body: "Send the parameter t once around the circle and plot (cos w·t, sin w·t), lifting the curve upward by t so each loop is drawn at a new height instead of retracing the last. Count the loops as the curve climbs the grey axis: that number is the winding number, how many times the path wraps the axis. Here w = 3, three loops. Drag w to set it to any whole number.", kind: "winding" },
+          { heading: "An invariant you cannot deform away", body: "Bend or stretch the loop however you like and, as long as you never drag it across the axis, the winding number stays put. The only way to change it is to pass the curve through the centre, which is a cut rather than a deformation. It is the degree of the map that sends the circle to the circle by t to w·t, the cleanest example of a number that tells maps apart up to deformation. The lifted curve is literally that map's graph, climbing once for each time it goes around.", kind: "winding" },
+          { heading: "The same number the colours wound", body: "This is the integer the domain colouring already showed. There the hue ran once around a simple zero and twice around a double zero of f(z), which is the winding number of the loop the output traces as z circles the zero. Counting how many times the colours cycle, or how many times this lifted loop climbs, is the argument principle: the winding number of the output around 0 counts the zeros enclosed (minus any poles). Plot, colour, and lift are three views of one integer.", kind: "winding" },
         ],
       },
       {

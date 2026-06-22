@@ -1150,6 +1150,74 @@ function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x
 // z⁵ − z − 1 : five roots, but a quintic with no solution in radicals (Abel–Ruffini).
 function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7); }
 
+// ── Groups, symmetry and winding ─────────────────────────────────────────────
+// Star polygons {N/K}: place N points evenly on a circle and join each point i to
+// point i+K, indices taken mod N. When gcd(N,K)=1 the chords visit every vertex in
+// one closed star; when gcd(N,K)=d the figure splits into d separate polygons, the
+// cosets of the subgroup that K generates inside the cyclic group of order N. One
+// step size, the whole group or only part of it.
+function starPolygonScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="star polygon {N/K}";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.3";cam.props.showGrid=false;
+  const N=makeNode("slider",{x:40,y:300});N.name="N";N.label="N · points";N.value=12;
+  N.props.min="3";N.props.max="24";N.props.step="1";
+  const K=makeNode("slider",{x:40,y:420});K.name="K";K.label="K · step";K.value=5;
+  K.props.min="1";K.props.max="12";K.props.step="1";
+  const g=_rawNode({x:360,y:160},"chords","#ff5ea8",{prim:"segments",src:"index",
+    idxSegments:"cos(2*pi*i/N), sin(2*pi*i/N), 0 | cos(2*pi*(i+K)/N), sin(2*pi*(i+K)/N), 0",
+    idxCount:"N",
+    colorOn:true,colorExpr:"i",colorLo:"#5ad1e6",colorHi:"#ff5ea8",colorMin:"0",colorMax:"N"});
+  g.attachments=[N.id,K.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[K.id]:K,[g.id]:g},camId:cam.id,animated:false};
+}
+
+// Modular times tables: N points labelled 0..N-1 around a circle; draw a chord from
+// i to the point M*i (its angle wraps mod N on its own). The chords envelope a
+// cardioid at M=2, a nephroid at M=3, and further epicycloids beyond, so the
+// multiply-by-M map of the cyclic group of order N becomes a curve you can see.
+function timesTableScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="times table mod N";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.25";cam.props.showGrid=false;
+  const N=makeNode("slider",{x:40,y:300});N.name="N";N.label="N · points";N.value=200;
+  N.props.min="20";N.props.max="400";N.props.step="1";
+  const M=makeNode("slider",{x:40,y:420});M.name="M";M.label="M · multiplier";M.value=2;
+  M.props.min="2";M.props.max="20";M.props.step="1";
+  const g=_rawNode({x:360,y:160},"chords","#ffcf6e",{prim:"segments",src:"index",
+    idxSegments:"cos(2*pi*i/N), sin(2*pi*i/N), 0 | cos(2*pi*M*i/N), sin(2*pi*M*i/N), 0",
+    idxCount:"N",
+    colorOn:true,colorExpr:"i",colorLo:"#7a5cf0",colorHi:"#ffcf6e",colorMin:"0",colorMax:"N"});
+  g.attachments=[N.id,M.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[M.id]:M,[g.id]:g},camId:cam.id,animated:false};
+}
+
+// Winding number as a lift of the circle. Send t once around with (cos(w t),
+// sin(w t)) and raise the curve by its own t, so it climbs while looping w times
+// around the central axis. That loop count is the winding number, the same integer
+// the domain-colouring hue wound around each zero and the degree of z → z^w on the
+// circle. The vertical grey segment marks the axis the loops enclose.
+function windingScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1120,y:120}));cam.label="winding number w";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="5.5";cam.props.orbTheta="0.5";cam.props.orbPhi="1.12";cam.props.targetZ="1.2";
+  cam.props.spin="loop";cam.props.spinPeriod="34";
+  const w=makeNode("slider",{x:40,y:320});w.name="w";w.label="w · turns";w.value=3;
+  w.props.min="1";w.props.max="6";w.props.step="1";
+  const cv=makeNode("paramSpace",{x:360,y:160});cv.label="lifted loop";cv.color="#5b9cf6";
+  cv.props.degree="1";
+  cv.props.exprX="cos(w*t)";cv.props.exprY="sin(w*t)";cv.props.exprZ="0.4*t";
+  cv.props.tMin="0";cv.props.tMax="2*pi";cv.props.res="600";
+  cv.props.colorMode="rgb";cv.props.colorR="0.5+0.5*sin(t)";cv.props.colorG="0.5+0.5*sin(t+2.1)";cv.props.colorB="0.5+0.5*sin(t+4.2)";
+  cv.attachments=[w.id];
+  const axis=_rawNode({x:360,y:380},"axis","#9aa0aa",{prim:"segments",src:"list",
+    rawSegments:"0,0,0 | 0,0,2.6"});
+  cam.attachments=[cv.id,axis.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[w.id]:w,[cv.id]:cv,[axis.id]:axis},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -1208,6 +1276,9 @@ Object.assign(SCENES, {
   "dc-sq": dcSquareScene,
   "dc-roots5": dcRoots5Scene,
   "dc-quintic": dcQuinticScene,
+  "star-polygon": starPolygonScene,
+  "times-table": timesTableScene,
+  "winding": windingScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
   "implicit-tex": implicitTexScene,
