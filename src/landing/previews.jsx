@@ -725,6 +725,34 @@ function lightsScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
+// DYNAMIC LIGHTING on a PARAMETRIC SURFACE: a matte torus lit by a warm point
+// light orbiting through its hole (position driven by the animator t) plus a cool
+// directional fill. The surface keeps still while the moving light reveals its
+// curvature — the highlight sweeps the tube as the lamp passes. Lights are on the
+// camera, so the parametric surface picks them up just like a graph surface.
+function lightsParamScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="dynamic light · torus";
+  cam.props.orbRadius="8.5";cam.props.orbTheta="0.7";cam.props.orbPhi="0.78";
+  const ps=makeNode("paramSpace",{x:380,y:160});ps.label="torus";ps.color="#cdd6f4";
+  ps.props.degree="2";
+  ps.props.exprXu="(2+0.9*cos(v))*cos(u)";ps.props.exprYu="(2+0.9*cos(v))*sin(u)";ps.props.exprZu="0.9*sin(v)";
+  ps.props.uMin="0";ps.props.uMax="2*pi";ps.props.vMin="0";ps.props.vMax="2*pi";ps.props.uRes="120";ps.props.vRes="60";
+  ps.props.showWire=false;ps.props.shading="lit";   // matte node colour → the moving light is the whole show
+  // animator drives a warm point light orbiting through the torus hole
+  const anim=makeNode("animator",{x:40,y:380});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="7";anim.props.loop="loop";anim.playing=true;
+  const warm=makeNode("light",{x:380,y:380});warm.label="orbiting lamp";warm.color="#ffd28a";
+  warm.props.kind="point";warm.props.color="#ffd2a0";warm.props.intensity="2.6";warm.props.falloff="0.06";
+  warm.props.posX="3.2*cos(t)";warm.props.posY="3.2*sin(t)";warm.props.posZ="1.2*sin(2*t)";
+  warm.attachments=[anim.id];
+  const cool=makeNode("light",{x:380,y:540});cool.label="cool fill";cool.color="#8fb7ff";
+  cool.props.kind="directional";cool.props.color="#7fa8ff";cool.props.intensity="0.5";
+  cool.props.dirX="-0.5";cool.props.dirY="-0.4";cool.props.dirZ="0.6";
+  cam.attachments=[ps.id,warm.id,cool.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -767,6 +795,7 @@ Object.assign(SCENES, {
   "tex-paramsurf": texParamSurfScene,
   "normal-map": normalMapScene,
   "lights": lightsScene,
+  "lights-param": lightsParamScene,
   "curve-rgb": curveRgbScene,
 });
 
