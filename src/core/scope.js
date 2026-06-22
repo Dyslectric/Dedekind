@@ -86,10 +86,12 @@ function collectScalarDeps(nodeId, nodes, acc, guard){
       acc.add(depId);
       // a function/scalar may itself depend on further scalars
       collectScalarDeps(depId, nodes, acc, guard);
-    } else if(cat==="map" || cat==="plot" || cat==="domain"){
+    } else if(cat==="map" || cat==="plot" || cat==="domain" || cat==="light" || cat==="texture"){
       // A transformer consumes an fnMap (map) and possibly a paramSpace (plot)
-      // domain; those may carry their own scalar/function deps. Recurse through
-      // them so the consumer's scope includes everything it transitively needs.
+      // domain; a camera consumes lights; a surface consumes textures. Those may
+      // carry their own scalar/function deps (e.g. an animator wired into a light
+      // to orbit it). Recurse so the consumer's transitive scalar set — used by
+      // the per-frame dirty tracker — includes everything downstream.
       collectScalarDeps(depId, nodes, acc, guard);
     }
   }
