@@ -82,6 +82,16 @@ function exprToJS(expr, fnNames, vertexVars){
         if(node.op==="%"){ const a=walk(node.args[0]),b=walk(node.args[1]); return (a==null||b==null)?null:comp2("mod",a,b); }
         return null;
       }
+      case "AccessorNode": {
+        // 1-D array indexing: L[expr]. The object is a free scalar bound to an
+        // array value (a list node); mathjs is 1-based, so the JS index is
+        // trunc(expr)-1. Only a single numeric dimension is supported.
+        const obj=walk(node.object); if(obj==null) return null;
+        const idx=node.index;
+        if(!idx || idx.type!=="IndexNode" || !idx.dimensions || idx.dimensions.length!==1) return null;
+        const d=walk(idx.dimensions[0]); if(d==null) return null;
+        return "("+obj+"[Math.trunc("+d+")-1])";
+      }
       case "FunctionNode": {
         const n=node.fn.name;
         // wired fnDef call → F.name(args)
