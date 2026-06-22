@@ -898,8 +898,19 @@ function sierpinskiOctaScene(){
   g.props.colorR="512+512*sin(1.5*x)";
   g.props.colorG="512+512*sin(1.5*y+2.1)";
   g.props.colorB="512+512*sin(1.5*z+4.2)";
-  g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];cam.attachments=[g.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g},camId:cam.id,animated:false};
+  g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];
+  // The raw mesh now reacts to scene lights: a warm key and a cool fill from
+  // opposite sides shade the facets (over the rainbow vertex colour) so the form
+  // reads as the camera orbits. Static (no animator) so the depth-6 mesh isn't
+  // re-stamped per frame.
+  const warm=makeNode("light",{x:1080,y:120});warm.label="warm key";warm.color="#ffd28a";
+  warm.props.kind="directional";warm.props.color="#ffd2a0";warm.props.intensity="1.0";
+  warm.props.dirX="0.5";warm.props.dirY="0.3";warm.props.dirZ="0.8";
+  const cool=makeNode("light",{x:1080,y:260});cool.label="cool fill";cool.color="#8fb7ff";
+  cool.props.kind="directional";cool.props.color="#7fa8ff";cool.props.intensity="0.55";
+  cool.props.dirX="-0.6";cool.props.dirY="-0.4";cool.props.dirZ="0.3";
+  cam.attachments=[g.id,warm.id,cool.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:false};
 }
 
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three

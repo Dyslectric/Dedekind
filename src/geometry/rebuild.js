@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { resolveNum, safeEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/scope.js";
-import { disposeObjs, addPlotObj, updateGpuUniforms } from "./three-helpers.js";
+import { disposeObjs, addPlotObj, updateGpuUniforms, syncThreeLights } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
   buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildRawGeom3d, buildSegments3d
@@ -80,6 +80,9 @@ function gatherLights(camNode,nodes,animVals){
 function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
   const seen=new Set();if(!camNode)return;
   const lights=gatherLights(camNode,nodes,animVals);
+  // Mirror the wired lights into real three.js lights on the scene root so
+  // standard-material geometry (rawGeom, points, glyphs) reacts to them too.
+  syncThreeLights(scene.parent || scene, lights);
   for(const childId of(camNode.attachments||[])){
     const rawNode=nodes[childId];if(!rawNode)continue;
     if(catOf(rawNode.type)!=="plot") continue;   // only plots render in a camera

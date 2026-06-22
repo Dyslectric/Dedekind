@@ -50,7 +50,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
 
     const scene = new THREE.Scene();
     scene.add(new THREE.AmbientLight(0xffffff,0.55));
-    const dl=new THREE.DirectionalLight(0xffffff,0.85);dl.position.set(5,10,7);scene.add(dl);
+    const dl=new THREE.DirectionalLight(0xffffff,0.85);dl.position.set(5,10,7);dl.name="__defaultKey";scene.add(dl);
     // Orientation. Per-builder code maps math (x,y,z) → three (x, z, y). We want
     // the on-screen frame: math X → RIGHT, math Z → UP, math Y → AWAY from the
     // viewer, i.e. world (x, z, −y) — the standard right-handed math frame

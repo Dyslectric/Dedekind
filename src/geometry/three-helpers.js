@@ -332,6 +332,45 @@ function updateGpuUniforms(objs, scope){
   }
 }
 
+// Realize the wired scene lights as actual three.js lights on the scene root, so
+// standard-material geometry (rawGeom meshes, point spheres, glyphs — anything lit
+// by three's lighting rather than our custom surface shader) reacts to the same
+// Light nodes. The custom GPU surfaces keep reading the lights via uniforms; this
+// covers everything else. Light objects are reused across calls and only rebuilt
+// when the count/kinds change, so animating a light is a cheap transform update.
+//
+// CPU geometry lands at world (x, z, y) (math (x,y,z) → builder (x,z,−y) → ×−1
+// mirror), so a light at world (mx, mz, my) is co-located with math (mx,my,mz) —
+// the same mapping the surface shader's light uniforms use. The scene's default
+// key light (tagged "__defaultKey") is hidden whenever node lights are present, so
+// node lighting fully takes over (matching the surface shader's behaviour).
+function syncThreeLights(root, lights){
+  if(!root) return;
+  const want = lights || [];
+  const key = root.getObjectByName && root.getObjectByName("__defaultKey");
+  if(key) key.visible = want.length===0;
+  let rig = root.__lightRig;
+  if(!rig){ rig=new THREE.Group(); rig.__lights=[]; root.__lightRig=rig; root.add(rig); }
+  // Rebuild the light objects only when the shape (count + kinds) changes.
+  const sameShape = rig.__lights.length===want.length && rig.__lights.every((L,i)=>L.__kind===want[i].kind);
+  if(!sameShape){
+    for(const L of rig.__lights){ rig.remove(L); if(L.target&&L.target.parent) rig.remove(L.target); if(L.dispose) L.dispose(); }
+    rig.__lights = want.map(d=>{
+      let L;
+      if(d.kind==="point"){ L=new THREE.PointLight(0xffffff,1,0,0); }   // decay 0 → predictable, distance-independent
+      else { L=new THREE.DirectionalLight(0xffffff,1); rig.add(L.target); }
+      L.__kind=d.kind; rig.add(L); return L;
+    });
+  }
+  for(let i=0;i<want.length;i++){
+    const d=want[i], L=rig.__lights[i];
+    L.color.setHex(hexToThree(d.colorHex||"#ffffff"));
+    L.intensity = Math.max(0, d.intensity ?? 1);
+    if(d.kind==="point") L.position.set(d.posX, d.posZ, d.posY);          // math (x,y,z) → (x,z,y)
+    else { L.position.set(d.dirX, d.dirZ, d.dirY); if(L.target) L.target.position.set(0,0,0); }  // direction toward the light
+  }
+}
+
 export {
-  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms
+  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights
 };
