@@ -879,7 +879,7 @@ function sierpinskiOctaScene(){
 
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1280,y:120}));cam.label="Sierpiński octahedron";
-  cam.props.orbRadius="9.5";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="60";
+  cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="0.82";cam.props.spin="loop";cam.props.spinPeriod="60";
   const Cx=makeNode("list",{x:300,y:80});Cx.name="Cx";Cx.label="centres x";Cx.color="#f7d9a0";Cx.props.expr=col(0);
   const Cy=makeNode("list",{x:300,y:210});Cy.name="Cy";Cy.label="centres y";Cy.color="#f7d9a0";Cy.props.expr=col(1);
   const Cz=makeNode("list",{x:300,y:340});Cz.name="Cz";Cz.label="centres z";Cz.color="#f7d9a0";Cz.props.expr=col(2);
@@ -907,14 +907,22 @@ function sierpinskiOctaScene(){
   anim.props.min="0";anim.props.max="6.283";anim.props.period="11";anim.props.loop="loop";anim.playing=true;
   const lamp=makeNode("light",{x:1080,y:120});lamp.label="swinging lamp";lamp.color="#ffd28a";
   lamp.props.kind="point";lamp.props.color="#ffd2a0";lamp.props.intensity="2.0";
-  lamp.props.posX="7*cos(phase)";lamp.props.posY="7*sin(phase)";lamp.props.posZ="4*sin(0.5*phase)";
+  lamp.props.posX="7*cos(phase)";lamp.props.posY="7*sin(phase)";lamp.props.posZ="3+1.2*sin(0.5*phase)";
   lamp.attachments=[anim.id];
   const sun=makeNode("light",{x:1080,y:260});sun.label="moving sun";sun.color="#8fb7ff";
   sun.props.kind="directional";sun.props.color="#bcd0ff";sun.props.intensity="0.6";
   sun.props.dirX="cos(0.6*phase)";sun.props.dirY="sin(0.6*phase)";sun.props.dirZ="0.55";
   sun.attachments=[anim.id];
-  cam.attachments=[g.id,lamp.id,sun.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[anim.id]:anim,[lamp.id]:lamp,[sun.id]:sun},camId:cam.id,animated:true};
+  // A matte lit floor under the fractal makes the moving lights unmistakable: the
+  // swinging lamp casts a bright pool that sweeps across it. It's a GPU lit surface,
+  // so it reacts through the light uniforms (cheap; no per-frame rebuild).
+  const floor=makeNode("paramSpace",{x:380,y:740});floor.label="floor";floor.color="#9aa6c8";
+  floor.props.degree="2";
+  floor.props.exprXu="u";floor.props.exprYu="v";floor.props.exprZu="-3.3";
+  floor.props.uMin="-8";floor.props.uMax="8";floor.props.vMin="-8";floor.props.vMax="8";floor.props.uRes="90";floor.props.vRes="90";
+  floor.props.showWire=false;floor.props.shading="lit";floor.props.matColorMode="off";
+  cam.attachments=[g.id,floor.id,lamp.id,sun.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[floor.id]:floor,[anim.id]:anim,[lamp.id]:lamp,[sun.id]:sun},camId:cam.id,animated:true};
 }
 
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
