@@ -1312,7 +1312,7 @@ function _littlewoodField(maxD){
   return F;
 }
 function littlewoodFieldScene(){
-  const maxD=6, R=2.2;
+  const maxD=5, R=2.2;
   const F=_littlewoodField(maxD);
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="coefficient roots as a live field";cam.props.showOpenBtn=false;
@@ -1322,7 +1322,7 @@ function littlewoodFieldScene(){
   va.props.min="-2";va.props.max="2";va.props.step="0.01";
   const vb=makeNode("slider",{x:40,y:330});vb.name="vb";vb.label="vb · coeff B";vb.value=-1;
   vb.props.min="-2";vb.props.max="2";vb.props.step="0.01";
-  const deg=makeNode("slider",{x:40,y:420});deg.name="deg";deg.label="deg · max degree";deg.value=6;
+  const deg=makeNode("slider",{x:40,y:420});deg.name="deg";deg.label="deg · max degree";deg.value=5;
   deg.props.min="2";deg.props.max=String(maxD);deg.props.step="1";
   const eps=makeNode("slider",{x:40,y:510});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
   eps.props.min="0.004";eps.props.max="0.25";eps.props.step="0.002";
@@ -3841,7 +3841,7 @@ function makeDemoProject(kind){
 // it defaults to opening this same `kind` in the full editor. The button hides
 // itself if the camera's showOpenBtn prop is turned off — the same toggle
 // exposed in the camera's properties panel inside the editor.
-function LivePreview({ kind="field", onOpen }){
+function LivePreviewInner({ kind="field", onOpen }){
   const isMobile = useIsMobile();
   const built = useMemo(()=>SCENES[kind](), [kind]);
   // On phones the front-page previews start paused: auto-playing every timer on
@@ -3927,6 +3927,28 @@ function LivePreview({ kind="field", onOpen }){
     <div ref={hostRef} style={{position:"absolute",inset:0}}>
       <ViewportSwitch camNode={camNode} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
         onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={onUpdateNode} onOpenProject={handleOpen} maxPixelRatio={isMobile?1.1:undefined}/>
+    </div>
+  );
+}
+
+// Lazy gate: a preview only builds its scene and compiles its shader once it
+// scrolls near the viewport. A tutorial page with many plots (some heavy, like the
+// degree-6 implicit field) then loads instantly and each plot warms up as you reach
+// it, instead of compiling every shader up front. Visible-on-load previews (e.g. the
+// landing hero) mount immediately because the observer fires right away.
+function LivePreview(props){
+  const ref = useRef(null);
+  const [show, setShow] = useState(false);
+  useEffect(()=>{
+    if(show) return;
+    const el = ref.current; if(!el) return;
+    const io = new IntersectionObserver(es=>{ if(es[0]?.isIntersecting){ setShow(true); io.disconnect(); } }, {rootMargin:"300px"});
+    io.observe(el);
+    return ()=>io.disconnect();
+  },[show]);
+  return (
+    <div ref={ref} style={{position:"absolute",inset:0}}>
+      {show ? <LivePreviewInner {...props}/> : null}
     </div>
   );
 }
