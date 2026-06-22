@@ -10,7 +10,7 @@ import { SelectionActions } from "./propspanel/SelectionActions.jsx";
 import { ProjectSection, UsedBySection, InputsSection } from "./propspanel/DependencySections.jsx";
 import { ConstantEditor, ExprEditor, SliderEditor, AnimatorEditor, FnDefEditor } from "./propspanel/ScalarEditors.jsx";
 import { FnMapEditor, EquationEditor, ParamSpaceEditor } from "./propspanel/FunctionEditors.jsx";
-import { TextureEditor, VideoEditor } from "./propspanel/MediaEditors.jsx";
+import { TextureEditor, VideoEditor, LightEditor } from "./propspanel/MediaEditors.jsx";
 import { TransformerEditor } from "./propspanel/TransformerEditor.jsx";
 import { PointsEditor } from "./propspanel/PointsEditor.jsx";
 import { RawGeomEditor } from "./propspanel/RawGeomEditor.jsx";
@@ -102,6 +102,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {node.type==="paramSpace"&&<ParamSpaceEditor {...ed}/>}
         {node.type==="texture"&&<TextureEditor {...ed}/>}
         {node.type==="video"&&<VideoEditor {...ed}/>}
+        {node.type==="light"&&<LightEditor {...ed}/>}
 
         {/* ── Transformer ── */}
         {node.type==="transformer"&&<TransformerEditor {...ed}/>}

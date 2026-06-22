@@ -697,6 +697,34 @@ function normalMapScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[nrm.id]:nrm,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// SCENE LIGHTS: two coloured lights wired into the camera light a matte surface.
+// A warm point light orbits the dome (its position driven by an animator t), and
+// a cool directional light fills from the side. Lights are scene entities on the
+// camera — not material inputs — so every lit surface in the view picks them up.
+function lightsScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="scene lights";
+  cam.props.orbRadius="10";cam.props.orbTheta="0.7";cam.props.orbPhi="0.92";
+  const fn=makeNode("fnMap",{x:360,y:140});fn.label="z = ripple";fn.color="#cdd6f4";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0.5*sin(x)*cos(y)";
+  const tr=makeNode("transformer",{x:720,y:160});tr.label="graph · lit";tr.color="#cdd6f4";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.4";tr.props.aMax="3.4";tr.props.bMin="-3.4";tr.props.bMax="3.4";tr.props.res="90";
+  tr.props.showWire=false;tr.props.shading="lit";   // matte node-colour albedo so the coloured light reads
+  // an animator drives the orbiting point light
+  const anim=makeNode("animator",{x:40,y:360});anim.name="t";anim.value=0;
+  anim.props.min="0";anim.props.max="6.283";anim.props.period="6";anim.props.loop="loop";anim.playing=true;
+  const warm=makeNode("light",{x:380,y:360});warm.label="warm orbit";warm.color="#ffd28a";
+  warm.props.kind="point";warm.props.color="#ffcaa0";warm.props.intensity="2.2";warm.props.falloff="0.02";
+  warm.props.posX="4.5*cos(t)";warm.props.posY="4.5*sin(t)";warm.props.posZ="3";
+  warm.attachments=[anim.id];
+  const cool=makeNode("light",{x:380,y:520});cool.label="cool fill";cool.color="#8fb7ff";
+  cool.props.kind="directional";cool.props.color="#7fa8ff";cool.props.intensity="0.6";
+  cool.props.dirX="-0.6";cool.props.dirY="-0.3";cool.props.dirZ="0.5";
+  cam.attachments=[tr.id,warm.id,cool.id];tr.attachments=[fn.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -738,6 +766,7 @@ Object.assign(SCENES, {
   "tex-surface": texSurfaceScene,
   "tex-paramsurf": texParamSurfScene,
   "normal-map": normalMapScene,
+  "lights": lightsScene,
   "curve-rgb": curveRgbScene,
 });
 

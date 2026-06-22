@@ -11,6 +11,28 @@ function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(
 // (world._unmirrored) and carry their own baked-in world coords.
 function addPlotObj(world,o){ (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
 function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
+// Light positions/directions are authored in MATH coords (z up); the rest of the
+// scene maps math (x,y,z) → three (x,z,y). Swap when sending a light to the GPU.
+function _lightVec(mx,my,mz){ return new THREE.Vector3(mx, mz, my); }
+// Resolve a light's expression props to its GPU uniform values, writing into
+// `uniforms` under the index-keyed names the shader declares. Shared by initial
+// build (makeSurfaceShader) and the per-frame refresh (updateGpuUniforms): the
+// values are live, so an animator wired into a light moves it with no rebuild.
+function setLightUniforms(uniforms, lights, scope){
+  lights.forEach((lt,i)=>{
+    const col = new THREE.Color(hexToThree(lt.colorHex||"#ffffff")).multiplyScalar(resolveNum(lt.intensity, scope, 1));
+    const ck=`uL${i}Col`; if(uniforms[ck]) uniforms[ck].value.copy(col); else uniforms[ck]={value:col};
+    if(lt.kind==="point"){
+      const pv=_lightVec(resolveNum(lt.posX,scope,0),resolveNum(lt.posY,scope,0),resolveNum(lt.posZ,scope,0));
+      const pk=`uL${i}Pos`; if(uniforms[pk]) uniforms[pk].value.copy(pv); else uniforms[pk]={value:pv};
+      const fk=`uL${i}Fall`, fv=Math.max(0,resolveNum(lt.falloff,scope,0));
+      if(uniforms[fk]) uniforms[fk].value=fv; else uniforms[fk]={value:fv};
+    } else {
+      const dv=_lightVec(resolveNum(lt.dirX,scope,0),resolveNum(lt.dirY,scope,0),resolveNum(lt.dirZ,scope,1)).normalize();
+      const dk=`uL${i}Dir`; if(uniforms[dk]) uniforms[dk].value.copy(dv); else uniforms[dk]={value:dv};
+    }
+  });
+}
 
 // Build a ShaderMaterial that displaces a grid in the vertex shader. `body`
 // computes vec3 P (world-space x,y,z in math coords). uniforms are wired live.
@@ -26,6 +48,9 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   // byte-identical to before (no regression). Never lit for the wireframe pass.
   const shade = (!wireframe && opts && opts.shade) ? opts.shade : null;
   const lit = !!shade;
+  // Wired scene lights (resolved descriptors). When none, the lit path keeps its
+  // original single fixed key light, so existing projects shade identically.
+  const lights = (lit && shade.lights && shade.lights.length) ? shade.lights : null;
   const uniforms = { uColor:{value:new THREE.Color(hexToThree(color))} };
   // User scalar uniforms are declared/keyed as prefix+name (the body references
   // them prefixed) but their values come from scope[name].
@@ -51,7 +76,8 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     // mirror group's negative scale handled correctly). Light is a fixed key light
     // for now (Stage 6 will surface these as node props).
     uniforms.uNormalMat = { value: new THREE.Matrix3() };
-    uniforms.uLightDir  = { value: new THREE.Vector3(0.4,0.9,0.5).normalize() };
+    if(lights) setLightUniforms(uniforms, lights, scope);     // index-keyed uL{i}Dir/Pos/Col/Fall
+    else uniforms.uLightDir = { value: new THREE.Vector3(0.4,0.9,0.5).normalize() };  // legacy key light
     uniforms.uAmb   = { value: shade.ambient  ?? 0.18 };
     uniforms.uDif   = { value: shade.diffuse  ?? 0.85 };
     uniforms.uSpe   = { value: shade.specular ?? 0.35 };
@@ -168,6 +194,24 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     const normalMap = !!shade.normalTex;                                  // perturb N from a normal texture
     const uvAny = texAlb || normalMap;
     const needXY = analytic || colored || !!rgb || !!specExpr || !!emitExpr;
+    // Per-light Blinn-Phong accumulation (view space). Light vectors arrive in
+    // world space and are taken into view with the built-in viewMatrix, so no CPU
+    // normal-matrix refresh is needed for lights. Each light's colour already folds
+    // in its intensity. Falls back below to the single key light when none wired.
+    const lightAccumGLSL = lights ? `vec3 col = uAmb*albedo;\n` + lights.map((lt,i)=> lt.kind==="point"
+      ? `        { vec3 _pp=(viewMatrix*vec4(uL${i}Pos,1.0)).xyz; vec3 _dl=_pp-vViewPos;
+          float _r2=dot(_dl,_dl); vec3 L=_dl*inversesqrt(max(_r2,1e-12));
+          float _att=1.0/(1.0+uL${i}Fall*_r2);
+          float dif=max(dot(N,L),0.0); vec3 H=normalize(L+V); float spe=pow(max(dot(N,H),0.0),uShine);
+          col += _att*uL${i}Col*(uDif*dif*albedo + uSpe*specMul*spe); }`
+      : `        { vec3 L=normalize((viewMatrix*vec4(uL${i}Dir,0.0)).xyz);
+          float dif=max(dot(N,L),0.0); vec3 H=normalize(L+V); float spe=pow(max(dot(N,H),0.0),uShine);
+          col += uL${i}Col*(uDif*dif*albedo + uSpe*specMul*spe); }`).join("\n")
+      : `vec3 L = normalize((viewMatrix * vec4(uLightDir, 0.0)).xyz);
+        float dif = max(dot(N,L), 0.0);
+        vec3 H = normalize(L + V);
+        float spe = pow(max(dot(N,H), 0.0), uShine);
+        vec3 col = uAmb*albedo + uDif*dif*albedo + uSpe*specMul*spe*vec3(1.0);`;
     litVert = `
       ${decls}
       varying vec3 vViewPos; varying vec2 vDomain; varying vec2 vUv; varying float vOk;
@@ -186,7 +230,12 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       precision highp float;
       ${decls}
       uniform mat3 uNormalMat;
-      uniform vec3 uColor; uniform vec3 uLightDir;
+      uniform vec3 uColor;
+      ${lights
+        ? lights.map((lt,i)=> lt.kind==="point"
+            ? `uniform vec3 uL${i}Pos; uniform vec3 uL${i}Col; uniform float uL${i}Fall;`
+            : `uniform vec3 uL${i}Dir; uniform vec3 uL${i}Col;`).join("\n      ")
+        : "uniform vec3 uLightDir;"}
       uniform float uAmb; uniform float uDif; uniform float uSpe; uniform float uShine;
       ${colored ? "uniform vec3 uColorLo; uniform vec3 uColorHi; uniform float uCMin; uniform float uCMax;" : ""}
       ${emitExpr ? "uniform vec3 uEmitColor;" : ""}
@@ -220,10 +269,6 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         ` : ""}
         vec3 V = normalize(-vViewPos);
         if(dot(N,V) < 0.0) N = -N;                 // face the camera (DoubleSide)
-        vec3 L = normalize((viewMatrix * vec4(uLightDir, 0.0)).xyz);
-        float dif = max(dot(N,L), 0.0);
-        vec3 H = normalize(L + V);
-        float spe = pow(max(dot(N,H), 0.0), uShine);
         float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
         ${texAlb
           ? `vec3 albedo = texture2D(uTex, _uv).rgb;`
@@ -232,7 +277,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
           : colored
           ? `float _cv = (${opts.colorBody}); float _sp=(uCMax-uCMin); float _t=(abs(_sp)<1e-12)?0.0:clamp((_cv-uCMin)/_sp,0.0,1.0); vec3 albedo=mix(uColorLo,uColorHi,_t);`
           : "vec3 albedo = uColor;"}
-        vec3 col = uAmb*albedo + uDif*dif*albedo + uSpe*specMul*spe*vec3(1.0);
+        ${lightAccumGLSL}
         ${emitExpr ? `col += clamp(${emitExpr}, 0.0, 8.0) * uEmitColor;` : ""}
         col = pow(clamp(col,0.0,1.0), vec3(1.0/2.2));
         gl_FragColor = vec4(col, 0.92);
@@ -281,6 +326,9 @@ function updateGpuUniforms(objs, scope){
       mat.uniforms.uDomU.value.set(uMin,uMax);
       mat.uniforms.uDomV.value.set(vMin,vMax);
     }
+    // Scene lights are live: re-resolve each light's expressions into its uniforms
+    // so an animator/slider wired into a light moves it with no rebuild.
+    if(info.lights && info.lights.length) setLightUniforms(mat.uniforms, info.lights, scope);
   }
 }
 

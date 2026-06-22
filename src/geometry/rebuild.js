@@ -57,8 +57,29 @@ function rampColors(vals, p, scope){
   return vals.map(v=>{ let t=((v??0)-mn)/span; t=t<0?0:t>1?1:t; c.copy(lo).lerp(hi,t); return [c.r,c.g,c.b]; });
 }
 
+// Resolve the lights wired into a camera into plain descriptors (numbers + a
+// colour hex), each against its OWN scope so an animator/slider wired to a light
+// drives it. Re-run every rebuild (which runs per animated frame), so light
+// values stay live; the values then flow to the GPU as uniforms. Empty → the lit
+// shader keeps its single fixed key light, so unlit-by-nodes scenes are unchanged.
+function gatherLights(camNode,nodes,animVals){
+  const out=[];
+  for(const id of (camNode.attachments||[])){
+    const ln=nodes[id]; if(!ln || catOf(ln.type)!=="light" || ln.enabled===false) continue;
+    const q=ln.props||{}; const lsc=resolveScope(id,nodes,animVals||{});
+    out.push({
+      kind: q.kind==="point" ? "point" : "directional",
+      dirX:resolveNum(q.dirX,lsc,0), dirY:resolveNum(q.dirY,lsc,0), dirZ:resolveNum(q.dirZ,lsc,1),
+      posX:resolveNum(q.posX,lsc,0), posY:resolveNum(q.posY,lsc,0), posZ:resolveNum(q.posZ,lsc,0),
+      colorHex:q.color||"#ffffff", intensity:resolveNum(q.intensity,lsc,1), falloff:resolveNum(q.falloff,lsc,0),
+    });
+  }
+  return out;
+}
+
 function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
   const seen=new Set();if(!camNode)return;
+  const lights=gatherLights(camNode,nodes,animVals);
   for(const childId of(camNode.attachments||[])){
     const rawNode=nodes[childId];if(!rawNode)continue;
     if(catOf(rawNode.type)!=="plot") continue;   // only plots render in a camera
@@ -73,7 +94,7 @@ function rebuildScene(scene,objMap,camNode,nodes,scope,animVals){
     const pscope = resolveScope(childId, nodes, animVals||{});
     const dom = plotDomain(childId, nodes);
     const p = dom ? applyDomain(node.props, node.type, dom) : node.props;
-    rebuildOnePlot(scene,objMap,childId,node,p,pscope,nodes,camNode,animVals);
+    rebuildOnePlot(scene,objMap,childId,node,p,pscope,nodes,camNode,animVals,lights);
   }
   for(const[id,objs]of objMap){if(!seen.has(id)){disposeObjs(scene,objs);objMap.delete(id);}}
 }
@@ -93,7 +114,13 @@ function applyDomain(props, type, dom){
   }
   return o;
 }
-function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals){
+function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals,lights){
+    // Scene lights illuminate lit surfaces. Their VALUES ride as live uniforms
+    // (no rebuild on change); only the count + kinds are structural, so fold just
+    // that into the cache signature. null → the shader's single fixed key light.
+    const litPlot = p.shading==="lit" && (node.type==="surf3d"||node.type==="paramsurf"||node.type==="transformer");
+    const sceneLights = (litPlot && lights && lights.length) ? lights : null;
+    const lightSig = sceneLights ? `|L:${sceneLights.length}:${sceneLights.map(l=>l.kind[0]).join("")}` : "";
     // Geometry signature (folds wired fnMap/paramSpace/equation expressions and
     // their scopes) — shared with the 2-D scene cache so both invalidate alike.
     let sig=plotSignature(node,p,scope,nodes,animVals);
@@ -105,6 +132,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       }
       sig+=`|mat:${p.matColorMode||""}|${p.uvScaleU||""},${p.uvScaleV||""},${p.uvOffU||""},${p.uvOffV||""},${p.uvRot||""}|ns:${p.matNormalStrength||""}`;
     }
+    if(sig!=null) sig+=lightSig;
     // sigScope is needed below for live uniform updates on cache hits.
     let sigScope=scope;
     if(node.type==="transformer"||node.type==="flow"){
@@ -126,7 +154,12 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       // For GPU objects, push fresh uniform values (sliders/animators animate for
       // free). Use sigScope so transformers pick up scalars attached to the wired
       // fnMap/equation/paramSpace, not just the transformer's own scope.
-      if(prev._gpu) updateGpuUniforms(prev,sigScope);
+      if(prev._gpu){
+        // Push fresh (live) light values onto the cached lit objects before the
+        // uniform refresh, so an animated light moves without a geometry rebuild.
+        if(sceneLights) for(const o of prev){ if(o._gpuSurface && o._gpuSurface.lights) o._gpuSurface.lights=sceneLights; }
+        updateGpuUniforms(prev,sigScope);
+      }
       // sequencing reveal is cheap and may change every frame — apply it live
       if(prev._sequenced) applySequence(prev,node,scope);
       return;
@@ -147,8 +180,8 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         }
       }
       const surfNstr=resolveNum(p.matNormalStrength,scope,1);
-      if(node.type==="surf3d") gpu=buildSurfGPU("surf3d",p,scope,node.color||"#5b9cf6",surfTex,surfNorm,surfNstr);
-      else if(node.type==="paramsurf") gpu=buildSurfGPU("paramsurf",p,scope,node.color||"#c761f7",surfTex,surfNorm,surfNstr);
+      if(node.type==="surf3d") gpu=buildSurfGPU("surf3d",p,scope,node.color||"#5b9cf6",surfTex,surfNorm,surfNstr,sceneLights);
+      else if(node.type==="paramsurf") gpu=buildSurfGPU("paramsurf",p,scope,node.color||"#c761f7",surfTex,surfNorm,surfNstr,sceneLights);
       else if(node.type==="fn1d") gpu=buildFn1dGPU(p,scope,node.color||"#f7cc4f");
       else if(node.type==="quiver3d") gpu=buildQuiver3dGPU(p,scope,node.color||"#5b9cf6");
       else if(node.type==="glyphField"){
@@ -263,7 +296,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       const tex = texNode ? getNodeTexture(texNode) : null;
       const ntex = normTexNode ? getNodeTexture(normTexNode) : null;
       const nstr = resolveNum(node.props.matNormalStrength, tScope, 1);
-      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG,tex,ntex,nstr);
+      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG,tex,ntex,nstr,sceneLights);
       // A video texture self-updates each frame; keep the render loop ticking.
       if(((texNode&&texNode.type==="video")||(normTexNode&&normTexNode.type==="video")) && objs && objs.length) objs._glyphAnim=true;
     }

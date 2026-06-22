@@ -35,6 +35,7 @@ const TYPE_META={
   // ── Unified kinds ──
   texture:   {tag:"TEX",  tc:"#f5bde6",bg:"#1c1018",hdr:"#241420"},
   video:     {tag:"VID",  tc:"#f5a97f",bg:"#1c1410",hdr:"#241a12"},
+  light:     {tag:"LGT",  tc:"#ffe08a",bg:"#1c1808",hdr:"#24200a"},
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
   points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   rawGeom:   {tag:"RAW",  tc:"#9fd6a0",bg:"#0e1810",hdr:"#122218"},
@@ -97,6 +98,17 @@ function makeNode(type,pos){
     // project — the URL/reference is stored, the footage is the user's.
     video:{label:"Video",color:"__AUTO__",props:{
       src:"", filter:"linear", wrap:"clamp",
+    },attachments:[]},
+    // light: a scene light, wired into a camera. Every lit surface rendered for
+    // that camera is shaded by it. kind: directional (a sun — dir x,y,z) or point
+    // (a position x,y,z + inverse-square falloff). All fields are expressions, so
+    // an animator wired in gives moving light. Values flow as live shader
+    // uniforms (no rebuild on change); adding/removing a light recompiles.
+    light:{label:"Light",color:"__AUTO__",props:{
+      kind:"directional",
+      dirX:"0.4", dirY:"0.5", dirZ:"0.9",          // directional: direction toward the light (z up; → legacy key light)
+      posX:"3", posY:"3", posZ:"5", falloff:"0",   // point: world position + 1/(1+k·d²) falloff
+      color:"#ffffff", intensity:"1",
     },attachments:[]},
     // paramSpace: a parameterized manifold of `degree` 1 (curve), 2 (surface),
     // or 3 (volume), mapped into 3-D Euclidean space.

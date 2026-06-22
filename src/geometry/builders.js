@@ -28,7 +28,7 @@ function gpuUniformsResolvable(uniforms, ascope){
 
 // Attempt a GPU-evaluated surface. Returns [mesh, wire] or null if the
 // expression(s) can't be translated to GLSL.
-function buildSurfGPU(kind, p, scope, color, tex, ntex, nstr){
+function buildSurfGPU(kind, p, scope, color, tex, ntex, nstr, lights){
   // a parametrized grid of (u,v) or (x,y) in [0,1]^2 mapped to the domain
   const showWire = p.showWire!==false;
   const fnTable=fnTableFromScope(scope);
@@ -114,6 +114,7 @@ function buildSurfGPU(kind, p, scope, color, tex, ntex, nstr){
                  offU:resolveNum(p.uvOffU,scope,0), offV:resolveNum(p.uvOffV,scope,0),
                  rot:resolveNum(p.uvRot,scope,0) };
     }
+    if(lights && lights.length) shade.lights=lights;   // scene lights → multi-light shading
   }
 
   // Composed surface: bail to CPU if an inlined fnDef pulled in a scalar we can't
@@ -174,7 +175,7 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   // `domain` (uDomU/uDomV) is recorded so updateGpuUniforms can refresh the
   // bounds each frame — animating a domain bound costs one uniform write, no
   // rebuild. uNames covers the expression uniforms (sliders in exprX/Y/Z).
-  mesh._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX };
+  mesh._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX, lights: (colorOpts&&colorOpts.shade&&colorOpts.shade.lights)||null };
   if(showWire===false) return [mesh];
   const matWire = makeSurfaceShader(bodyP, uNames, scope, color, true, null, domain, GLSL_UNIFORM_PREFIX);
   matWire.uniforms.uColor.value = new THREE.Color(hexToThree(color)).multiplyScalar(1.4);
@@ -227,7 +228,7 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
 //   colorInfo (optional): { lo, hi, cmin, cmax } for a gradient fill driven by
 //     whichever output is bound to "color". Returns null (→ CPU) if an output
 //     expression isn't GLSL-translatable or the config isn't a 2-in graph.
-function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr){
+function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr, lights){
   if(inDim!==2) return null;                      // only 2-input → surface here
   const AX={x:0,y:1,z:2};                          // color/none/undefined → not spatial
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
@@ -291,6 +292,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     } else { matOpts={ shade }; }
     // Normal map perturbs the lighting normal regardless of the colour mode.
     if(ntex){ shade.normalTex=ntex; shade.normalStrength=(nstr==null?1:nstr); if(!shade.uv) shade.uv=uvObj; }
+    if(lights && lights.length) shade.lights=lights;   // scene lights → multi-light shading
   }
   if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
   for(let k=0;k<outDim;k++){

@@ -35,6 +35,10 @@ const CATEGORY = {
   // Texture sources: an image or a video frame, sampled by a surface's shader.
   // Category "texture": attaches to a plot (the renderer that samples it).
   texture:"texture", video:"texture",
+  // Lights illuminate a lit surface. A light is a SCENE entity (not a material
+  // input): it attaches to a camera, and every lit surface rendered for that
+  // camera is shaded by the lights in its scope.
+  light:"light",
   // Cameras split into explicit 3D and 2D kinds (both category "camera").
   // Legacy single "camera" kind kept for migration of old projects.
   camera:"camera", camera3d:"camera", camera2d:"camera", project:"project",
@@ -49,8 +53,8 @@ const isPlotType = (t) => catOf(t)==="plot";
 const isCameraType = (t) => catOf(t)==="camera";
 // Which source categories may attach to which destination category.
 const ATTACH_RULES = {
-  scalar:   new Set(["function","plot","domain","camera","scalar","map"]),
-  function: new Set(["function","plot","map","scalar"]),
+  scalar:   new Set(["function","plot","domain","camera","scalar","map","light"]),
+  function: new Set(["function","plot","map","scalar","light"]),
   domain:   new Set(["plot"]),
   // A map (fnMap) feeds a transformer (plot) or composes into another map.
   map:      new Set(["plot","map"]),
@@ -60,6 +64,8 @@ const ATTACH_RULES = {
   plot:     new Set(["camera","plot"]),
   // A texture source attaches to a plot (the surface/transformer that samples it).
   texture:  new Set(["plot"]),
+  // A light attaches to a camera (it illuminates that camera's scene).
+  light:    new Set(["camera"]),
   camera:   new Set([]),
   project:  new Set([]),
 };

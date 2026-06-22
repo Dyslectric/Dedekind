@@ -11,12 +11,12 @@ const ADDABLE_KINDS = [
   ["constant","expr","slider","animator","fnDef"],             // inputs
   ["fnMap","equation","transformer"],                          // functions + how to plot them
   ["paramSpace","points","rawGeom"],                          // manifolds / point sets / raw primitives
-  ["texture","video"],                                         // texture sources
+  ["texture","video","light"],                                 // texture sources + lights
   ["flow"],                                                    // flows
   ["camera3d","camera2d"],                                     // viewports
 ];
 const ALL_KINDS = ADDABLE_KINDS.flat();
-const KIND_GROUP_LABELS = ["Inputs","Functions","Geometry","Media","Flows","Cameras"];
+const KIND_GROUP_LABELS = ["Inputs","Functions","Geometry","Media & lights","Flows","Cameras"];
 
 // Single-letter keyboard shortcuts for adding a node of each kind directly on
 // the canvas (when nothing is being typed). Chosen to be mnemonic and unique;
@@ -36,6 +36,7 @@ const KIND_HOTKEYS = {
   p: "paramSpace",   // (p)arametric space
   o: "points",       // p(o)ints
   g: "rawGeom",      // raw (g)eometry
+  l: "light",        // (l)ight
   w: "flow",         // (w) ~ flow
   k: "camera3d",     // camera (k)
   j: "camera2d",     // camera (j)

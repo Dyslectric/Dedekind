@@ -1,5 +1,6 @@
 import { useUI } from "../../theme/tokens.jsx";
-import { Sec, PR } from "../primitives.jsx";
+import { Sec, PR, ColorRow } from "../primitives.jsx";
+import { EI } from "../MathInput.jsx";
 
 // texture — a static image source (file upload, or a URL/data-URI), exposed as a
 // sampleable texture for a surface's material.
@@ -54,6 +55,43 @@ export function TextureEditor({ node, onChange }){
         Wire this node's output into a <strong>Transformer</strong> (or a parametric surface). A <em>colour</em> texture drives the albedo when Material colour is set to Texture; a <em>normal map</em> perturbs the lighting normals (set its strength on the surface). A normal map is sampled in linear space.
       </div>
     </Sec>
+  </>;
+}
+
+// light — a scene light, wired into a camera. Every lit surface rendered for that
+// camera is shaded by it. A directional light is a sun (a direction); a point
+// light has a world position with inverse-square falloff. Every field is an
+// expression, so wiring an animator/slider in gives moving, dimming light.
+export function LightEditor({ node, scope, onChange }){
+  const { ui, S } = useUI();
+  const set = (k,v)=>onChange({props:{...node.props,[k]:v}});
+  const kind = node.props.kind || "directional";
+  return <>
+    <Sec title="Light">
+      <PR label="type">
+        <select value={kind} onChange={e=>set("kind",e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="directional">Directional (sun)</option>
+          <option value="point">Point (lamp)</option>
+        </select>
+      </PR>
+      <PR label="colour"><ColorRow v={node.props.color||"#ffffff"} onChange={v=>set("color",v)}/></PR>
+      <PR label="intensity"><EI v={node.props.intensity??"1"} sc={scope} onChange={v=>set("intensity",v)} placeholder="1"/></PR>
+    </Sec>
+    {kind==="directional" ? <Sec title="Direction (toward the light)">
+      <PR label="x"><EI v={node.props.dirX??"0.4"} sc={scope} onChange={v=>set("dirX",v)} placeholder="0.4"/></PR>
+      <PR label="y"><EI v={node.props.dirY??"0.5"} sc={scope} onChange={v=>set("dirY",v)} placeholder="0.5"/></PR>
+      <PR label="z (up)"><EI v={node.props.dirZ??"0.9"} sc={scope} onChange={v=>set("dirZ",v)} placeholder="0.9"/></PR>
+      <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>A parallel "sun" — only its direction matters (z is up, math coords). Animate a component to swing the key light across the surface.</div>
+    </Sec> : <Sec title="Position (world, math coords)">
+      <PR label="x"><EI v={node.props.posX??"3"} sc={scope} onChange={v=>set("posX",v)} placeholder="3"/></PR>
+      <PR label="y"><EI v={node.props.posY??"3"} sc={scope} onChange={v=>set("posY",v)} placeholder="3"/></PR>
+      <PR label="z (up)"><EI v={node.props.posZ??"5"} sc={scope} onChange={v=>set("posZ",v)} placeholder="5"/></PR>
+      <PR label="falloff"><EI v={node.props.falloff??"0"} sc={scope} onChange={v=>set("falloff",v)} placeholder="0 (none); larger = dims faster"/></PR>
+      <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>A lamp at a point; intensity is scaled by 1/(1 + falloff·d²). Animate a coordinate to orbit the light around the scene.</div>
+    </Sec>}
+    <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:6,lineHeight:1.5}}>
+      Wire this into a <strong>camera</strong>. Every <em>lit</em> surface in that camera is shaded by all its lights; with no light wired, a default key light is used. Lighting needs a surface's Shading set to <em>Lit</em>.
+    </div>
   </>;
 }
 
