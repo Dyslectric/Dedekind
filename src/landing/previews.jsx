@@ -857,6 +857,44 @@ function showcaseScene(){
     [V.id]:V,[E.id]:E,[cage.id]:cage,[cv.id]:cv,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
+// SIERPINSKI OCTAHEDRON: a depth-3 octahedron fractal — 6³ = 216 small octahedra,
+// 1728 coloured triangles. The 216 centres are generated into three first-class
+// Lists (Cx, Cy, Cz); a rawGeom index template stamps the 8 faces of an octahedron
+// at each centre (face f picks a sign per axis), and the colour is a position-based
+// RGB field so the whole fractal is a smooth rainbow. Lists + index geometry +
+// per-vertex colour in one object.
+function sierpinskiOctaScene(){
+  const L=3, S=3.0;
+  const dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  let pts=[[0,0,0]], half=S;
+  for(let l=0;l<L;l++){ const off=half/2, np=[];
+    for(const c of pts) for(const d of dirs) np.push([c[0]+d[0]*off,c[1]+d[1]*off,c[2]+d[2]*off]);
+    pts=np; half/=2; }
+  const R=half;                                   // small-octahedron radius
+  const col=a=>"["+pts.map(p=>+p[a].toFixed(4)).join(",")+"]";
+
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1280,y:120}));cam.label="Sierpiński octahedron";
+  cam.props.orbRadius="9.5";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="48";
+  const Cx=makeNode("list",{x:300,y:80});Cx.name="Cx";Cx.label="centres x";Cx.color="#f7d9a0";Cx.props.expr=col(0);
+  const Cy=makeNode("list",{x:300,y:210});Cy.name="Cy";Cy.label="centres y";Cy.color="#f7d9a0";Cy.props.expr=col(1);
+  const Cz=makeNode("list",{x:300,y:340});Cz.name="Cz";Cz.label="centres z";Cz.color="#f7d9a0";Cz.props.expr=col(2);
+  const Rn=makeNode("constant",{x:300,y:470});Rn.name="R";Rn.label="cell radius";Rn.props.value=String(+R.toFixed(5));
+  const g=makeNode("rawGeom",{x:720,y:220});g.label="fractal";g.color="#8aadf4";
+  g.props.prim="triangles";g.props.src="index";
+  g.props.idxTris=
+    "Cx[i+1]+(1-2*mod(floor(j/4),2))*R, Cy[i+1], Cz[i+1] | "+
+    "Cx[i+1], Cy[i+1]+(1-2*mod(floor(j/2),2))*R, Cz[i+1] | "+
+    "Cx[i+1], Cy[i+1], Cz[i+1]+(1-2*mod(j,2))*R";
+  g.props.idxCount=`${pts.length}, 8`;
+  g.props.colorOn=true;g.props.colorMode="rgb";
+  g.props.colorR="512+512*sin(1.5*x)";
+  g.props.colorG="512+512*sin(1.5*y+2.1)";
+  g.props.colorB="512+512*sin(1.5*z+4.2)";
+  g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g},camId:cam.id,animated:false};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -903,6 +941,7 @@ Object.assign(SCENES, {
   "brick-sphere": brickSphereScene,
   "list-cube": listCubeScene,
   "showcase": showcaseScene,
+  "sierpinski": sierpinskiOctaScene,
   "curve-rgb": curveRgbScene,
 });
 
