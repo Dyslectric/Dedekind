@@ -554,8 +554,10 @@ function litRippleScene(){
 // LIT SHADING on curvature: a slowly spinning monkey saddle; the specular
 // highlight sweeps the analytic surface and reads its true curvature.
 function litSaddleScene(){
-  return litGraphScene({ label:"lit saddle", expr:"(x^3 - 3*x*y^2)*0.16", fnLabel:"z = x³ − 3xy²",
-    color:"#c761f7", range:"2.4", res:"80", orbRadius:"9", orbPhi:"0.95", spin:"26" });
+  const saddle=makeNode("fnDef",{x:120,y:320});saddle.name="saddle";saddle.color="#c761f7";
+  saddle.props.params="x,y";saddle.props.expr="x^3 - 3*x*y^2";        // the monkey saddle, named
+  return litGraphScene({ label:"lit saddle", expr:"saddle(x,y)*0.16", fnLabel:"z = x³ − 3xy²",
+    color:"#c761f7", range:"2.4", res:"80", orbRadius:"9", orbPhi:"0.95", spin:"26", extraDeps:[saddle] });
 }
 // fnDef GPU INLINING + lit: the map is COMPOSED from a helper bump(r). Before the
 // inlining work this fell to the CPU; now the helper is inlined into the shader.
@@ -3562,13 +3564,16 @@ function tutAnalyticSurfaceScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="z = e^(−r²)·cos(...)";cam.props.showOpenBtn=false;
   cam.props.orbRadius="10";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  // radius is a reusable helper, wired into the map and inlined into the GPU shader.
+  const rad=makeNode("fnDef",{x:360,y:300});rad.name="rad";rad.label="rad(x,y)";rad.props.params="x,y";rad.props.expr="sqrt(x^2+y^2)";
   const fn=makeNode("fnMap",{x:360,y:160});fn.label="analytic f";fn.color="#7ad7ff";
-  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="exp(-0.15*(x^2+y^2))*cos(2*sqrt(x^2+y^2))";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="exp(-0.15*rad(x,y)^2)*cos(2*rad(x,y))";
+  fn.attachments=[rad.id];
   const tr=makeNode("transformer",{x:700,y:160});tr.label="graph";tr.color="#7ad7ff";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin="-5";tr.props.aMax="5";tr.props.bMin="-5";tr.props.bMax="5";tr.props.res="110";
   tr.attachments=[fn.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+  return {scene:{[project.id]:project,[cam.id]:cam,[rad.id]:rad,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
 // Differential geometry: curvature and normals ───────────────────────────────
@@ -3592,15 +3597,17 @@ function tutRevolutionScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="surface of revolution";cam.props.showOpenBtn=false;
   cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="32";
-  const ps=makeNode("paramsurf",{x:520,y:160});ps.label="revolution";ps.color="#a6e3a1";
-  // profile r(v) = 1 + 0.4 sin(3v) spun around the z-axis over u
-  ps.props.exprX="(1.4 + 0.5*sin(3*v))*cos(u)";
-  ps.props.exprY="(1.4 + 0.5*sin(3*v))*sin(u)";
+  // the profile r(v) is one function node, reused for both X and Y (and inlined on GPU)
+  const prof=makeNode("fnDef",{x:300,y:160});prof.name="prof";prof.label="r(v) · profile";prof.props.params="v";prof.props.expr="1.4 + 0.5*sin(3*v)";
+  const ps=makeNode("paramsurf",{x:560,y:160});ps.label="revolution";ps.color="#a6e3a1";
+  ps.props.exprX="prof(v)*cos(u)";
+  ps.props.exprY="prof(v)*sin(u)";
   ps.props.exprZ="2*v";
   ps.props.uMin="0";ps.props.uMax="6.2832";ps.props.vMin="-1.5708";ps.props.vMax="1.5708";
   ps.props.uRes="60";ps.props.vRes="40";
+  ps.attachments=[prof.id];
   cam.attachments=[ps.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+  return {scene:{[project.id]:project,[cam.id]:cam,[prof.id]:prof,[ps.id]:ps},camId:cam.id,animated:false};
 }
 
 // Applications: vector fields and flow ───────────────────────────────────────
