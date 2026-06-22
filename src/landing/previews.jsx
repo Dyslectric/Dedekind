@@ -1122,7 +1122,30 @@ function texSchwarzScene(){
 // hue from the argument arg(f), brightness rising with the modulus |f| (so zeros
 // are black and the colours wind around them). f is supplied as its real and
 // imaginary parts in x,y — real expressions, so the whole thing runs on the GPU.
-function domainColorScene(label, re, im, R){
+// Phase → colour for domain colouring, given the argument expression A and the
+// modulus-brightness V. "spectrum" is the usual full hue wheel (three cosines 120°
+// apart). "rgbw" anchors four reference colours at the quarter-turns, red, green,
+// blue, and white, blended by squared-cosine weights, for a palette that reads as
+// red/green/blue and white rather than the cyan/magenta/yellow of the wheel.
+function _phaseColorExprs(A, V, palette){
+  if(palette==="rgbw"){
+    const w=(off)=>`(0.5+0.5*cos((${A})-${off}))^2`;
+    const wR=w("0"), wG=w("1.5708"), wB=w("3.14159"), wW=w("4.71239");
+    const den=`((${wR})+(${wG})+(${wB})+(${wW}))`;
+    return [
+      `(((${wR})+(${wW}))/${den})*${V}`,
+      `(((${wG})+(${wW}))/${den})*${V}`,
+      `(((${wB})+(${wW}))/${den})*${V}`,
+    ];
+  }
+  return [
+    `(0.5+0.5*cos((${A})))*${V}`,
+    `(0.5+0.5*cos((${A})-2.0944))*${V}`,
+    `(0.5+0.5*cos((${A})-4.18879))*${V}`,
+  ];
+}
+
+function domainColorScene(label, re, im, R, palette){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label=label;
   cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
@@ -1135,9 +1158,8 @@ function domainColorScene(label, re, im, R){
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
   const M=`hypot((${re}),(${im}))`, A=`atan2((${im}),(${re}))`;
   const V=`(${M}/(${M}+1))`;                                   // 0 at a zero, →1 far out
-  tr.props.matR=`(0.5+0.5*cos((${A})))*${V}`;
-  tr.props.matG=`(0.5+0.5*cos((${A})-2.0944))*${V}`;
-  tr.props.matB=`(0.5+0.5*cos((${A})-4.18879))*${V}`;
+  const [r,g,b]=_phaseColorExprs(A, V, palette);
+  tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
   tr.attachments=[fn.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
@@ -1146,9 +1168,61 @@ function dcIdentityScene(){ return domainColorScene("f(z) = z", "x", "y", 3); }
 // z² : a double zero at the origin, the hue winds twice.
 function dcSquareScene(){ return domainColorScene("f(z) = z²", "x^2-y^2", "2*x*y", 2.2); }
 // z⁵ − 1 : the five fifth-roots of unity, evenly spaced on the unit circle.
-function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x^3*y^2+5*x*y^4-1", "5*x^4*y-10*x^2*y^3+y^5", 1.6); }
+function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x^3*y^2+5*x*y^4-1", "5*x^4*y-10*x^2*y^3+y^5", 1.6, "rgbw"); }
 // z⁵ − z − 1 : five roots, but a quintic with no solution in radicals (Abel–Ruffini).
-function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7); }
+function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7, "rgbw"); }
+
+// ── Littlewood polynomials: roots of every ±1-coefficient polynomial ─────────
+// All polynomials whose coefficients are +1 or -1 (leading coefficient fixed to
+// +1, since P and -P share roots), for degrees 2 up to D. Their complex roots,
+// found numerically and plotted in the plane coloured by degree, fill an annulus
+// around the unit circle with holes near the low-order roots of unity, the
+// Littlewood fractal. Roots are found with a Durand-Kerner iteration per
+// polynomial, seeded on the unit circle (which is where they cluster).
+function _littlewoodRows(D){
+  const rows=[], zr=[], zi=[];
+  for(let d=2; d<=D; d++){
+    const a=new Array(d+1); a[d]=1; zr.length=d; zi.length=d;
+    const combos=1<<d;                                  // a[0..d-1] each ±1
+    for(let c=0;c<combos;c++){
+      for(let b=0;b<d;b++) a[b]=(c>>b)&1?1:-1;
+      for(let k=0;k<d;k++){ const ang=2*Math.PI*k/d+0.7; zr[k]=Math.cos(ang); zi[k]=Math.sin(ang); }
+      for(let it=0; it<100; it++){
+        let mx=0;
+        for(let k=0;k<d;k++){
+          const xr=zr[k], xi=zi[k];
+          let pr=1, pi=0;                                // Horner: p(z_k)
+          for(let mI=d-1;mI>=0;mI--){ const nr=pr*xr-pi*xi+a[mI], ni=pr*xi+pi*xr; pr=nr; pi=ni; }
+          let dr=1, di=0;                                // denom = prod_{j!=k}(z_k - z_j)
+          for(let j=0;j<d;j++){ if(j===k)continue; const wr=xr-zr[j], wi=xi-zi[j]; const nr=dr*wr-di*wi, ni=dr*wi+di*wr; dr=nr; di=ni; }
+          const den=dr*dr+di*di||1e-30;
+          const qr=(pr*dr+pi*di)/den, qi=(pi*dr-pr*di)/den;
+          zr[k]-=qr; zi[k]-=qi;
+          const mm=Math.abs(qr)+Math.abs(qi); if(mm>mx)mx=mm;
+        }
+        if(mx<1e-10) break;
+      }
+      for(let k=0;k<d;k++){ if(isFinite(zr[k])&&isFinite(zi[k])) rows.push([+zr[k].toFixed(4), +zi[k].toFixed(4), 0, d]); }
+    }
+  }
+  return rows;
+}
+function littlewoodScene(){
+  const D=10;
+  const rows=_littlewoodRows(D);
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="roots of all ±1 polynomials";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.4";cam.props.showGrid=false;
+  const P=makeNode("list",{x:340,y:160});P.name="P";P.label="roots";P.color="#8aadf4";
+  P.props.expr=JSON.stringify(rows);
+  const pts=makeNode("points",{x:740,y:200});pts.label="Littlewood roots";pts.color="#5b9cf6";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="P";pts.props.useColor=true;
+  pts.props.drawLines=false;pts.props.radius="1.8";
+  pts.props.colorLo="#2a6df0";pts.props.colorHi="#ff5ea8";pts.props.colorMin="2";pts.props.colorMax=String(D);
+  pts.attachments=[P.id];
+  cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[P.id]:P,[pts.id]:pts},camId:cam.id,animated:false};
+}
 
 // ── Groups, symmetry and winding ─────────────────────────────────────────────
 // Star polygons {N/K}: place N points evenly on a circle and join each point i to
@@ -1323,9 +1397,8 @@ function dcMovableRootsScene(){
   const M="hypot(x-ax1,y-ay1)*hypot(x-ax2,y-ay2)*hypot(x-ax3,y-ay3)";
   const A="atan2(y-ay1,x-ax1)+atan2(y-ay2,x-ax2)+atan2(y-ay3,x-ax3)";
   const V=`((${M})/((${M})+1))`;
-  tr.props.matR=`(0.5+0.5*cos((${A})))*${V}`;
-  tr.props.matG=`(0.5+0.5*cos((${A})-2.0944))*${V}`;
-  tr.props.matB=`(0.5+0.5*cos((${A})-4.18879))*${V}`;
+  const [r,g,b]=_phaseColorExprs(A, V, "rgbw");
+  tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
   tr.attachments=[fn.id,ax1.id,ay1.id,ax2.id,ay2.id,ax3.id,ay3.id];
   cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
@@ -1468,6 +1541,7 @@ Object.assign(SCENES, {
   "winding": windingScene,
   "winding-flat": windingFlatScene,
   "dc-movable": dcMovableRootsScene,
+  "littlewood": littlewoodScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
   "sierpinski-low": sierpinskiLowScene,

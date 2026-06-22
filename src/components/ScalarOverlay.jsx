@@ -51,11 +51,18 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode, mobil
     pointerEvents:"auto", lineHeight:1.8, boxSizing:"border-box",
     userSelect:"none",
   } : {
+    // Desktop: a floating panel in the lower-left. Resizable (drag the bottom-right
+    // grip) so dense scalar sets, like the six root sliders, can be widened or
+    // grown; overflow scrolls when the content is taller than the chosen size. The
+    // user-dragged width/height live on the DOM node and survive re-renders, since
+    // they are never written back into this style object.
     position:"absolute", bottom:36, left:8, zIndex:10,
     background:"#06081499", backdropFilter:"blur(6px)",
     border:"1px solid #1a1e38", borderRadius:6,
     padding:"6px 10px", fontFamily:"monospace", fontSize:13,
-    pointerEvents:"auto", lineHeight:1.7, maxWidth:240,
+    pointerEvents:"auto", lineHeight:1.7,
+    minWidth:150, maxWidth:"80vw", maxHeight:"70vh",
+    overflow:"auto", resize:"both",
     userSelect:"none",
   };
   return (
