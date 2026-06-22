@@ -887,6 +887,10 @@ function sierpinskiOctaScene(){
     "Cx[i+1], Cy[i+1]+(1-2*mod(floor(j/2),2))*R, Cz[i+1] | "+
     "Cx[i+1], Cy[i+1], Cz[i+1]+(1-2*mod(j,2))*R";
   g.props.idxCount=`${pts.length}, 8`;
+  // No wireframe overlay: at 10k triangles its edge haze buries the structure and
+  // looks the same at any depth. Solid faces let the recursive (Sierpiński-triangle)
+  // holes read, so the depth is actually visible.
+  g.props.showWire=false;
   g.props.colorOn=true;g.props.colorMode="rgb";
   g.props.colorR="512+512*sin(1.5*x)";
   g.props.colorG="512+512*sin(1.5*y+2.1)";
