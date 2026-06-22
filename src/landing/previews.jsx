@@ -255,7 +255,7 @@ function metamorphScene(){
   cam.props.orbRadius="5.4";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
   // morph clock: 0..5, one unit per fractal, looping (0 and 5 are both the sphere).
   const s=makeNode("animator",{x:40,y:60});s.name="s";s.label="s · morph clock";s.value=0;
-  s.props.min="0";s.props.max="5";s.props.period="45";s.props.loop="loop";s.playing=true;
+  s.props.min="0";s.props.max="5";s.props.period="50";s.props.loop="loop";s.playing=true;
   // per-fractal parameter animators — each fractal breathes while it is on screen.
   const pw=makeNode("animator",{x:40,y:170});pw.name="pw";pw.label="pw · bulb power";pw.value=6;
   pw.props.min="3";pw.props.max="8";pw.props.period="22";pw.props.loop="pingpong";pw.playing=true;
@@ -268,12 +268,22 @@ function metamorphScene(){
   // blend weight: a unit triangle centred at c, so neighbours overlap and sum to 1.
   const w=makeNode("fnDef",{x:360,y:40});w.name="w";w.label="w(s,c) · blend weight";w.color="#9aa6c8";
   w.props.params="s,c";w.props.expr="max(0, 1 - abs(s - c))";
-  // inflation: zero at every integer s (the exact fractals) and peaking between
-  // them. Subtracting this phase-bump carves a rounded interior across a crossfade,
-  // so the form melts through a blob instead of thinning to nothing where two
-  // fractals don't overlap. q = fractional part of s; 1.2·q·(1−q) peaks mid-stage.
-  const infl=makeNode("fnDef",{x:360,y:-40});infl.name="infl";infl.label="infl(s) · melt";infl.color="#9aa6c8";
-  infl.props.params="s";infl.props.expr="1.2*(s - floor(s))*(1 - (s - floor(s)))";
+  // ease: a clamped smoothstep on [0,1] (t²(3−2t)) — the morph's slow-in/slow-out.
+  const ease=makeNode("fnDef",{x:360,y:-120});ease.name="ease";ease.label="ease(f) · smoothstep";ease.color="#9aa6c8";
+  ease.props.params="f";ease.props.expr="(min(max(f,0),1))^2 * (3 - 2*min(max(f,0),1))";
+  // morph phase with a DWELL: for the first 62% of each unit of s the phase sits on
+  // the integer (the exact fractal is held still and crisp); only in the last 38%
+  // does it ease across to the next. So each fractal is shown for most of its stage,
+  // then morphs quickly, instead of being perpetually mid-blend.
+  const mph=makeNode("fnDef",{x:360,y:-40});mph.name="mph";mph.label="mph(s) · dwell phase";mph.color="#9aa6c8";
+  mph.props.params="s";mph.props.expr="floor(s) + ease((s - floor(s) - 0.62)/0.38)";
+  mph.attachments=[ease.id];
+  // inflation: nonzero ONLY during the morph window (the last 38% of a stage),
+  // peaking mid-morph. Subtracting it carves a rounded interior just while two
+  // fractals crossfade, so the form melts through a blob there — but during the
+  // dwell it is exactly zero, so the held fractal renders crisp (not blobby).
+  const infl=makeNode("fnDef",{x:540,y:-40});infl.name="infl";infl.label="infl(s) · melt";infl.color="#9aa6c8";
+  infl.props.params="s";infl.props.expr="3.8 * min(max((s - floor(s) - 0.62)/0.38,0),1) * (1 - min(max((s - floor(s) - 0.62)/0.38,0),1))";
   // the fractals, each a named distance estimator (the intrinsics emit GLSL loops),
   // framed to a comparable size inside the sampling box.
   const sph    =makeNode("fnDef",{x:360,y:150});sph.name="sph";sph.label="sph · sphere";sph.color="#7cc8ff";
@@ -291,8 +301,8 @@ function metamorphScene(){
   // returns home seamlessly. pw / mbScale / jt drive each fractal in place.
   const eq=makeNode("equation",{x:780,y:320});eq.label="Σ w(s,k)·fractalₖ = 0";eq.color="#c6a0f6";
   eq.props.dims="3d";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";eq.props.rhs="0";
-  eq.props.lhs="w(s,0)*sph(x,y,z) + w(s,1)*bulbF(x,y,z,pw) + w(s,2)*boxF(x,y,z,mbScale) + w(s,3)*mengerF(x,y,z) + w(s,4)*juliaF(x,y,z,jt) + w(s,5)*sph(x,y,z) - infl(s)";
-  eq.attachments=[s.id,pw.id,mbScale.id,jt.id,w.id,infl.id,sph.id,bulbF.id,boxF.id,mengerF.id,juliaF.id];
+  eq.props.lhs="w(mph(s),0)*sph(x,y,z) + w(mph(s),1)*bulbF(x,y,z,pw) + w(mph(s),2)*boxF(x,y,z,mbScale) + w(mph(s),3)*mengerF(x,y,z) + w(mph(s),4)*juliaF(x,y,z,jt) + w(mph(s),5)*sph(x,y,z) - infl(s)";
+  eq.attachments=[s.id,pw.id,mbScale.id,jt.id,w.id,ease.id,mph.id,infl.id,sph.id,bulbF.id,boxF.id,mengerF.id,juliaF.id];
   // ray-march it, iridescent so the shifting normals read as colour under the lights.
   const tr=makeNode("transformer",{x:1100,y:320});tr.label="raymarch · iridescent";tr.color="#c6a0f6";
   tr.props.mode="graph";
@@ -309,7 +319,7 @@ function metamorphScene(){
   cool.props.dirX="-0.5";cool.props.dirY="-0.35";cool.props.dirZ="0.7";
   cam.attachments=[tr.id,warm.id,cool.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[pw.id]:pw,[mbScale.id]:mbScale,[jt.id]:jt,[lt.id]:lt,
-    [w.id]:w,[infl.id]:infl,[sph.id]:sph,[bulbF.id]:bulbF,[boxF.id]:boxF,[mengerF.id]:mengerF,[juliaF.id]:juliaF,
+    [w.id]:w,[ease.id]:ease,[mph.id]:mph,[infl.id]:infl,[sph.id]:sph,[bulbF.id]:bulbF,[boxF.id]:boxF,[mengerF.id]:mengerF,[juliaF.id]:juliaF,
     [eq.id]:eq,[tr.id]:tr,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 function whitneyScene(){

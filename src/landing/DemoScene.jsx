@@ -21,8 +21,10 @@ const KIND = "metamorph";
 // The five fractals, in the order the morph clock s (0..5) sweeps them. Used only
 // to label what's on screen; the math itself lives in the project graph.
 const STAGES = ["Sphere","Mandelbulb","Mandelbox","Menger Sponge","Quaternion Julia"];
-const STAGE_SECS = 9;                 // must match the project: s period (45) / 5
+const STAGE_SECS = 10;                // must match the project: s period (50) / 5
 const LOOP_SECS  = STAGE_SECS*5;      // one full pass through all five
+const smoothstep = (a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
+const mix = (a,b,t)=>a+(b-a)*t;
 
 const GREETS =
   "DEDEKIND ◈ FRACTAL METAMORPHOSIS — one ray-marched equation f(x,y,z)=0 melting "+
@@ -44,6 +46,10 @@ const DemoStage = memo(function DemoStage({ mobile, pausedRef }){
   const camId = built?.camId;
   const animValsRef = useRef({});
   const thetaRef = useRef(0.7);
+  const radiusRef = useRef(6.4);
+  // the morph clock node, so the camera can read the live phase and zoom on the
+  // wild (non-sphere) fractals while they are held still.
+  const sId = useMemo(()=> baseScene ? (Object.values(baseScene).find(n=>n.type==="animator"&&n.name==="s")||{}).id : null, [baseScene]);
   const [, setTick] = useState(0);
 
   useEffect(()=>{
@@ -51,6 +57,7 @@ const DemoStage = memo(function DemoStage({ mobile, pausedRef }){
     animValsRef.current={};
     for(const n of Object.values(baseScene)) if(n.type==="animator") animValsRef.current[n.id]=resolveNum(n.props.min,{},0);
     thetaRef.current = resolveNum(baseScene[camId]?.props?.orbTheta,{},0.7);
+    radiusRef.current = resolveNum(baseScene[camId]?.props?.orbRadius,{},6.4);
   }, [baseScene, camId]);
 
   useEffect(()=>{
@@ -70,16 +77,28 @@ const DemoStage = memo(function DemoStage({ mobile, pausedRef }){
           }
         }
         thetaRef.current += 0.12*dt;        // cinematic camera drift
+        // ── cinematic zoom ──────────────────────────────────────────────────
+        // Punch IN on a wild fractal while it is held crisp (dwell), pull back to
+        // frame the whole shape during a morph, and stay wide on the calm sphere.
+        const sv = sId!=null ? (animValsRef.current[sId] ?? 0) : 0;
+        const frac = sv - Math.floor(sv);
+        const stage = Math.floor(sv) % 5;                 // 0=sphere, 1..4=fractals
+        const morphProg = smoothstep(0.62, 1.0, frac);    // 0 during dwell → 1 by stage end
+        const wild = stage===0 ? 0 : 1;                   // the sphere is calm
+        const zoomIn = wild * (1 - morphProg);            // 1 only on a held fractal
+        const targetR = mix(6.6, 3.2, zoomIn);
+        radiusRef.current += (targetR - radiusRef.current) * Math.min(1, dt*1.6);
         setTick(t=>t+1);
       }
       raf=requestAnimationFrame(loop);
     };
     raf=requestAnimationFrame(loop);
     return ()=>cancelAnimationFrame(raf);
-  }, [baseScene, pausedRef]);
+  }, [baseScene, pausedRef, sId]);
 
   const liveCam = baseScene ? {...baseScene[camId], props:{...baseScene[camId].props,
     orbTheta:String(thetaRef.current),
+    orbRadius:String(radiusRef.current),
     showScalarOverlay:false, showOpenBtn:false, showHints:false,
     showCamLabel:false, showShareBtn:false, showResetBtn:false }} : null;
   const nodes = baseScene ? {...baseScene, [camId]:liveCam} : null;
@@ -129,12 +148,13 @@ export function DemoScene(){
   useEffect(()=>{ const h=setTimeout(()=>setHintOn(false), 6500); return ()=>clearTimeout(h); }, []);
 
   const t = tRef.current;
-  const sClock = t/STAGE_SECS;                          // 0..6
-  const idx = Math.round(sClock) % STAGES.length;       // dominant surface
-  // Local fade so the title eases out near each crossfade and back in after it.
+  const sClock = t/STAGE_SECS;                          // 0..5
+  const idx = Math.floor(sClock) % STAGES.length;       // the fractal being held
+  // The shape is held crisp for the first 62% of a stage (the dwell), then morphs.
+  // Show the title during the dwell; fade it out as the morph starts, in at stage
+  // top. Mirrors the shader's mph() so chrome and geometry agree.
   const frac = sClock - Math.floor(sClock);             // 0..1 within a stage
-  const edge = Math.min(frac, 1-frac);                  // 0 at a crossfade, .5 mid-stage
-  const titleVis = Math.min(1, edge/0.18);
+  const titleVis = smoothstep(0, 0.06, frac) * (1 - smoothstep(0.6, 0.85, frac));
   const next = STAGES[(idx+1)%STAGES.length];
 
   return (
