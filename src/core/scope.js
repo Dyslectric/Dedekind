@@ -1,5 +1,5 @@
 import { catOf } from "./taxonomy.js";
-import { resolveNum, safeEval, makeFn, splitTopLevel } from "./math.js";
+import { resolveNum, safeEval, evalArray, makeFn, splitTopLevel } from "./math.js";
 import * as math from "mathjs";
 import { exprToGLSL, fnTableFromScope, fnTableSig } from "../geometry/glsl.js";
 
@@ -107,6 +107,10 @@ function resolveNodeValue(node, nodes, animVals, building){
     case "animator": return animVals?.[node.id] ?? (typeof node.value==="number"?node.value:0);
     case "constant": return resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building), 0);
     case "expr":     return resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building), 0);
+    // A list binds its name to an ARRAY value (numbers, or rows like [x,y,z] for a
+    // vector/point list). It's the one scope value that isn't a number; downstream
+    // expressions index it (L[k]) or fold it (sum(L)). Empty/invalid → [].
+    case "list":     return evalArray(node.props?.expr, ownScope(node.id,nodes,animVals,building)) || [];
     case "fnDef": {
       if(!node.name || !node.props?.expr) return undefined;
       const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
@@ -341,6 +345,10 @@ function scopeSig(node, scope){
       if(!appearsIn(k, hay)) continue;
       if(typeof v==="number"){
         parts.push(k+"="+v);
+      } else if(Array.isArray(v)){
+        // A list value: fold its contents in so a plot rebuilds when the list
+        // changes (and not otherwise). JSON is a stable, comparable encoding.
+        parts.push(k+"="+JSON.stringify(v));
       } else if(typeof v==="function" && v._fnExpr!=null){
         // Guard against recursive/self-referential function definitions.
         const fnKey=k+":"+(v._fnName||"");

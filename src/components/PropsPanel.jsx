@@ -8,7 +8,7 @@ import { EmptyPanel } from "./propspanel/EmptyPanel.jsx";
 import { PanelHeader } from "./propspanel/PanelHeader.jsx";
 import { SelectionActions } from "./propspanel/SelectionActions.jsx";
 import { ProjectSection, UsedBySection, InputsSection } from "./propspanel/DependencySections.jsx";
-import { ConstantEditor, ExprEditor, SliderEditor, AnimatorEditor, FnDefEditor } from "./propspanel/ScalarEditors.jsx";
+import { ConstantEditor, ExprEditor, SliderEditor, AnimatorEditor, FnDefEditor, ListEditor } from "./propspanel/ScalarEditors.jsx";
 import { FnMapEditor, EquationEditor, ParamSpaceEditor } from "./propspanel/FunctionEditors.jsx";
 import { TextureEditor, VideoEditor, LightEditor } from "./propspanel/MediaEditors.jsx";
 import { TransformerEditor } from "./propspanel/TransformerEditor.jsx";
@@ -79,7 +79,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {isProject&&<ProjectSection node={node} onChange={onChange} layout={layout}/>}
 
         {/* ── Used by (downstream consumers) ── */}
-        {usedBy.length>0 && (isScalar||isFunctionType(node.type)||isDomainType(node.type)) &&
+        {usedBy.length>0 && (isScalar||node.type==="list"||isFunctionType(node.type)||isDomainType(node.type)) &&
           <UsedBySection node={node} usedBy={usedBy} onDisconnect={onDisconnect}/>}
 
         {/* ── Inputs (upstream dependencies) for functions / plots / domains ── */}
@@ -92,6 +92,7 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {node.type==="expr"&&<ExprEditor {...ed}/>}
         {node.type==="slider"&&<SliderEditor {...ed}/>}
         {node.type==="animator"&&<AnimatorEditor {...ed}/>}
+        {node.type==="list"&&<ListEditor {...ed}/>}
 
         {/* ── Function definition ── */}
         {node.type==="fnDef"&&<FnDefEditor {...ed}/>}

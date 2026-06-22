@@ -8,7 +8,7 @@
 // in the add menu; the legacy kinds still render for older projects but are no
 // longer offered as new nodes. plane / quiver2d / quiver3d / flow remain as-is.
 const ADDABLE_KINDS = [
-  ["constant","expr","slider","animator","fnDef"],             // inputs
+  ["constant","expr","slider","animator","fnDef","list"],      // inputs
   ["fnMap","equation","transformer"],                          // functions + how to plot them
   ["paramSpace","points","rawGeom"],                          // manifolds / point sets / raw primitives
   ["texture","video","light"],                                 // texture sources + lights
@@ -30,6 +30,7 @@ const KIND_HOTKEYS = {
   s: "slider",
   a: "animator",
   d: "fnDef",        // function (d)efinition
+  i: "list",         // l(i)st  (l is taken by light)
   m: "fnMap",        // (m)ap
   q: "equation",     // e(q)uation
   t: "transformer",

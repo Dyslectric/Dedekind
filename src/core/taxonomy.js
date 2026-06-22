@@ -16,6 +16,10 @@
 // them (a function, plot, domain, or a camera prop that references the scalar).
 const CATEGORY = {
   constant:"scalar", slider:"scalar", animator:"scalar", expr:"scalar",
+  // list: a named value that is an ARRAY (numbers, or rows like [x,y,z]). Category
+  // "scalar" so it attaches wherever a scalar does and is referenced by name; its
+  // value just happens to be an array rather than a number.
+  list:"scalar",
   fnDef:"function",
   domain:"domain",
   curve3d:"plot", fn1d:"plot", surf3d:"plot", paramsurf:"plot", paramvol:"plot", plane:"plot",

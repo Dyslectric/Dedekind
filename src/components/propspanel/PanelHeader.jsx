@@ -36,7 +36,7 @@ export function PanelHeader({ node, onChange, onDelete, onToggleEnabled, onDetac
     </div>
     <div style={{marginTop:6,display:"flex",gap:5}}>
       <input value={node.label} onChange={e=>onChange({label:e.target.value})} style={{...S.inp,flex:1}} placeholder="label"/>
-      {(isScalar||node.type==="fnDef")&&<NameField v={node.name||""} width={80}
+      {(isScalar||node.type==="fnDef"||node.type==="list")&&<NameField v={node.name||""} width={80}
         onChange={val=>onChange({name:val})}
         placeholder={node.type==="fnDef"?"name":"var"}/>}
     </div>

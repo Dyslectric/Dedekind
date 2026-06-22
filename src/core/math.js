@@ -263,6 +263,18 @@ function safeEval(expr, scope) {
 function linspace(a, b, n) {
   const r = []; for (let i = 0; i < n; i++) r.push(a + (b-a)*i/(n-1)); return r;
 }
+// Evaluate an expression expected to yield an ARRAY (a list value). Normalizes a
+// mathjs Matrix to a plain nested JS array; returns null if it isn't array-like.
+// Used by the list node — the one place scope keeps a value that isn't a number.
+function evalArray(expr, scope) {
+  const c = compileExpr(expr);
+  if (!c) return null;
+  try {
+    let v = c.evaluate(scope);
+    if (v && typeof v.toArray === "function") v = v.toArray();
+    return Array.isArray(v) ? v : null;
+  } catch { return null; }
+}
 
 // ── Recursive user-defined functions ────────────────────────────────────────
 function makeFn(name, params, expr, sc) {
@@ -339,5 +351,5 @@ function derivativeExpr(bodyText, varName) {
 
 export {
   math, parse,
-  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, linspace, makeFn, splitTopLevel, derivativeExpr
+  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr
 };

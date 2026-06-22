@@ -20,6 +20,7 @@ const TYPE_META={
   slider:   {tag:"SLD",  tc:"#fd8",   bg:"#1a1400",hdr:"#251c00"},
   animator: {tag:"ANM",  tc:"#f76",   bg:"#1c0607",hdr:"#260c0c"},
   fnDef:    {tag:"FN()", tc:"#afd",   bg:"#0c1808",hdr:"#141f0c"},
+  list:     {tag:"[ ]",  tc:"#f7d9a0",bg:"#1a1408",hdr:"#221c0c"},
   domain:   {tag:"DOM",  tc:"#9cf",   bg:"#0a1422",hdr:"#0e1c30"},
   point:    {tag:"PT",   tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   pointSeq: {tag:"PTS",  tc:"#ffc",   bg:"#1c1a06",hdr:"#242208"},
@@ -61,6 +62,9 @@ function makeNode(type,pos){
     slider:  {label:"Slider",name:"a",value:0,props:{min:"-5",max:"5",step:"0.01"},attachments:[]},
     animator:{label:"Anim",name:"t",value:0,props:{min:"0",max:"1",period:"4",loop:"bounce",step:""},playing:false,attachments:[]},
     fnDef:   {label:"f(x)",name:"f",props:{params:"x",expr:"x^2"},attachments:[]},
+    // list: a named array value. The expr is any mathjs expression yielding an
+    // array — a literal, a range (1:n), or a built list (e.g. a vertex table).
+    list:    {label:"List",name:"L",props:{expr:"[1, 2, 3, 5, 8]"},attachments:[]},
     domain:  {label:"Domain",props:{kind:"interval",var:"x",aMin:"-5",aMax:"5",bMin:"-5",bMax:"5",cMin:"-3",cMax:"3",res:"300",resB:"30",resC:"5"},attachments:[]},
     point:   {label:"Point",color:"__AUTO__",props:{x:"0",y:"0",z:"0",radius:"0.08"},attachments:[]},
     pointSeq:{label:"Pt Seq",color:"__AUTO__",props:{points:"0, 0\n1, 1\n2, 0\n3, 1\n4, 0",radius:"4",drawLines:true},attachments:[]},
