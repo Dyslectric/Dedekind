@@ -294,7 +294,7 @@ function geomSignature(node, scope){
       return `raw|${c}|${p.prim}|${p.src||"list"}|${resolved}${colSig}${aSig}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.normalize?1:0}|${p.lenMode||""}|${p.showWire!==false?1:0}|${isIdx?scopeSig(node,scope):""}`;
     }
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
-    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|sh:${p.shading||""}|ul:${p.matUnlit?1:0}|${p.matColorMode||""}|${p.matColor||""}|${p.matR||""}|${p.matG||""}|${p.matB||""}|${p.matColorLo||""}|${p.matColorHi||""}|${p.matColorMin||""}|${p.matColorMax||""}|${p.matSpec||""}|${p.matEmit||""}|${p.matEmitColor||""}|uv:${p.uvScaleU||""},${p.uvScaleV||""},${p.uvOffU||""},${p.uvOffV||""},${p.uvRot||""}|ns:${p.matNormalStrength||""}|${p.__texSig||""}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
+    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|sh:${p.shading||""}|ul:${p.matUnlit?1:0}|${p.matColorMode||""}|${p.matColor||""}|${p.matR||""}|${p.matG||""}|${p.matB||""}|${p.matColorLo||""}|${p.matColorHi||""}|${p.matColorMin||""}|${p.matColorMax||""}|${p.matSpec||""}|${p.matEmit||""}|${p.matEmitColor||""}|uv:${p.uvScaleU||""},${p.uvScaleV||""},${p.uvOffU||""},${p.uvOffV||""},${p.uvRot||""}|ns:${p.matNormalStrength||""}|${p.__texSig||""}|${p.__fnSig||""}|fn:${p.__fnDefSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
       // For a transpilable implicit equation (GPU raymarch), the wired sliders/
       // animators become live shader uniforms — they must NOT invalidate the
       // geometry cache, or every animated frame triggers a full CPU rebuild
@@ -314,7 +314,7 @@ function geomSignature(node, scope){
     case "quiver2d": return `q2|${c}|${p.exprX}|${p.exprY}|${resolveNum(p.gridN,scope,12)}|${resolveNum(p.xMin,scope,-4)}|${resolveNum(p.xMax,scope,4)}|${resolveNum(p.yMin,scope,-4)}|${resolveNum(p.yMax,scope,4)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "quiver3d": return `q3|${c}|${p.exprX}|${p.exprY}|${p.exprZ}|${resolveNum(p.gridN,scope,5)}|${resolveNum(p.xMin,scope,-3)}|${resolveNum(p.xMax,scope,3)}|${resolveNum(p.yMin,scope,-3)}|${resolveNum(p.yMax,scope,3)}|${resolveNum(p.zMin,scope,-3)}|${resolveNum(p.zMax,scope,3)}|${p.normalize!==false}|${scopeSigFns(node,scope)}`;
     case "glyphField": return `gl|${c}|${p.pairs}|${resolveNum(p.arrowLen,scope,0.5)}|${p.lenMode||(p.normalize===false?"scaled":"uniform")}|${p.anim||"crest"}|${resolveNum(p.speed,scope,1)}|${p.crestColor||""}|${p.__useColor?1:0}|${p.__colExpr||""}|${p.__colRecInit||""}|${p.__colRecStep||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${scopeSig(node,scope)}`;
-    case "flow": return `fl|${c}|${resolveNum(p.steps,scope,500)}|${resolveNum(p.stepSize,scope,0.02)}|${p.output||"surface"}|${resolveNum(p.volSlices,scope,6)}|${p.gradient?1:0}|${p.gradA||""}|${p.gradB||""}|${p.showWire?1:0}|${p.__fnSig||""}|${p.__paramSig||""}|${scopeSig(node,scope)}`;
+    case "flow": return `fl|${c}|${resolveNum(p.steps,scope,500)}|${resolveNum(p.stepSize,scope,0.02)}|${p.output||"surface"}|${resolveNum(p.volSlices,scope,6)}|${p.gradient?1:0}|${p.gradA||""}|${p.gradB||""}|${p.showWire?1:0}|${p.__fnSig||""}|fn:${p.__fnDefSig||""}|${p.__paramSig||""}|${scopeSig(node,scope)}`;
     default: return null;
   }
 }
@@ -365,7 +365,7 @@ function plotSignature(node, p, scope, nodes, animVals){
     const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
       && p.shading==="lit" && p.matColorMode==="rgb"
       && graphTranspiles(p, fnMapNode, sigScope);
-    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU};
+    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU,__fnDefSig:fnTableSig(fnTableFromScope(sigScope))};
   }
   return geomSignature({...node,props:pSig},sigScope);
 }

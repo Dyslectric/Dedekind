@@ -1206,17 +1206,21 @@ function domainColorScene(label, re, im, R, palette){
   cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
   const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
   fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";   // flat z = 0
+  // The complex map is two reusable function nodes, Re f and Im f, wired into the
+  // colour transformer; they inline into the GPU shader (no per-pixel function call).
+  const fre=makeNode("fnDef",{x:360,y:300});fre.name="fre";fre.label="Re f(x,y)";fre.props.params="x,y";fre.props.expr=re;
+  const fim=makeNode("fnDef",{x:360,y:420});fim.name="fim";fim.label="Im f(x,y)";fim.props.params="x,y";fim.props.expr=im;
   const tr=makeNode("transformer",{x:720,y:160});tr.label=label;tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
   if(palette==="glow") tr.props.matUnlit=true;             // pure colour, no lighting tint
-  const M=`hypot((${re}),(${im}))`, A=`atan2((${im}),(${re}))`;
+  const M=`hypot(fre(x,y),fim(x,y))`, A=`atan2(fim(x,y),fre(x,y))`;
   const V=`(${M}/(${M}+1))`;                                   // 0 at a zero, →1 far out
   const [r,g,b]= palette==="glow" ? _glowColorExprs(M, A) : _phaseColorExprs(A, V, palette);
   tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
-  tr.attachments=[fn.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+  tr.attachments=[fn.id,fre.id,fim.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[fre.id]:fre,[fim.id]:fim,[tr.id]:tr},camId:cam.id,animated:false};
 }
 // z (identity): one hue cycle around the single zero at the origin.
 function dcIdentityScene(){ return domainColorScene("f(z) = z", "x", "y", 3); }
