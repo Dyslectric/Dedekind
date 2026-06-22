@@ -785,6 +785,65 @@ function brickSphereScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[tex.id]:tex,[nrm.id]:nrm,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
+// ── Mathematical objects derived by node-graph formulas (no baked literal lists) ─
+// Each helper returns an expression in the graph's own language: a list expr over a
+// range (vertices), or a rawGeom index template over i,j,k (faces, fractals). The
+// objects are computed from their structure rather than typed coordinate by
+// coordinate, so opening any of these projects shows the derivation, not a data dump.
+
+// Cube corners (8), two-z-ring order, from the index 0..7 by bit extraction, ×s.
+function _cubeVertsExpr(s){
+  return `transpose([ (2*mod(floor((mod(0:7,4)+1)/2),2)-1)*${s}, (2*floor(mod(0:7,4)/2)-1)*${s}, (2*floor((0:7)/4)-1)*${s} ])`;
+}
+// Octahedron: ±r along each axis, six vertices in axis order.
+function _octaVertsExpr(r){
+  return `transpose([ (1-2*mod(0:5,2)).*((floor((0:5)/2))==0), (1-2*mod(0:5,2)).*((floor((0:5)/2))==1), (1-2*mod(0:5,2)).*((floor((0:5)/2))==2) ])*${r}`;
+}
+// Regular tetrahedron: the four even-parity cube corners, ×s.
+function _tetraVertsExpr(s){
+  return `transpose([ (1-2*floor((0:3)/2))*${s}, (1-2*mod(0:3,2))*${s}, (1-2*mod(floor((0:3)/2)+mod(0:3,2),2))*${s} ])`;
+}
+// Cube faces as a rawGeom triangle template over i=face(0..5), j=tri-half(0..1):
+// each face's plane and corners are derived from the face index, ×s, two triangles
+// tiling each square. Returns { idxTris, idxCount }.
+function _cubeFacesTemplate(s){
+  const I0=a=>`(${a}-1)*(${a}-2)/2`, I1=a=>`(${a})*(2-(${a}))`, I2=a=>`(${a})*(${a}-1)/2`;
+  const a="floor(i/2)", sgn="(2*mod(i,2)-1)";
+  const coord=(U,V,n)=>{ const w=n===0?[I0(a),I2(a),I1(a)]:n===1?[I1(a),I0(a),I2(a)]:[I2(a),I1(a),I0(a)];
+    return `((${w[0]})*${sgn}+(${w[1]})*(${U})+(${w[2]})*(${V}))*${s}`; };
+  const vert=(U,V)=>`${coord(U,V,0)}, ${coord(U,V,1)}, ${coord(U,V,2)}`;
+  return { idxTris:`${vert("-1","-1")} | ${vert("1","(2*j-1)")} | ${vert("(1-2*j)","1")}`, idxCount:"6, 2" };
+}
+// Sierpiński octahedron at depth L: the face template stamped over every cell, the
+// cell centre derived from the flat index by its base-6 self-similar expansion (each
+// base-6 digit picks one of six half-scaling directions). The index is split across
+// i and k so neither loop dim is large. Returns { idxTris, idxCount }.
+function _sierpOctaTemplate(L){
+  const S=3.0, R=+(S/2**L).toFixed(6);
+  const NK=6**Math.floor(L/2), NI=6**Math.ceil(L/2), o=`(i*${NK}+k)`;
+  const I0=a=>`(${a}-1)*(${a}-2)/2`, I1=a=>`(${a})*(2-(${a}))`, I2=a=>`(${a})*(${a}-1)/2`;
+  const coord=(iv)=>{ const t=[]; for(let p=0;p<L;p++){ const dg=`mod(floor(${o}/${6**p}),6)`, ax=`floor(${dg}/2)`, sg=`(1-2*mod(${dg},2))`, sc=+(S/2**(L-p)).toFixed(6); t.push(`${sg}*(${iv(ax)})*${sc}`); } return t.join("+"); };
+  const CX=coord(I0), CY=coord(I1), CZ=coord(I2);
+  return {
+    idxTris:
+      `(${CX})+(1-2*mod(floor(j/4),2))*${R}, ${CY}, ${CZ} | `+
+      `${CX}, (${CY})+(1-2*mod(floor(j/2),2))*${R}, ${CZ} | `+
+      `${CX}, ${CY}, (${CZ})+(1-2*mod(j,2))*${R}`,
+    idxCount:`${NI}, 8, ${NK}`, NK,
+  };
+}
+// Sierpiński tetrahedron at depth D as a wireframe: a segment template over i=cell,
+// j,k=corner indices (j>k and j<k draw each edge, j=k is a zero-length point). Each
+// cell corner is derived from the cell index by its base-4 expansion (each digit
+// picks one of four half-scaling tetra corners). Returns { idxSegments, idxCount }.
+function _sierpTetraTemplate(D){
+  const S=3.0;
+  const Tx=j=>`(1-2*floor((${j})/2))*${S}`, Ty=j=>`(1-2*mod(${j},2))*${S}`, Tz=j=>`(1-2*mod(floor((${j})/2)+mod(${j},2),2))*${S}`;
+  const coord=(Tf,c)=>{ const t=[`(${Tf(c)})`]; for(let p=0;p<D;p++){ const k=`mod(floor(i/${4**p}),4)`; t.push(`${2**p}*(${Tf(k)})`); } return `(${t.join("+")})/${2**D}`; };
+  const vert=c=>`${coord(Tx,c)}, ${coord(Ty,c)}, ${coord(Tz,c)}`;
+  return { idxSegments:`${vert("j")} | ${vert("k")}`, idxCount:`${4**D}, 4, 4` };
+}
+
 // LISTS: a cube as two shared lists — a vertex list and an edge list of index
 // pairs (1-based). The edges REFERENCE the vertices by index rather than copying
 // coordinates, so the eight corners are one source of truth: edit a vertex and
@@ -794,7 +853,7 @@ function listCubeScene(){
   const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="cube from lists";
   cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="22";
   const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
-  V.props.expr="[[-1.4,-1.4,-1.4],[1.4,-1.4,-1.4],[1.4,1.4,-1.4],[-1.4,1.4,-1.4],[-1.4,-1.4,1.4],[1.4,-1.4,1.4],[1.4,1.4,1.4],[-1.4,1.4,1.4]]";
+  V.props.expr=_cubeVertsExpr(1.4);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
@@ -812,7 +871,7 @@ function octaListScene(){
   const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="octahedron from lists";
   cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="22";
   const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
-  V.props.expr="[[2,0,0],[-2,0,0],[0,2,0],[0,-2,0],[0,0,2],[0,0,-2]]";
+  V.props.expr=_octaVertsExpr(2);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[5,1],[5,3],[5,2],[5,4],[6,1],[6,3],[6,2],[6,4],[1,3],[3,2],[2,4],[4,1]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="octahedron";pts.color="#5be0c0";
@@ -863,7 +922,7 @@ function showcaseScene(){
 
   // ── list-defined cube cage: edges reference a shared vertex list by index ──
   const V=makeNode("list",{x:380,y:340});V.name="V";V.label="cage verts";V.color="#f7d9a0";
-  V.props.expr="[[-2.7,-2.7,-2.7],[2.7,-2.7,-2.7],[2.7,2.7,-2.7],[-2.7,2.7,-2.7],[-2.7,-2.7,2.7],[2.7,-2.7,2.7],[2.7,2.7,2.7],[-2.7,2.7,2.7]]";
+  V.props.expr=_cubeVertsExpr(2.7);
   const E=makeNode("list",{x:380,y:470});E.name="E";E.label="cage edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
   const cage=makeNode("points",{x:720,y:380});cage.label="cage";cage.color="#7f9cf5";
@@ -894,39 +953,23 @@ function showcaseScene(){
 }
 
 // SIERPINSKI OCTAHEDRON: a depth-6 octahedron fractal — 6⁶ = 46656 small octahedra,
-// 373248 coloured triangles. The 46656 centres are generated into three first-class
-// Lists (Cx, Cy, Cz); a rawGeom index template stamps the 8 faces of an octahedron
-// at each centre (face f picks a sign per axis), and the colour is a position-based
-// RGB field so the whole fractal is a smooth rainbow. The octahedron index is split
-// across two loop dims (i·NK+k) so each stays under rawGeom's per-dimension cap, and
-// the template compiles to native JS (the JIT handles the list lookups) — ~2.7s.
+// 373248 coloured triangles. Nothing is baked: each cell's centre is derived inside
+// the rawGeom index template from the cell number, read as a base-6 expansion where
+// every digit picks one of six half-scaling directions (the recursion as a formula).
+// One octahedron's 8 faces are stamped at that centre (face f picks a sign per axis),
+// coloured by a position-based RGB field. The cell index is split across two loop
+// dims (i·NK+k) so each stays under rawGeom's per-dimension cap, and the whole
+// template compiles to native JS, so the depth-6 mesh builds from formula alone.
 function sierpinskiOctaScene(){
-  const L=6, S=3.0;
-  const dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-  let pts=[[0,0,0]], half=S;
-  for(let l=0;l<L;l++){ const off=half/2, np=[];
-    for(const c of pts) for(const d of dirs) np.push([c[0]+d[0]*off,c[1]+d[1]*off,c[2]+d[2]*off]);
-    pts=np; half/=2; }
-  const R=half;                                   // small-octahedron radius
-  const col=a=>"["+pts.map(p=>+p[a].toFixed(4)).join(",")+"]";
-  // split the 6^L octahedron index across i and k so each loop dim stays small
-  const NK=Math.pow(6,Math.floor(L/2)), NI=Math.pow(6,Math.ceil(L/2));   // NI·NK = 6^L
-  const o=`(i*${NK}+k)`;                           // flat octahedron index → list lookup
-
+  const L=6;
+  const tpl=_sierpOctaTemplate(L);    // depth-6 face template, centres derived from the index
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1280,y:120}));cam.label="Sierpiński octahedron";
   cam.props.orbRadius="11";cam.props.orbTheta="0.7";cam.props.orbPhi="0.82";cam.props.spin="loop";cam.props.spinPeriod="60";
-  const Cx=makeNode("list",{x:300,y:80});Cx.name="Cx";Cx.label="centres x";Cx.color="#f7d9a0";Cx.props.expr=col(0);
-  const Cy=makeNode("list",{x:300,y:210});Cy.name="Cy";Cy.label="centres y";Cy.color="#f7d9a0";Cy.props.expr=col(1);
-  const Cz=makeNode("list",{x:300,y:340});Cz.name="Cz";Cz.label="centres z";Cz.color="#f7d9a0";Cz.props.expr=col(2);
-  const Rn=makeNode("constant",{x:300,y:470});Rn.name="R";Rn.label="cell radius";Rn.props.value=String(+R.toFixed(6));
   const g=makeNode("rawGeom",{x:720,y:220});g.label="fractal";g.color="#8aadf4";
   g.props.prim="triangles";g.props.src="index";
-  g.props.idxTris=
-    `Cx[${o}+1]+(1-2*mod(floor(j/4),2))*R, Cy[${o}+1], Cz[${o}+1] | `+
-    `Cx[${o}+1], Cy[${o}+1]+(1-2*mod(floor(j/2),2))*R, Cz[${o}+1] | `+
-    `Cx[${o}+1], Cy[${o}+1], Cz[${o}+1]+(1-2*mod(j,2))*R`;
-  g.props.idxCount=`${NI}, 8, ${NK}`;
+  g.props.idxTris=tpl.idxTris;
+  g.props.idxCount=tpl.idxCount;
   // No wireframe overlay: its edge haze buries the structure and looks the same at
   // any depth. Solid faces let the recursive (Sierpiński-triangle) holes read.
   g.props.showWire=false;
@@ -934,7 +977,6 @@ function sierpinskiOctaScene(){
   g.props.colorR="512+512*sin(1.5*x)";
   g.props.colorG="512+512*sin(1.5*y+2.1)";
   g.props.colorB="512+512*sin(1.5*z+4.2)";
-  g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];
   // The raw mesh reacts to scene lights: a point light swings around it while a
   // directional "sun" sweeps its direction, so the facets (over the rainbow vertex
   // colour) shimmer as the lights move. An animator drives both; the big centre
@@ -958,7 +1000,7 @@ function sierpinskiOctaScene(){
   floor.props.uMin="-8";floor.props.uMax="8";floor.props.vMin="-8";floor.props.vMax="8";floor.props.uRes="90";floor.props.vRes="90";
   floor.props.showWire=false;floor.props.shading="lit";floor.props.matColorMode="off";
   cam.attachments=[g.id,floor.id,lamp.id,sun.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g,[floor.id]:floor,[anim.id]:anim,[lamp.id]:lamp,[sun.id]:sun},camId:cam.id,animated:true};
+  return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g,[floor.id]:floor,[anim.id]:anim,[lamp.id]:lamp,[sun.id]:sun},camId:cam.id,animated:true};
 }
 
 // TEXTURED IMPLICIT SURFACE: a morphing gyroid level set, ray-marched on the GPU,
@@ -1020,7 +1062,7 @@ function tetraListScene(){
   const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="tetrahedron from lists";
   cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="20";
   const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
-  V.props.expr="[[1.7,1.7,1.7],[1.7,-1.7,-1.7],[-1.7,1.7,-1.7],[-1.7,-1.7,1.7]]";
+  V.props.expr=_tetraVertsExpr(1.7);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[1,3],[1,4],[2,3],[2,4],[3,4]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="tetrahedron";pts.color="#ffd479";
@@ -1033,24 +1075,16 @@ function tetraListScene(){
 // copies at its corners; dimension log4/log2 = 2 exactly. Built as a vertex list +
 // an edge-index list (the same machinery as the polyhedra), depth 4 = 256 cells.
 function sierpTetraScene(){
-  const D=4, S=3.0;
-  let tets=[[[S,S,S],[S,-S,-S],[-S,S,-S],[-S,-S,S]]];
-  for(let d=0;d<D;d++){ const nt=[];
-    for(const T of tets) for(let k=0;k<4;k++)
-      nt.push(T.map(Vj=>[(T[k][0]+Vj[0])/2,(T[k][1]+Vj[1])/2,(T[k][2]+Vj[2])/2]));
-    tets=nt; }
-  const verts=[], edges=[];
-  tets.forEach((T,i)=>{ const b=i*4; for(const c of T) verts.push(c.map(x=>+x.toFixed(3)));
-    edges.push([b+1,b+2],[b+1,b+3],[b+1,b+4],[b+2,b+3],[b+2,b+4],[b+3,b+4]); });
+  const D=4;
+  const tpl=_sierpTetraTemplate(D);
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1180,y:120}));cam.label="Sierpiński tetrahedron";
   cam.props.orbRadius="10";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="40";
-  const V=makeNode("list",{x:340,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";V.props.expr=JSON.stringify(verts);
-  const E=makeNode("list",{x:340,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";E.props.expr=JSON.stringify(edges);
-  const pts=makeNode("points",{x:720,y:200});pts.label="fractal";pts.color="#5ad1e6";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="0.045";
-  pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
+  const g=_rawNode({x:720,y:200},"fractal","#5ad1e6",{prim:"segments",src:"index",
+    idxSegments:tpl.idxSegments,idxCount:tpl.idxCount,lineMode:"px",lineWidth:"1.4",
+    colorOn:true,colorMode:"rgb",colorR:"512+512*sin(0.6*x)",colorG:"512+512*sin(0.6*y+2.1)",colorB:"512+512*sin(0.6*z+4.2)"});
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g},camId:cam.id,animated:false};
 }
 
 // FIGURE-EIGHT KNOT (4₁) — a second knot, four crossings, amphichiral.
@@ -1413,19 +1447,16 @@ function listCubeFacesScene(){
   const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="cube with faces";cam.props.showOpenBtn=false;
   cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="22";
   const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
-  V.props.expr="[[-1.4,-1.4,-1.4],[1.4,-1.4,-1.4],[1.4,1.4,-1.4],[-1.4,1.4,-1.4],[-1.4,-1.4,1.4],[1.4,-1.4,1.4],[1.4,1.4,1.4],[-1.4,1.4,1.4]]";
+  V.props.expr=_cubeVertsExpr(1.4);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
   pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
   pts.props.drawLines=false;pts.props.radius="0.1";
   pts.attachments=[V.id,E.id];
-  const C=[[-1.4,-1.4,-1.4],[1.4,-1.4,-1.4],[1.4,1.4,-1.4],[-1.4,1.4,-1.4],[-1.4,-1.4,1.4],[1.4,-1.4,1.4],[1.4,1.4,1.4],[-1.4,1.4,1.4]];
-  const s=p=>C[p-1].join(",");
-  const quad=(a,b,c,d)=>`${s(a)} | ${s(b)} | ${s(c)}\n${s(a)} | ${s(c)} | ${s(d)}`;
-  const tris=[quad(1,2,3,4),quad(5,6,7,8),quad(1,2,6,5),quad(4,3,7,8),quad(1,4,8,5),quad(2,3,7,6)].join("\n");
-  const faces=_rawNode({x:740,y:420},"6 faces","#5b9cf6",{prim:"triangles",src:"list",rawTris:tris,showWire:false,
-    alphaOn:true,colorA:"560"});
+  const ft=_cubeFacesTemplate(1.4);
+  const faces=_rawNode({x:740,y:420},"6 faces","#5b9cf6",{prim:"triangles",src:"index",
+    idxTris:ft.idxTris,idxCount:ft.idxCount,showWire:false,alphaOn:true,colorA:"560"});
   cam.attachments=[pts.id,faces.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts,[faces.id]:faces},camId:cam.id,animated:false};
 }
@@ -1434,40 +1465,26 @@ function listCubeFacesScene(){
 // scene lives separately, with its lights and floor). Stamps one octahedron face
 // template at every recursion centre, exactly the construction from the deep one.
 function _sierpVariant({L, label, spin, colorBy}){
-  const S=3.0, dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-  let pts=[[0,0,0]], half=S;
-  for(let l=0;l<L;l++){ const off=half/2, np=[];
-    for(const c of pts) for(const d of dirs) np.push([c[0]+d[0]*off,c[1]+d[1]*off,c[2]+d[2]*off]);
-    pts=np; half/=2; }
-  const R=half, col=a=>"["+pts.map(p=>+p[a].toFixed(4)).join(",")+"]";
-  const NK=Math.pow(6,Math.floor(L/2)), NI=Math.pow(6,Math.ceil(L/2)), o=`(i*${NK}+k)`;
+  const tpl=_sierpOctaTemplate(L);
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1180,y:120}));cam.label=label;cam.props.showOpenBtn=false;
   cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.84";cam.props.spin="loop";cam.props.spinPeriod=String(spin);
-  const Cx=makeNode("list",{x:300,y:80});Cx.name="Cx";Cx.label="centres x";Cx.color="#f7d9a0";Cx.props.expr=col(0);
-  const Cy=makeNode("list",{x:300,y:210});Cy.name="Cy";Cy.label="centres y";Cy.color="#f7d9a0";Cy.props.expr=col(1);
-  const Cz=makeNode("list",{x:300,y:340});Cz.name="Cz";Cz.label="centres z";Cz.color="#f7d9a0";Cz.props.expr=col(2);
-  const Rn=makeNode("constant",{x:300,y:470});Rn.name="R";Rn.label="cell radius";Rn.props.value=String(+R.toFixed(6));
   const g=makeNode("rawGeom",{x:720,y:220});g.label="fractal";g.color="#8aadf4";
   g.props.prim="triangles";g.props.src="index";
-  g.props.idxTris=
-    `Cx[${o}+1]+(1-2*mod(floor(j/4),2))*R, Cy[${o}+1], Cz[${o}+1] | `+
-    `Cx[${o}+1], Cy[${o}+1]+(1-2*mod(floor(j/2),2))*R, Cz[${o}+1] | `+
-    `Cx[${o}+1], Cy[${o}+1], Cz[${o}+1]+(1-2*mod(j,2))*R`;
-  g.props.idxCount=`${NI}, 8, ${NK}`;
+  g.props.idxTris=tpl.idxTris;
+  g.props.idxCount=tpl.idxCount;
   g.props.colorOn=true;
   if(colorBy==="index"){
     g.props.showWire=false;
-    g.props.colorMode="ramp";g.props.colorExpr=`i*${NK}+k`;g.props.colorLo="#3a6aff";g.props.colorHi="#ff5ea8";
+    g.props.colorMode="ramp";g.props.colorExpr=`i*${tpl.NK}+k`;g.props.colorLo="#3a6aff";g.props.colorHi="#ff5ea8";
     g.props.colorMin="0";g.props.colorMax=String(Math.pow(6,L)-1);
   } else {
     g.props.showWire=true;
     g.props.colorMode="rgb";
     g.props.colorR="512+512*sin(1.5*x)";g.props.colorG="512+512*sin(1.5*y+2.1)";g.props.colorB="512+512*sin(1.5*z+4.2)";
   }
-  g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];
   cam.attachments=[g.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g},camId:cam.id,animated:true};
+  return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g},camId:cam.id,animated:true};
 }
 // Depth 2: the six half-size copies are easy to pick out (self-similarity rule).
 function sierpinskiLowScene(){ return _sierpVariant({L:2, label:"depth 2: six copies of six", spin:34, colorBy:"position"}); }
