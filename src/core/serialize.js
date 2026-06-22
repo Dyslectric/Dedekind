@@ -71,6 +71,14 @@ function debloatNodes(nodes){
       // numbers/booleans) every node prop actually holds.
       if(JSON.stringify(defaults[k])!==JSON.stringify(v)) props[k]=v;
     }
+    // Media is never serialized into the project URL — an embedded image/video
+    // data-URI (or a session blob: URL) is far too much data and wouldn't be
+    // valid on reload anyway. Drop it; on load the texture falls back to its
+    // default tile. A plain http(s) URL is a small reference and is kept.
+    if((n.type==="texture"||n.type==="video") && typeof props.src==="string"
+       && (props.src.startsWith("data:")||props.src.startsWith("blob:"))){
+      delete props.src;
+    }
     const copy={...n};
     if(Object.keys(props).length) copy.props=props; else delete copy.props;
     out[id]=copy;

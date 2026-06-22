@@ -28,7 +28,7 @@ function gpuUniformsResolvable(uniforms, ascope){
 
 // Attempt a GPU-evaluated surface. Returns [mesh, wire] or null if the
 // expression(s) can't be translated to GLSL.
-function buildSurfGPU(kind, p, scope, color){
+function buildSurfGPU(kind, p, scope, color, tex){
   // a parametrized grid of (u,v) or (x,y) in [0,1]^2 mapped to the domain
   const showWire = p.showWire!==false;
   const fnTable=fnTableFromScope(scope);
@@ -88,7 +88,15 @@ function buildSurfGPU(kind, p, scope, color){
       if(p.matEmit)  emitG=exprToGLSL(p.matEmit,  ax, uniforms, GLSL_UNIFORM_PREFIX, fnTable);
     }
     shade={ fx:fxG, fy:fyG, specExpr:specG, emitExpr:emitG, emitColor:p.matEmitColor };
-    if(colorG){
+    if(p.matColorMode==="texture" && tex){
+      // Texture albedo (works for any surface — sampled at the UV grid coord),
+      // with the optional UV transform.
+      shade.texture=tex;
+      shade.uv={ scaleU:resolveNum(p.uvScaleU,scope,1), scaleV:resolveNum(p.uvScaleV,scope,1),
+                 offU:resolveNum(p.uvOffU,scope,0), offV:resolveNum(p.uvOffV,scope,0),
+                 rot:resolveNum(p.uvRot,scope,0) };
+      matOpts={ shade };
+    } else if(colorG){
       matOpts={ colorBody:colorG,
         colorLo:new THREE.Color(hexToThree(p.matColorLo||"#3a6aff")),
         colorHi:new THREE.Color(hexToThree(p.matColorHi||"#ff5ea8")),
@@ -261,8 +269,13 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
       if(r&&g&&b) shade.rgb=[r,g,b];
       matOpts={ shade };
     } else if(mode==="texture" && tex){
-      // sampled at the surface's UV (the unit grid coord) in the shader
-      shade.texture=tex; matOpts={ shade };
+      // sampled at the surface's UV (the unit grid coord) in the shader, with an
+      // optional UV transform (tiling scale / offset / rotation).
+      shade.texture=tex;
+      shade.uv={ scaleU:resolveNum(tp.uvScaleU,scope,1), scaleV:resolveNum(tp.uvScaleV,scope,1),
+                 offU:resolveNum(tp.uvOffU,scope,0), offV:resolveNum(tp.uvOffV,scope,0),
+                 rot:resolveNum(tp.uvRot,scope,0) };
+      matOpts={ shade };
     } else if(mode==="ramp" && tp.matColor){
       const cG=exprToGLSL(tp.matColor,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable);
       matOpts = cG

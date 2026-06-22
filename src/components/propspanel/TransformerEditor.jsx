@@ -230,11 +230,19 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             <option value="texture">Texture (wired image / video)</option>
           </select>
         </PR>
-        {cmode==="texture"&&<div style={{fontSize:12.5,color:(deps.some(d=>d.type==="texture"||d.type==="video")?ui.uiFaint:ui.uiDanger),marginTop:2,lineHeight:1.5}}>
-          {deps.some(d=>d.type==="texture"||d.type==="video")
-            ? "Sampled at the surface's UV (its grid coordinates). Wire a Texture or Video node's output into this transformer."
-            : "No texture wired — connect a Texture or Video node's output into this transformer."}
-        </div>}
+        {cmode==="texture"&&<>
+          <div style={{fontSize:12.5,color:(deps.some(d=>d.type==="texture"||d.type==="video")?ui.uiFaint:ui.uiDanger),marginTop:2,lineHeight:1.5}}>
+            {deps.some(d=>d.type==="texture"||d.type==="video")
+              ? "Sampled at the surface's UV (its grid coordinates), with the transform below."
+              : "No texture wired — connect a Texture or Video node's output into this transformer."}
+          </div>
+          <PR label="UV tile u"><EI v={node.props.uvScaleU??"1"} sc={scope} onChange={v=>set("uvScaleU",v)} placeholder="1"/></PR>
+          <PR label="UV tile v"><EI v={node.props.uvScaleV??"1"} sc={scope} onChange={v=>set("uvScaleV",v)} placeholder="1"/></PR>
+          <PR label="UV offset u"><EI v={node.props.uvOffU??"0"} sc={scope} onChange={v=>set("uvOffU",v)} placeholder="0"/></PR>
+          <PR label="UV offset v"><EI v={node.props.uvOffV??"0"} sc={scope} onChange={v=>set("uvOffV",v)} placeholder="0"/></PR>
+          <PR label="UV rotate"><EI v={node.props.uvRot??"0"} sc={scope} onChange={v=>set("uvRot",v)} placeholder="0 (radians)"/></PR>
+          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Tile &gt; 1 repeats the image (set the texture's wrap to <em>repeat</em>); rotation is about the surface centre.</div>
+        </>}
         {cmode==="ramp"&&<>
           <PR label="value"><EI v={node.props.matColor||""} sc={scope} onChange={v=>set("matColor",v)} placeholder="scalar, e.g. sin(3x)·cos(3y)"/></PR>
           <PR label="low"><ColorRow v={node.props.matColorLo||"#3a6aff"} onChange={v=>set("matColorLo",v)}/></PR>

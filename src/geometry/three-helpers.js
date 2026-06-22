@@ -57,7 +57,13 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     uniforms.uSpe   = { value: shade.specular ?? 0.35 };
     uniforms.uShine = { value: shade.shininess ?? 32.0 };
     if(shade.emitExpr) uniforms.uEmitColor = { value: new THREE.Color(hexToThree(shade.emitColor||"#ffffff")) };
-    if(shade.texture) uniforms.uTex = { value: shade.texture };
+    if(shade.texture){
+      uniforms.uTex = { value: shade.texture };
+      const uv = shade.uv || {};
+      uniforms.uUvScale  = { value: new THREE.Vector2(uv.scaleU ?? 1, uv.scaleV ?? 1) };
+      uniforms.uUvOffset = { value: new THREE.Vector2(uv.offU ?? 0, uv.offV ?? 0) };
+      uniforms.uUvRot    = { value: uv.rot ?? 0 };
+    }
   }
   const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
   const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
@@ -178,7 +184,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       uniform float uAmb; uniform float uDif; uniform float uSpe; uniform float uShine;
       ${colored ? "uniform vec3 uColorLo; uniform vec3 uColorHi; uniform float uCMin; uniform float uCMax;" : ""}
       ${emitExpr ? "uniform vec3 uEmitColor;" : ""}
-      ${texAlb ? "uniform sampler2D uTex;" : ""}
+      ${texAlb ? "uniform sampler2D uTex; uniform vec2 uUvScale; uniform vec2 uUvOffset; uniform float uUvRot;" : ""}
       varying vec3 vViewPos; varying vec2 vDomain; varying vec2 vUv; varying float vOk;
       void main(){
         if(vOk<0.5) discard;
@@ -201,7 +207,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         float spe = pow(max(dot(N,H), 0.0), uShine);
         float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
         ${texAlb
-          ? `vec3 albedo = texture2D(uTex, vUv).rgb;`
+          ? `vec2 _uv=vUv-0.5; float _cr=cos(uUvRot),_sr=sin(uUvRot); _uv=mat2(_cr,_sr,-_sr,_cr)*_uv; _uv=_uv*uUvScale+0.5+uUvOffset; vec3 albedo = texture2D(uTex, _uv).rgb;`
           : rgb
           ? `vec3 albedo = clamp(vec3((${rgb[0]}),(${rgb[1]}),(${rgb[2]})), 0.0, 1.0);`
           : colored

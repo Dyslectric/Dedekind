@@ -96,7 +96,14 @@ function applyDomain(props, type, dom){
 function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals){
     // Geometry signature (folds wired fnMap/paramSpace/equation expressions and
     // their scopes) — shared with the 2-D scene cache so both invalidate alike.
-    const sig=plotSignature(node,p,scope,nodes,animVals);
+    let sig=plotSignature(node,p,scope,nodes,animVals);
+    // A texture/video wired into a surface isn't in the normalized node's props,
+    // so fold its source into the signature here (swapping the image rebuilds).
+    if(sig!=null && (node.type==="surf3d"||node.type==="paramsurf")){
+      for(const depId of (nodes[childId]?.attachments||[])){ const d=nodes[depId];
+        if(d&&(d.type==="texture"||d.type==="video")){ sig+=`|tex:${d.type}|${d.props?.src||""}|${d.props?.filter||""}|${d.props?.wrap||""}|${p.matColorMode||""}|${p.uvScaleU||""},${p.uvScaleV||""},${p.uvOffU||""},${p.uvOffV||""},${p.uvRot||""}`; break; }
+      }
+    }
     // sigScope is needed below for live uniform updates on cache hits.
     let sigScope=scope;
     if(node.type==="transformer"||node.type==="flow"){
@@ -127,8 +134,14 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     // ── GPU fast path for analytic surfaces / curves / quivers ──────────────
     if(node.type==="surf3d"||node.type==="fn1d"||node.type==="paramsurf"||node.type==="quiver3d"||node.type==="glyphField"){
       let gpu=null;
-      if(node.type==="surf3d") gpu=buildSurfGPU("surf3d",p,scope,node.color||"#5b9cf6");
-      else if(node.type==="paramsurf") gpu=buildSurfGPU("paramsurf",p,scope,node.color||"#c761f7");
+      // A texture/video wired into this surface (a parametric surface can be
+      // texturable) — resolve it so buildSurfGPU can sample it as albedo.
+      let surfTex=null, surfTexNode=null;
+      if(node.type==="surf3d"||node.type==="paramsurf"){
+        for(const depId of (nodes[childId]?.attachments||[])){ const d=nodes[depId]; if(d&&(d.type==="texture"||d.type==="video")){ surfTexNode=d; surfTex=getNodeTexture(d); break; } }
+      }
+      if(node.type==="surf3d") gpu=buildSurfGPU("surf3d",p,scope,node.color||"#5b9cf6",surfTex);
+      else if(node.type==="paramsurf") gpu=buildSurfGPU("paramsurf",p,scope,node.color||"#c761f7",surfTex);
       else if(node.type==="fn1d") gpu=buildFn1dGPU(p,scope,node.color||"#f7cc4f");
       else if(node.type==="quiver3d") gpu=buildQuiver3dGPU(p,scope,node.color||"#5b9cf6");
       else if(node.type==="glyphField"){
@@ -155,6 +168,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         gpu._gpu=true; gpu._sig=sig;
         // mark animated glyph sets so the scene keeps redrawing & advancing time
         if(node.type==="glyphField" && gpu[0]?._glyphAnim) gpu._glyphAnim=true;
+        if(surfTexNode && surfTexNode.type==="video") gpu._glyphAnim=true;   // keep ticking for video frames
         objMap.set(childId,gpu);
         return;
       }
@@ -163,7 +177,18 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
 
     disposeObjs(scene,objMap.get(childId)||[]);
     let objs=[];
-    if(node.type==="curve3d"){const ts=linspace(resolveNum(p.tMin,scope,0),resolveNum(p.tMax,scope,Math.PI*2),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(ts.map(t=>{const x=safeEval(p.exprX,{...scope,t}),y=safeEval(p.exprY,{...scope,t}),z=safeEval(p.exprZ,{...scope,t});return x!=null&&y!=null&&z!=null?[x,y,z]:[NaN,NaN,NaN];}),node.color||"#5b9cf6");}
+    if(node.type==="curve3d"){
+      const ts=linspace(resolveNum(p.tMin,scope,0),resolveNum(p.tMax,scope,Math.PI*2),Math.max(2,resolveNum(p.res,scope,300)));
+      const cpts=ts.map(t=>{const x=safeEval(p.exprX,{...scope,t}),y=safeEval(p.exprY,{...scope,t}),z=safeEval(p.exprZ,{...scope,t});return x!=null&&y!=null&&z!=null?[x,y,z]:[NaN,NaN,NaN];});
+      // RGB colour along the curve: per-vertex colour from three expressions in
+      // the curve parameter t (+ wired scalars), clamped to 0..1.
+      let ccols=null;
+      if(p.colorMode==="rgb"){
+        const cl=v=>{ v=Number(v); return isFinite(v)?(v<0?0:v>1?1:v):0; };
+        ccols=ts.map(t=>{const sc={...scope,t};return [cl(safeEval(p.colorR,sc)),cl(safeEval(p.colorG,sc)),cl(safeEval(p.colorB,sc))];});
+      }
+      objs=buildCurve3d(cpts,node.color||"#5b9cf6",ccols);
+    }
     if(node.type==="fn1d"){const xs=linspace(resolveNum(p.xMin,scope,-5),resolveNum(p.xMax,scope,5),Math.max(2,resolveNum(p.res,scope,300)));objs=buildCurve3d(xs.map(x=>{const y=safeEval(p.expr,{...scope,x});return y!=null?[x,y,0]:[NaN,NaN,NaN];}),node.color||"#f7cc4f");}
     if(node.type==="surf3d"){const res=Math.max(2,Math.min(200,resolveNum(p.res,scope,40)));const xs=linspace(resolveNum(p.xMin,scope,-4),resolveNum(p.xMax,scope,4),res),ys=linspace(resolveNum(p.yMin,scope,-4),resolveNum(p.yMax,scope,4),res);objs=buildSurf(ys.map(y=>xs.map(x=>{const z=safeEval(p.expr,{...scope,x,y});return z!=null?[x,y,z]:null;})),node.color||"#5b9cf6",null,p.showWire!==false);}
     if(node.type==="paramsurf"){const ur=Math.max(2,Math.min(200,resolveNum(p.uRes,scope,40))),vr=Math.max(2,Math.min(200,resolveNum(p.vRes,scope,30)));const us=linspace(resolveNum(p.uMin,scope,0),resolveNum(p.uMax,scope,Math.PI*2),ur),vs=linspace(resolveNum(p.vMin,scope,0),resolveNum(p.vMax,scope,Math.PI),vr);objs=buildSurf(vs.map(v=>us.map(u=>{const x=safeEval(p.exprX,{...scope,u,v}),y=safeEval(p.exprY,{...scope,u,v}),z=safeEval(p.exprZ,{...scope,u,v});return x!=null&&y!=null&&z!=null?[x,y,z]:null;})),node.color||"#c761f7",null,p.showWire!==false);}

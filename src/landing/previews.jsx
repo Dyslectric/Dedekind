@@ -657,6 +657,37 @@ function texSurfaceScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tex.id]:tex,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// TEXTURE on a parametric SURFACE: the Dedekind tile tiled over a torus's (u,v),
+// sampled at the surface's own parameters with a UV tiling transform.
+function texParamSurfScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1120,y:120}));cam.label="textured torus";
+  cam.props.orbRadius="7.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="32";
+  const ps=makeNode("paramSpace",{x:380,y:160});ps.label="torus";ps.color="#c761f7";
+  ps.props.degree="2";
+  ps.props.exprXu="(2+cos(v))*cos(u)";ps.props.exprYu="(2+cos(v))*sin(u)";ps.props.exprZu="sin(v)";
+  ps.props.uMin="0";ps.props.uMax="2*pi";ps.props.vMin="0";ps.props.vMax="2*pi";ps.props.uRes="96";ps.props.vRes="48";
+  ps.props.showWire=false;ps.props.shading="lit";ps.props.matColorMode="texture";ps.props.uvScaleU="6";ps.props.uvScaleV="2";
+  const tex=makeNode("texture",{x:380,y:360});tex.label="Dedekind tile";tex.color="#f5bde6";tex.props.wrap="repeat";
+  ps.attachments=[tex.id];cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[tex.id]:tex},camId:cam.id,animated:false};
+}
+
+// RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
+// expressions in the curve parameter t.
+function curveRgbScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1120,y:120}));cam.label="RGB trefoil";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="28";
+  const cv=makeNode("paramSpace",{x:380,y:160});cv.label="trefoil";cv.color="#5b9cf6";
+  cv.props.degree="1";
+  cv.props.exprX="sin(t)+2*sin(2*t)";cv.props.exprY="cos(t)-2*cos(2*t)";cv.props.exprZ="-sin(3*t)";
+  cv.props.tMin="0";cv.props.tMax="2*pi";cv.props.res="500";
+  cv.props.colorMode="rgb";cv.props.colorR="0.5+0.5*sin(t)";cv.props.colorG="0.5+0.5*sin(t+2.1)";cv.props.colorB="0.5+0.5*sin(t+4.2)";
+  cam.attachments=[cv.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[cv.id]:cv},camId:cam.id,animated:false};
+}
+
 // Register the new scenes alongside the originals.
 Object.assign(SCENES, {
   spheretorus: sphereTorusScene,
@@ -681,6 +712,8 @@ Object.assign(SCENES, {
   "mat-rgb": matRgbScene,
   "mat-glow": matGlowScene,
   "tex-surface": texSurfaceScene,
+  "tex-paramsurf": texParamSurfScene,
+  "curve-rgb": curveRgbScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────

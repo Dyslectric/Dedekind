@@ -42,11 +42,14 @@ function normalizeNode(node){
           exprX:p.exprXu, exprY:p.exprYu, exprZ:p.exprZu,
           uMin:p.uMin, uMax:p.uMax, vMin:p.vMin, vMax:p.vMax, uRes:p.uRes, vRes:p.vRes,
           showWire:p.showWire, shading:p.shading,
+          matColorMode:p.matColorMode,
+          uvScaleU:p.uvScaleU, uvScaleV:p.uvScaleV, uvOffU:p.uvOffU, uvOffV:p.uvOffV, uvRot:p.uvRot,
         }};
       }
       return { type:"curve3d", props:{
         exprX:p.exprX, exprY:p.exprY, exprZ:p.exprZ||"0",
         tMin:p.tMin, tMax:p.tMax, res:p.res,
+        colorMode:p.colorMode, colorR:p.colorR, colorG:p.colorG, colorB:p.colorB,
       }};
     }
     case "points": {

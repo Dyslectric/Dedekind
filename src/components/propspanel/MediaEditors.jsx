@@ -1,25 +1,18 @@
 import { useUI } from "../../theme/tokens.jsx";
 import { Sec, PR } from "../primitives.jsx";
 
-const EMBED_CAP = 256 * 1024;   // embed images up to ~256 KB as a data-URI; larger → object URL (session only)
-
-// texture — a static image source (file upload → data-URI, or a URL/data-URI),
-// exposed as a sampleable texture for a surface's material.
+// texture — a static image source (file upload, or a URL/data-URI), exposed as a
+// sampleable texture for a surface's material.
 export function TextureEditor({ node, onChange }){
   const { ui, S } = useUI();
   const set = (k,v)=>onChange({props:{...node.props,[k]:v}});
   const src = node.props.src || "";
   const onFile = (e)=>{
     const f = e.target.files && e.target.files[0]; if(!f) return;
-    if(f.size <= EMBED_CAP){
-      const r = new FileReader();
-      r.onload = ()=>set("src", String(r.result));   // data-URI, embeds in the project
-      r.readAsDataURL(f);
-    } else {
-      set("src", URL.createObjectURL(f));             // too big to embed — session-only object URL
-    }
+    const r = new FileReader();
+    r.onload = ()=>set("src", String(r.result));   // data-URI for this session (not serialized)
+    r.readAsDataURL(f);
   };
-  const tooBigToEmbed = src.startsWith("blob:");
   return <>
     <Sec title="Image">
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -30,12 +23,11 @@ export function TextureEditor({ node, onChange }){
           <input type="file" accept="image/*" onChange={onFile} style={{display:"none"}}/>
         </label>
         <PR label="or URL">
-          <input value={src.startsWith("data:")?"":src} onChange={e=>set("src",e.target.value)}
+          <input value={src.startsWith("data:")||src.startsWith("blob:")?"":src} onChange={e=>set("src",e.target.value)}
             placeholder="https://… or leave the default" style={{...S.inp,width:"100%"}}/>
         </PR>
         <div style={{fontSize:12,color:ui.uiFaint,lineHeight:1.5}}>
-          Images up to 256 KB embed in the project (so shares carry the picture); larger files load for this session only.
-          {tooBigToEmbed && <span style={{color:ui.uiDanger}}> This image is too large to embed — it won't be saved with the project.</span>}
+          A chosen image loads for this session but is <strong>not saved in the project</strong> (media would bloat the share). To share a textured project, point at an image <em>URL</em>. The default Dedekind tile always restores if no URL is set.
         </div>
       </div>
     </Sec>
