@@ -120,6 +120,19 @@ export function RawGeomEditor({ node, scope, onChange }){
       <PR label="connect"><Toggle v={p.drawLines===true} onChange={v=>set("drawLines",v)}/></PR>
     </Sec>}
 
+    {prim==="segments" && <Sec title="Style">
+      <PR label="width mode">
+        <select value={p.lineMode||"px"} onChange={e=>set("lineMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="px">pixels (constant on screen)</option>
+          <option value="world">world units (scales with zoom)</option>
+        </select>
+      </PR>
+      <PR label="width"><EI v={p.lineWidth??""} sc={scope} onChange={v=>set("lineWidth",v)} placeholder={(p.lineMode||"px")==="world"?"0.04":"2.6"}/></PR>
+      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+        Pixel width stays the same on screen at any zoom. World width is measured in scene units, so it grows as you zoom in and shrinks as you zoom out.
+      </div>
+    </Sec>}
+
     {prim==="glyphs" && <Sec title="Style">
       <PR label="arrow scale"><EI v={p.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/></PR>
       <PR label="normalize"><Toggle v={p.normalize===true} onChange={v=>set("normalize",v)}/></PR>

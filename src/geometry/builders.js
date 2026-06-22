@@ -403,7 +403,9 @@ function buildCurve3d(pts,color,cols=null){
 // WebGL drivers). `segs` is math-space [[ [x,y,z],[x,y,z] ], ...]; coordinates
 // are baked to final world space (x, z, −y) and the object is flagged for the
 // unmirrored group + resize refinement, exactly like buildCurve3d.
-function buildSegments3d(segs, color, cols=null){
+// opts: { world:boolean, width:number } — width in pixels (default, constant on
+// screen) or in world units when world is true (so it scales with zoom / distance).
+function buildSegments3d(segs, color, cols=null, opts=null){
   if(!segs||!segs.length) return [];
   const pos=new Float32Array(segs.length*2*3);
   let k=0;
@@ -431,10 +433,13 @@ function buildSegments3d(segs, color, cols=null){
   const _res = (typeof window!=="undefined" && window.innerWidth)
     ? new THREE.Vector2(window.innerWidth, window.innerHeight)
     : new THREE.Vector2(1024,768);
+  const worldUnits = !!(opts && opts.world);
+  const lw = (opts && opts.width!=null && isFinite(opts.width))
+    ? opts.width : (worldUnits ? 0.04 : CURVE_3D_PX);
   const mat=new LineMaterial({
     color: useCol ? 0xffffff : c3.getHex(),
-    linewidth: CURVE_3D_PX,
-    worldUnits: false,
+    linewidth: lw,
+    worldUnits,
     resolution: _res,
     vertexColors: useCol,
   });
@@ -917,7 +922,9 @@ function buildRawGeom3d(p, scope, color){
   if(prim==="segments"){
     const segs = verts.map(([a,b])=>[a,b]);
     const scols = rampGroups ? rampGroups.map(([ca,cb])=>[ca,cb]) : null;
-    const objs = buildSegments3d(segs, color, scols);
+    const world = p.lineMode==="world";
+    const lw = (p.lineWidth!==""&&p.lineWidth!=null) ? resolveNum(p.lineWidth,scope, world?0.04:CURVE_3D_PX) : (world?0.04:undefined);
+    const objs = buildSegments3d(segs, color, scols, {world, width:lw});
     if(alphaGroups) for(const o of objs){ if(o.material){ o.material.transparent=true; o.material.opacity=meanAlpha; } }
     return objs;
   }

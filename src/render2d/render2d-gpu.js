@@ -443,9 +443,13 @@ function build2DRawGeom(np, pscope, color, px, fr){
   }
   if(prim==="segments"){
     const segs=verts.map(([a,b])=>[projectPt(fr,a[0],a[1],a[2]), projectPt(fr,b[0],b[1],b[2])]);
+    // width as pixels (constant on screen) or world units (scales with zoom)
+    const half = np.lineMode==="world"
+      ? resolveNum(np.lineWidth,pscope,0.04)/2
+      : px(resolveNum(np.lineWidth,pscope,LINE_PX))/2;
     // per-endpoint colors → Gouraud quad strip per segment when colored
-    if(rampGroups) return applyA(buildGouraudSegments2D(segs, rampGroups, px(LINE_PX)/2));
-    return applyA(buildThickSegments2D(segs, color, px(LINE_PX)/2));
+    if(rampGroups) return applyA(buildGouraudSegments2D(segs, rampGroups, half));
+    return applyA(buildThickSegments2D(segs, color, half));
   }
   if(prim==="glyphs"){
     const norm=np.normalize===true, scale=resolveNum(np.arrowLen,pscope,0.5);

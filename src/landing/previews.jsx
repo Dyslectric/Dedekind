@@ -1166,7 +1166,7 @@ function starPolygonScene(){
   K.props.min="1";K.props.max="12";K.props.step="1";
   const g=_rawNode({x:360,y:160},"chords","#ff5ea8",{prim:"segments",src:"index",
     idxSegments:"cos(2*pi*i/N), sin(2*pi*i/N), 0 | cos(2*pi*(i+K)/N), sin(2*pi*(i+K)/N), 0",
-    idxCount:"N",
+    idxCount:"N", lineMode:"px", lineWidth:"3.5",
     colorOn:true,colorExpr:"i",colorLo:"#5ad1e6",colorHi:"#ff5ea8",colorMin:"0",colorMax:"N"});
   g.attachments=[N.id,K.id];
   cam.attachments=[g.id];
@@ -1187,7 +1187,7 @@ function timesTableScene(){
   M.props.min="2";M.props.max="20";M.props.step="1";
   const g=_rawNode({x:360,y:160},"chords","#ffcf6e",{prim:"segments",src:"index",
     idxSegments:"cos(2*pi*i/N), sin(2*pi*i/N), 0 | cos(2*pi*M*i/N), sin(2*pi*M*i/N), 0",
-    idxCount:"N",
+    idxCount:"N", lineMode:"px", lineWidth:"1.4",
     colorOn:true,colorExpr:"i",colorLo:"#7a5cf0",colorHi:"#ffcf6e",colorMin:"0",colorMax:"N"});
   g.attachments=[N.id,M.id];
   cam.attachments=[g.id];
@@ -1213,10 +1213,193 @@ function windingScene(){
   cv.props.colorMode="rgb";cv.props.colorR="0.5+0.5*sin(t)";cv.props.colorG="0.5+0.5*sin(t+2.1)";cv.props.colorB="0.5+0.5*sin(t+4.2)";
   cv.attachments=[w.id];
   const axis=_rawNode({x:360,y:380},"axis","#9aa0aa",{prim:"segments",src:"list",
-    rawSegments:"0,0,0 | 0,0,2.6"});
+    rawSegments:"0,0,0 | 0,0,2.6", lineMode:"world", lineWidth:"0.03"});
   cam.attachments=[cv.id,axis.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[w.id]:w,[cv.id]:cv,[axis.id]:axis},camId:cam.id,animated:true};
 }
+
+// The cyclic group of order N as its elements alone: N points spaced evenly on a
+// circle, coloured in order. No chords yet, just the set you will connect.
+function cyclicPointsScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="N points on a circle";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.3";cam.props.showGrid=false;
+  const N=makeNode("slider",{x:40,y:340});N.name="N";N.label="N · points";N.value=9;
+  N.props.min="2";N.props.max="30";N.props.step="1";
+  const g=_rawNode({x:360,y:160},"elements","#5ad1e6",{prim:"points",src:"index",
+    idxPoints:"cos(2*pi*i/N), sin(2*pi*i/N), 0", idxCount:"N", radius:"0.16",
+    colorOn:true,colorExpr:"i",colorLo:"#5ad1e6",colorHi:"#ff5ea8",colorMin:"0",colorMax:"N"});
+  g.attachments=[N.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[g.id]:g},camId:cam.id,animated:false};
+}
+
+// Same chord construction as the star polygon, but coloured by coset: each chord
+// takes the colour of i mod gcd(N,K), so the d = gcd(N,K) separate polygons come
+// out in d distinct colours and the subgroup structure reads directly. Seeded at a
+// composite case (N=12, K=3) so the split is visible from the start.
+function starCosetsScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="cosets by colour";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.3";cam.props.showGrid=false;
+  const N=makeNode("slider",{x:40,y:300});N.name="N";N.label="N · points";N.value=12;
+  N.props.min="3";N.props.max="24";N.props.step="1";
+  const K=makeNode("slider",{x:40,y:420});K.name="K";K.label="K · step";K.value=3;
+  K.props.min="1";K.props.max="12";K.props.step="1";
+  const g=_rawNode({x:360,y:160},"cosets","#7a5cf0",{prim:"segments",src:"index",
+    idxSegments:"cos(2*pi*i/N), sin(2*pi*i/N), 0 | cos(2*pi*(i+K)/N), sin(2*pi*(i+K)/N), 0",
+    idxCount:"N", lineMode:"px", lineWidth:"4",
+    colorOn:true,colorExpr:"mod(i, gcd(N,K))",colorLo:"#5ad1e6",colorHi:"#ffcf6e",colorMin:"0",colorMax:"gcd(N,K)"});
+  g.attachments=[N.id,K.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[K.id]:K,[g.id]:g},camId:cam.id,animated:false};
+}
+
+// Times table with the multiplier on an animator instead of a slider: m sweeps
+// upward and the envelope morphs cardioid, nephroid, and on through the
+// epicycloids without you touching anything. The chord count N is still yours.
+function timesTableSweepScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="sweeping the multiplier";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.25";cam.props.showGrid=false;
+  const N=makeNode("slider",{x:40,y:300});N.name="N";N.label="N · points";N.value=260;
+  N.props.min="40";N.props.max="400";N.props.step="1";
+  const m=makeNode("animator",{x:40,y:420});m.name="m";m.label="m · multiplier";m.value=2;
+  m.props.min="2";m.props.max="9";m.props.period="20";m.props.loop="loop";m.playing=true;
+  const g=_rawNode({x:360,y:160},"chords","#5be0c0",{prim:"segments",src:"index",
+    idxSegments:"cos(2*pi*i/N), sin(2*pi*i/N), 0 | cos(2*pi*m*i/N), sin(2*pi*m*i/N), 0",
+    idxCount:"N", lineMode:"px", lineWidth:"1.4",
+    colorOn:true,colorMode:"rgb",colorR:"512+512*sin(2*pi*i/N)",colorG:"512+512*sin(2*pi*i/N+2.1)",colorB:"512+512*sin(2*pi*i/N+4.2)"});
+  g.attachments=[N.id,m.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[m.id]:m,[g.id]:g},camId:cam.id,animated:true};
+}
+
+// Winding number in the plane, with a deformation knob. The loop (cos w t, sin w t)
+// is given a wobble of amplitude e on its radius, so dragging e bends the loop while
+// it still wraps the origin w times. The winding number does not change unless the
+// curve is pushed across the centre dot, which is the invariance made tactile.
+function windingFlatScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:1100,y:120}));cam.label="deform, but the count holds";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.7";cam.props.showGrid=false;
+  const w=makeNode("slider",{x:40,y:300});w.name="w";w.label="w · turns";w.value=3;
+  w.props.min="1";w.props.max="6";w.props.step="1";
+  const e=makeNode("slider",{x:40,y:420});e.name="e";e.label="e · wobble";e.value=0.3;
+  e.props.min="0";e.props.max="0.7";e.props.step="0.01";
+  const cv=makeNode("paramSpace",{x:360,y:160});cv.label="loop";cv.color="#ff5ea8";
+  cv.props.degree="1";
+  cv.props.exprX="(1+e*sin(3*t))*cos(w*t)";cv.props.exprY="(1+e*sin(3*t))*sin(w*t)";cv.props.exprZ="0";
+  cv.props.tMin="0";cv.props.tMax="2*pi";cv.props.res="600";
+  cv.props.colorMode="rgb";cv.props.colorR="0.5+0.5*sin(w*t)";cv.props.colorG="0.5+0.5*sin(w*t+2.1)";cv.props.colorB="0.5+0.5*sin(w*t+4.2)";
+  cv.attachments=[w.id,e.id];
+  const dot=_rawNode({x:360,y:380},"origin","#f4f4f8",{prim:"points",src:"list",rawPoints:"0,0,0",radius:"0.18"});
+  cam.attachments=[cv.id,dot.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[w.id]:w,[e.id]:e,[cv.id]:cv,[dot.id]:dot},camId:cam.id,animated:false};
+}
+
+// Interactive domain colouring: f(z) = (z - r1)(z - r2)(z - r3), with the three
+// roots on sliders so they can be dragged anywhere in the plane. The colouring uses
+// the polar form, modulus as the product of distances and argument as the sum of
+// angles, so it runs per pixel on the GPU. Seeded at the cube roots of unity, i.e.
+// f(z) = z^3 - 1; drag a root and watch its black zero, and the colours winding
+// once around it, follow.
+function dcMovableRootsScene(){
+  const R=2.4;
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="drag the three roots";cam.props.showOpenBtn=false;
+  cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
+  cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
+  const mk=(x,y,ax,ay,nm,lab,val)=>{const s=makeNode("slider",{x,y});s.name=nm;s.label=lab;s.value=val;s.props.min="-2";s.props.max="2";s.props.step="0.05";return s;};
+  const ax1=mk(20,260,0,0,"ax1","root1 · x",1),    ay1=mk(20,330,0,0,"ay1","root1 · y",0);
+  const ax2=mk(20,400,0,0,"ax2","root2 · x",-0.5), ay2=mk(20,470,0,0,"ay2","root2 · y",0.87);
+  const ax3=mk(20,540,0,0,"ax3","root3 · x",-0.5), ay3=mk(20,610,0,0,"ay3","root3 · y",-0.87);
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";
+  const tr=makeNode("transformer",{x:720,y:160});tr.label="f(z) zeros";tr.color="#8aadf4";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
+  const M="hypot(x-ax1,y-ay1)*hypot(x-ax2,y-ay2)*hypot(x-ax3,y-ay3)";
+  const A="atan2(y-ay1,x-ax1)+atan2(y-ay2,x-ax2)+atan2(y-ay3,x-ax3)";
+  const V=`((${M})/((${M})+1))`;
+  tr.props.matR=`(0.5+0.5*cos((${A})))*${V}`;
+  tr.props.matG=`(0.5+0.5*cos((${A})-2.0944))*${V}`;
+  tr.props.matB=`(0.5+0.5*cos((${A})-4.18879))*${V}`;
+  tr.attachments=[fn.id,ax1.id,ay1.id,ax2.id,ay2.id,ax3.id,ay3.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
+    [ax1.id]:ax1,[ay1.id]:ay1,[ax2.id]:ax2,[ay2.id]:ay2,[ax3.id]:ax3,[ay3.id]:ay3},camId:cam.id,animated:false};
+}
+
+// The same cube, now with its six faces filled (translucent) so they can be
+// counted for Euler's formula. Vertices and edges still come from the shared V and
+// E lists; the faces are a separate translucent triangle mesh over the same corners.
+function listCubeFacesScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="cube with faces";cam.props.showOpenBtn=false;
+  cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="22";
+  const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
+  V.props.expr="[[-1.4,-1.4,-1.4],[1.4,-1.4,-1.4],[1.4,1.4,-1.4],[-1.4,1.4,-1.4],[-1.4,-1.4,1.4],[1.4,-1.4,1.4],[1.4,1.4,1.4],[-1.4,1.4,1.4]]";
+  const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
+  E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
+  const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
+  pts.props.drawLines=false;pts.props.radius="0.1";
+  pts.attachments=[V.id,E.id];
+  const C=[[-1.4,-1.4,-1.4],[1.4,-1.4,-1.4],[1.4,1.4,-1.4],[-1.4,1.4,-1.4],[-1.4,-1.4,1.4],[1.4,-1.4,1.4],[1.4,1.4,1.4],[-1.4,1.4,1.4]];
+  const s=p=>C[p-1].join(",");
+  const quad=(a,b,c,d)=>`${s(a)} | ${s(b)} | ${s(c)}\n${s(a)} | ${s(c)} | ${s(d)}`;
+  const tris=[quad(1,2,3,4),quad(5,6,7,8),quad(1,2,6,5),quad(4,3,7,8),quad(1,4,8,5),quad(2,3,7,6)].join("\n");
+  const faces=_rawNode({x:740,y:420},"6 faces","#5b9cf6",{prim:"triangles",src:"list",rawTris:tris,showWire:false,
+    alphaOn:true,colorA:"560"});
+  cam.attachments=[pts.id,faces.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts,[faces.id]:faces},camId:cam.id,animated:false};
+}
+
+// Shared builder for shallow Sierpiński-octahedron variants (the full depth-6 show
+// scene lives separately, with its lights and floor). Stamps one octahedron face
+// template at every recursion centre, exactly the construction from the deep one.
+function _sierpVariant({L, label, spin, colorBy}){
+  const S=3.0, dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  let pts=[[0,0,0]], half=S;
+  for(let l=0;l<L;l++){ const off=half/2, np=[];
+    for(const c of pts) for(const d of dirs) np.push([c[0]+d[0]*off,c[1]+d[1]*off,c[2]+d[2]*off]);
+    pts=np; half/=2; }
+  const R=half, col=a=>"["+pts.map(p=>+p[a].toFixed(4)).join(",")+"]";
+  const NK=Math.pow(6,Math.floor(L/2)), NI=Math.pow(6,Math.ceil(L/2)), o=`(i*${NK}+k)`;
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1180,y:120}));cam.label=label;cam.props.showOpenBtn=false;
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.84";cam.props.spin="loop";cam.props.spinPeriod=String(spin);
+  const Cx=makeNode("list",{x:300,y:80});Cx.name="Cx";Cx.label="centres x";Cx.color="#f7d9a0";Cx.props.expr=col(0);
+  const Cy=makeNode("list",{x:300,y:210});Cy.name="Cy";Cy.label="centres y";Cy.color="#f7d9a0";Cy.props.expr=col(1);
+  const Cz=makeNode("list",{x:300,y:340});Cz.name="Cz";Cz.label="centres z";Cz.color="#f7d9a0";Cz.props.expr=col(2);
+  const Rn=makeNode("constant",{x:300,y:470});Rn.name="R";Rn.label="cell radius";Rn.props.value=String(+R.toFixed(6));
+  const g=makeNode("rawGeom",{x:720,y:220});g.label="fractal";g.color="#8aadf4";
+  g.props.prim="triangles";g.props.src="index";
+  g.props.idxTris=
+    `Cx[${o}+1]+(1-2*mod(floor(j/4),2))*R, Cy[${o}+1], Cz[${o}+1] | `+
+    `Cx[${o}+1], Cy[${o}+1]+(1-2*mod(floor(j/2),2))*R, Cz[${o}+1] | `+
+    `Cx[${o}+1], Cy[${o}+1], Cz[${o}+1]+(1-2*mod(j,2))*R`;
+  g.props.idxCount=`${NI}, 8, ${NK}`;
+  g.props.colorOn=true;
+  if(colorBy==="index"){
+    g.props.showWire=false;
+    g.props.colorMode="ramp";g.props.colorExpr=`i*${NK}+k`;g.props.colorLo="#3a6aff";g.props.colorHi="#ff5ea8";
+    g.props.colorMin="0";g.props.colorMax=String(Math.pow(6,L)-1);
+  } else {
+    g.props.showWire=true;
+    g.props.colorMode="rgb";
+    g.props.colorR="512+512*sin(1.5*x)";g.props.colorG="512+512*sin(1.5*y+2.1)";g.props.colorB="512+512*sin(1.5*z+4.2)";
+  }
+  g.attachments=[Cx.id,Cy.id,Cz.id,Rn.id];
+  cam.attachments=[g.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[Cx.id]:Cx,[Cy.id]:Cy,[Cz.id]:Cz,[Rn.id]:Rn,[g.id]:g},camId:cam.id,animated:true};
+}
+// Depth 2: the six half-size copies are easy to pick out (self-similarity rule).
+function sierpinskiLowScene(){ return _sierpVariant({L:2, label:"depth 2: six copies of six", spin:34, colorBy:"position"}); }
+// Depth 3, coloured by list position so each octahedron reads as one data entry.
+function sierpinskiDataScene(){ return _sierpVariant({L:3, label:"coloured by list position", spin:40, colorBy:"index"}); }
 
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
@@ -1263,6 +1446,7 @@ Object.assign(SCENES, {
   "lights-param": lightsParamScene,
   "brick-sphere": brickSphereScene,
   "list-cube": listCubeScene,
+  "list-cube-faces": listCubeFacesScene,
   "tut-octa-list": octaListScene,
   "tut-tetra-list": tetraListScene,
   "tut-mobius": mobiusScene,
@@ -1277,10 +1461,17 @@ Object.assign(SCENES, {
   "dc-roots5": dcRoots5Scene,
   "dc-quintic": dcQuinticScene,
   "star-polygon": starPolygonScene,
+  "cyclic-points": cyclicPointsScene,
+  "star-cosets": starCosetsScene,
   "times-table": timesTableScene,
+  "times-table-sweep": timesTableSweepScene,
   "winding": windingScene,
+  "winding-flat": windingFlatScene,
+  "dc-movable": dcMovableRootsScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
+  "sierpinski-low": sierpinskiLowScene,
+  "sierpinski-data": sierpinskiDataScene,
   "implicit-tex": implicitTexScene,
   "curve-rgb": curveRgbScene,
 });
@@ -1564,6 +1755,7 @@ function _rawNode(pos,label,color,overrides){
     idxCount:"16",
     colorOn:false,colorExpr:"i",colorLo:"#3a6aff",colorHi:"#ff5ea8",colorMin:"",colorMax:"",
     radius:"0.08",drawLines:false,arrowLen:"0.5",normalize:false,lenMode:"raw",showWire:true,
+    lineMode:"px",lineWidth:"",
     ...overrides,
   };
   return g;

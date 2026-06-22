@@ -326,7 +326,11 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         const segs=[];
         for(const e of scope[exEdges]){ if(!Array.isArray(e)||e.length<2) continue;
           const a=pts[Math.round(e[0])-1], b=pts[Math.round(e[1])-1]; if(a&&b) segs.push([a,b]); }
-        if(segs.length){ const seg=buildSegments3d(segs,node.color||"#ff70bb"); if(seg.length) objs=[...objs,...seg]; }
+        if(segs.length){
+          const world=p.lineMode==="world";
+          const lw=(p.lineWidth!==""&&p.lineWidth!=null)?resolveNum(p.lineWidth,scope, world?0.04:2.6):(world?0.04:undefined);
+          const seg=buildSegments3d(segs,node.color||"#ff70bb",null,{world,width:lw}); if(seg.length) objs=[...objs,...seg];
+        }
       }
       if(p.sequenced){ objs._sequenced=true; applySequence(objs,node,scope); }
     }
