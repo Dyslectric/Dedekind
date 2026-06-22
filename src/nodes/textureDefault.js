@@ -21,7 +21,7 @@ const DEFAULT_TEXTURE_SRC = "data:image/svg+xml;utf8," + encodeURIComponent(DEDE
 // this as a normal map gives a crisp embossed-tile look under the light. Pure SVG
 // so it's self-contained like the albedo default; flat facets survive the SVG→
 // bitmap rasterize without colour bleeding at 45° edges.
-const N_FACET = { up:"#8026b4", down:"#80dab4", east:"#da80b4", west:"#2680b4" }; // (0,∓.7,.7)/(±.7,0,.7)
+const N_FACET = { up:"#8026da", down:"#80dada", east:"#da80da", west:"#2680da" }; // (0,∓.7,.7)/(±.7,0,.7), z=0.7→B=218
 const NORMAL_SVG =
 `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
 <defs><g id="p">

@@ -684,16 +684,17 @@ function normalMapScene(){
   cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.85";cam.props.spin="loop";cam.props.spinPeriod="30";
   const fn=makeNode("fnMap",{x:360,y:140});fn.label="z = gentle dome";fn.color="#8aadf4";
   fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0.6*exp(-(x^2+y^2)*0.08)";
-  const tex=makeNode("texture",{x:360,y:320});tex.label="colour tile";tex.color="#f5bde6";   // default ◈ albedo
-  const nrm=makeNode("texture",{x:360,y:470});nrm.label="normal map";nrm.color="#a6da95";
+  const nrm=makeNode("texture",{x:360,y:360});nrm.label="normal map";nrm.color="#a6da95";
   nrm.props.role="normal";nrm.props.src=DEFAULT_NORMAL_SRC;nrm.props.wrap="repeat";
   const tr=makeNode("transformer",{x:740,y:200});tr.label="graph · lit + bumps";tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin="-4";tr.props.aMax="4";tr.props.bMin="-4";tr.props.bMax="4";tr.props.res="80";
-  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="texture";
-  tr.props.uvScaleU="3";tr.props.uvScaleV="3";tr.props.matNormalStrength="1.2";
-  tr.attachments=[fn.id,tex.id,nrm.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tex.id]:tex,[nrm.id]:nrm,[tr.id]:tr},camId:cam.id,animated:false};
+  // Flat node-colour albedo so the bumps are what you read; the relief is entirely
+  // the normal map perturbing the lit normal. One copy of the tile → 16 pyramids.
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="off";
+  tr.props.uvScaleU="1";tr.props.uvScaleV="1";tr.props.matNormalStrength="1";
+  tr.attachments=[fn.id,nrm.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[nrm.id]:nrm,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
