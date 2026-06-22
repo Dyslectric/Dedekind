@@ -799,7 +799,7 @@ function listCubeScene(){
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
   pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
-  pts.props.drawLines=false;pts.props.radius="6";
+  pts.props.drawLines=false;pts.props.radius="0.1";
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -817,7 +817,7 @@ function octaListScene(){
   E.props.expr="[[5,1],[5,3],[5,2],[5,4],[6,1],[6,3],[6,2],[6,4],[1,3],[3,2],[2,4],[4,1]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="octahedron";pts.color="#5be0c0";
   pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
-  pts.props.drawLines=false;pts.props.radius="6";
+  pts.props.drawLines=false;pts.props.radius="0.1";
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -867,7 +867,7 @@ function showcaseScene(){
   const E=makeNode("list",{x:380,y:470});E.name="E";E.label="cage edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
   const cage=makeNode("points",{x:720,y:380});cage.label="cage";cage.color="#7f9cf5";
-  cage.props.kind="points";cage.props.mode="fromlist";cage.props.ptsList="V";cage.props.edgeList="E";cage.props.drawLines=false;cage.props.radius="5";
+  cage.props.kind="points";cage.props.mode="fromlist";cage.props.ptsList="V";cage.props.edgeList="E";cage.props.drawLines=false;cage.props.radius="0.1";
   cage.attachments=[V.id,E.id];
 
   // ── RGB orbit curve ──
@@ -1006,7 +1006,7 @@ function tetraListScene(){
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[1,3],[1,4],[2,3],[2,4],[3,4]]";
   const pts=makeNode("points",{x:740,y:200});pts.label="tetrahedron";pts.color="#ffd479";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="7";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="0.12";
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -1030,7 +1030,7 @@ function sierpTetraScene(){
   const V=makeNode("list",{x:340,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";V.props.expr=JSON.stringify(verts);
   const E=makeNode("list",{x:340,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";E.props.expr=JSON.stringify(edges);
   const pts=makeNode("points",{x:720,y:200});pts.label="fractal";pts.color="#5ad1e6";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="2";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="0.045";
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
