@@ -996,6 +996,109 @@ function implicitTexScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[tM.id]:tM,[ph.id]:ph,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
 }
 
+// TETRAHEDRON from lists — the simplest polyhedron (V=4, E=6, F=4 → 2).
+function tetraListScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="tetrahedron from lists";
+  cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="20";
+  const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
+  V.props.expr="[[1.7,1.7,1.7],[1.7,-1.7,-1.7],[-1.7,1.7,-1.7],[-1.7,-1.7,1.7]]";
+  const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
+  E.props.expr="[[1,2],[1,3],[1,4],[2,3],[2,4],[3,4]]";
+  const pts=makeNode("points",{x:740,y:200});pts.label="tetrahedron";pts.color="#ffd479";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="7";
+  pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// SIERPINSKI TETRAHEDRON (wireframe) — a second fractal: each tetra → 4 half-size
+// copies at its corners; dimension log4/log2 = 2 exactly. Built as a vertex list +
+// an edge-index list (the same machinery as the polyhedra), depth 4 = 256 cells.
+function sierpTetraScene(){
+  const D=4, S=3.0;
+  let tets=[[[S,S,S],[S,-S,-S],[-S,S,-S],[-S,-S,S]]];
+  for(let d=0;d<D;d++){ const nt=[];
+    for(const T of tets) for(let k=0;k<4;k++)
+      nt.push(T.map(Vj=>[(T[k][0]+Vj[0])/2,(T[k][1]+Vj[1])/2,(T[k][2]+Vj[2])/2]));
+    tets=nt; }
+  const verts=[], edges=[];
+  tets.forEach((T,i)=>{ const b=i*4; for(const c of T) verts.push(c.map(x=>+x.toFixed(3)));
+    edges.push([b+1,b+2],[b+1,b+3],[b+1,b+4],[b+2,b+3],[b+2,b+4],[b+3,b+4]); });
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1180,y:120}));cam.label="Sierpiński tetrahedron";
+  cam.props.orbRadius="10";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="40";
+  const V=makeNode("list",{x:340,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";V.props.expr=JSON.stringify(verts);
+  const E=makeNode("list",{x:340,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";E.props.expr=JSON.stringify(edges);
+  const pts=makeNode("points",{x:720,y:200});pts.label="fractal";pts.color="#5ad1e6";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="2";
+  pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// FIGURE-EIGHT KNOT (4₁) — a second knot, four crossings, amphichiral.
+function fig8KnotScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="figure-eight knot";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="26";
+  const cv=makeNode("paramSpace",{x:380,y:160});cv.label="4₁ knot";cv.color="#5b9cf6";
+  cv.props.degree="1";
+  cv.props.exprX="(2+cos(2*t))*cos(3*t)";cv.props.exprY="(2+cos(2*t))*sin(3*t)";cv.props.exprZ="sin(4*t)";
+  cv.props.tMin="0";cv.props.tMax="2*pi";cv.props.res="600";
+  cv.props.colorMode="rgb";cv.props.colorR="0.5+0.5*sin(t)";cv.props.colorG="0.5+0.5*sin(t+2.1)";cv.props.colorB="0.5+0.5*sin(t+4.2)";
+  cam.attachments=[cv.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[cv.id]:cv},camId:cam.id,animated:false};
+}
+
+// KLEIN BOTTLE (figure-8 immersion) — a closed non-orientable surface.
+function kleinScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="Klein bottle";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="0.9";cam.props.spin="loop";cam.props.spinPeriod="30";
+  const ps=makeNode("paramSpace",{x:380,y:160});ps.label="Klein";ps.color="#c6a0f6";
+  ps.props.degree="2";
+  ps.props.exprXu="(2+cos(u/2)*sin(v)-sin(u/2)*sin(2*v))*cos(u)";
+  ps.props.exprYu="(2+cos(u/2)*sin(v)-sin(u/2)*sin(2*v))*sin(u)";
+  ps.props.exprZu="sin(u/2)*sin(v)+cos(u/2)*sin(2*v)";
+  ps.props.uMin="0";ps.props.uMax="2*pi";ps.props.vMin="0";ps.props.vMax="2*pi";ps.props.uRes="170";ps.props.vRes="80";
+  ps.props.showWire=false;ps.props.shading="lit";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+
+// SCHWARZ P minimal surface (plain) — a second triply-periodic minimal surface.
+function schwarzScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1180,y:120}));cam.label="Schwarz P surface";
+  cam.props.orbRadius="12";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="44";
+  const eq=makeNode("equation",{x:360,y:140});eq.label="Schwarz P";eq.color="#7ec8ff";
+  eq.props.dims="3d";eq.props.lhs="cos(x)+cos(y)+cos(z)";eq.props.rhs="0";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch";tr.color="#7ec8ff";
+  tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
+  tr.props.res="150";tr.props.colorMode="normal";
+  tr.attachments=[eq.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+// SCHWARZ P clad in brick — triplanar texture + normal + swinging light, on a
+// different level set and a different image than the plasma gyroid.
+function texSchwarzScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1240,y:120}));cam.label="textured Schwarz P";
+  cam.props.orbRadius="12";cam.props.orbTheta="0.7";cam.props.orbPhi="0.92";cam.props.spin="loop";cam.props.spinPeriod="48";
+  const eq=makeNode("equation",{x:360,y:140});eq.label="Schwarz P";eq.color="#e6c9a8";
+  eq.props.dims="3d";eq.props.lhs="cos(x)+cos(y)+cos(z)";eq.props.rhs="0";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";
+  const tex=makeNode("texture",{x:360,y:320});tex.label="brick";tex.color="#c98a6a";tex.props.src="builtin:brick";tex.props.wrap="repeat";
+  const nrm=makeNode("texture",{x:360,y:440});nrm.label="brick normal";nrm.color="#a6da95";nrm.props.role="normal";nrm.props.src="builtin:brick-normal";nrm.props.wrap="repeat";
+  const ph=makeNode("animator",{x:40,y:520});ph.name="phase";ph.value=0;ph.props.min="0";ph.props.max="6.283";ph.props.period="10";ph.props.loop="loop";ph.playing=true;
+  const lamp=makeNode("light",{x:1080,y:120});lamp.label="lamp";lamp.color="#ffd28a";lamp.props.kind="point";lamp.props.color="#ffdcb0";lamp.props.intensity="2";lamp.props.falloff="0.01";lamp.props.posX="10*cos(phase)";lamp.props.posY="10*sin(phase)";lamp.props.posZ="5";lamp.attachments=[ph.id];
+  const sun=makeNode("light",{x:1080,y:300});sun.label="sun";sun.color="#8fb7ff";sun.props.kind="directional";sun.props.color="#9fc0ff";sun.props.intensity="0.5";sun.props.dirX="-0.4";sun.props.dirY="-0.3";sun.props.dirZ="0.7";
+  const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch · triplanar";tr.color="#e6c9a8";
+  tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
+  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.5";tr.props.matNormalStrength="0.7";
+  tr.attachments=[eq.id,tex.id,nrm.id];cam.attachments=[tr.id,lamp.id,sun.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[ph.id]:ph,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -1042,7 +1145,13 @@ Object.assign(SCENES, {
   "brick-sphere": brickSphereScene,
   "list-cube": listCubeScene,
   "tut-octa-list": octaListScene,
+  "tut-tetra-list": tetraListScene,
   "tut-mobius": mobiusScene,
+  "tut-klein": kleinScene,
+  "tut-sierp-tetra": sierpTetraScene,
+  "tut-knot-fig8": fig8KnotScene,
+  "tut-schwarz": schwarzScene,
+  "tut-tex-schwarz": texSchwarzScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
   "implicit-tex": implicitTexScene,
