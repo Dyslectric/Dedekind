@@ -95,7 +95,7 @@ const SECTIONS = [
           { heading: "Lattices and dependency functions", body: "A count of two numbers makes a lattice, sweeping i and j over a grid. That is enough to build a real surface: each cell of a 12×12 grid emits two triangles, so the whole node tree is just two raw nodes plus a wired height function h(x,y) that both call. Because index expressions see wired functions and sliders, your primitives can reference any dependency in the graph, not only constants. The surface is colored by height.", kind: "tut-raw-lattice" },
           { heading: "Sampling a field", body: "The same idea makes a discrete vector field. Two functions fx and fy are defined as nodes, and a glyph raw node walks a 13×13 lattice, placing an arrow at each point whose direction comes from calling fx and fy there. Each arrow is colored by the field's magnitude at its base. This is a vector field assembled from primitives, reading its directions straight out of the wired functions.", kind: "tut-raw-glyphs" },
           { heading: "Color every vertex", body: "Every vertex of every primitive can carry its own color value, which interpolates smoothly across the primitive, true Gouraud shading. This color wheel is thirty-six triangles fanning out from the center, each rim vertex colored by its angle, so the hue sweeps continuously around the disk even though the geometry is just flat triangles. The same per-vertex coloring shades segments end to end and triangle faces across their interiors.", kind: "tut-raw-gouraud" },
-          { heading: "Putting it together", body: "This twisted torus is everything at once. Six sliders feed a small stack of functions: RR ripples the major radius, W twists the tube as it goes around, and SX, SY, SZ turn the two angles into a surface point. Four more functions, CR, CG, CB, and CA, give each vertex a red, green, blue, and alpha value, so the color is set by three independent channels rather than a single ramp, with transparency breathing around the tube. Two raw nodes tile the whole M×M lattice into triangles, each one calling those functions through the index expressions. Open it and drag q to rebraid the tube, p to change the lobes, or rewrite any colour function to repaint the surface. The whole pipeline, lattices, dependency functions, three-channel colour, and alpha, lives in one readable graph.", kind: "tut-raw-torus" },
+          { heading: "Putting it together", body: "This twisted torus uses the whole node. Six sliders feed a small stack of functions: RR ripples the major radius, W twists the tube as it goes around, and SX, SY, SZ turn the two angles into a surface point. Three more functions, CR, CG, CB, give each vertex a red, green, and blue value, so the colour is a field set by three independent channels rather than a single ramp. Two raw nodes tile the whole M×M lattice into triangles, each calling those functions through the index expressions. Open it and drag q to rebraid the tube, p to change the lobes, or rewrite any colour function to repaint the surface. Lattices, dependency functions, and three-channel colour all live in one readable graph.", kind: "tut-raw-torus" },
         ],
       },
       {
@@ -269,6 +269,31 @@ const SECTIONS = [
         summary: "A pair of decaying sine waves, one per axis, traces the looping figures a pendulum-driven drawing machine makes. Four sliders set the whole dance.",
         steps: [
           { heading: "Two oscillations at right angles", body: "A harmonograph is a Victorian drawing machine: pendulums swing a pen along x and y at the same time, and the slow decay of their swings turns simple oscillation into an intricate spiral. Here x(t) = e^(−d·t)·sin(fx·t) and y(t) = e^(−d·t)·sin(fy·t + φ). The two frequency sliders set how many times the pen crosses in each direction, so a frequency ratio like 3:2 closes into a tidy braided loop while nearby ratios drift and never quite repeat. The phase φ rotates the figure and opens or closes its lobes, and the decay d controls how tightly the curve spirals inward. This is the parametric cousin of the Lissajous figure, with damping added to make it spiral rather than retrace.", kind: "tut-harmonograph" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "complex",
+    title: "Complex maps and colour",
+    blurb: "A function of a complex variable sends the plane to the plane, which is hard to graph but easy to colour: give every input the colour of its output. The picture then shows a function's zeros, their multiplicity, and the roots of any polynomial at a glance.",
+    pages: [
+      {
+        slug: "domain-colouring",
+        title: "Domain colouring",
+        summary: "Colour each point of the plane by the value a complex function sends it to: hue for the angle of the output, brightness for its size. Zeros become black points the colours wind around.",
+        steps: [
+          { heading: "The plane as colour", body: "A function f(z) of a complex number z = x + iy returns another complex number, so a full graph would need four dimensions. Instead, colour the input point by its output: the hue is the angle (argument) of f(z), and the brightness grows with the size (modulus) of f(z), so a point where f is zero comes out black. Here f(z) = z itself. The hue runs once through the full wheel as you circle the origin, and the single zero sits at the centre. Every colour you see is the argument of the output at that point.", kind: "dc-z" },
+          { heading: "A zero winds the colours", body: "Around a zero the hue cycles once for a simple zero and more times for a higher-order one. Here f(z) = z², which has a double zero at the origin: trace a small circle around the centre and the colours run through the full wheel twice. The number of times the hue winds around a point is the order of the zero there, so the colouring reads multiplicity directly. That winding count is also a topological quantity, the winding number of the image loop, made visible as colour.", kind: "dc-sq" },
+        ],
+      },
+      {
+        slug: "roots-and-the-quintic",
+        title: "Roots of unity and the quintic",
+        summary: "The same colouring turns the roots of a polynomial into points you can count. The n-th roots of unity form a group, and a degree-five polynomial shows why some roots can be drawn but not written.",
+        steps: [
+          { heading: "Roots of unity", body: "The equation zⁿ = 1 has exactly n solutions, the n-th roots of unity, spaced evenly around the unit circle. Here f(z) = z⁵ − 1 is zero at the five fifth-roots of unity, five black points on the circle with the colours winding once around each. Under multiplication these n roots form a cyclic group: the product of any two is another root, and the powers of one chosen root (a primitive root) run through all n before returning to 1. This is one of the first examples in group theory, drawn here as the zero set of a single polynomial.", kind: "dc-roots5" },
+          { heading: "The quintic", body: "A degree-n polynomial has exactly n roots counted with multiplicity, the fundamental theorem of algebra, and the colouring shows them all. Here f(z) = z⁵ − z − 1 has five roots, five points where the hue winds. For degrees up to four there are formulas for the roots in terms of the coefficients using +, −, ×, ÷, and nth roots. For degree five and higher no such general formula exists, the theorem of Abel and Ruffini, with Galois explaining which equations escape it. The roots of this quintic are right there in the picture, but no finite expression in radicals names them. Plotting can find a root; algebra cannot always write it.", kind: "dc-quintic" },
         ],
       },
     ],

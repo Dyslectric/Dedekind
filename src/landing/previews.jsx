@@ -1117,6 +1117,39 @@ function texSchwarzScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[ph.id]:ph,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
 }
 
+// ── Domain colouring of complex maps ─────────────────────────────────────────
+// A flat plane over the complex plane z = x + iy, coloured per pixel by f(z):
+// hue from the argument arg(f), brightness rising with the modulus |f| (so zeros
+// are black and the colours wind around them). f is supplied as its real and
+// imaginary parts in x,y — real expressions, so the whole thing runs on the GPU.
+function domainColorScene(label, re, im, R){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label=label;
+  cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
+  cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";   // flat z = 0
+  const tr=makeNode("transformer",{x:720,y:160});tr.label=label;tr.color="#8aadf4";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
+  const M=`hypot((${re}),(${im}))`, A=`atan2((${im}),(${re}))`;
+  const V=`(${M}/(${M}+1))`;                                   // 0 at a zero, →1 far out
+  tr.props.matR=`(0.5+0.5*cos((${A})))*${V}`;
+  tr.props.matG=`(0.5+0.5*cos((${A})-2.0944))*${V}`;
+  tr.props.matB=`(0.5+0.5*cos((${A})-4.18879))*${V}`;
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+// z (identity): one hue cycle around the single zero at the origin.
+function dcIdentityScene(){ return domainColorScene("f(z) = z", "x", "y", 3); }
+// z² : a double zero at the origin, the hue winds twice.
+function dcSquareScene(){ return domainColorScene("f(z) = z²", "x^2-y^2", "2*x*y", 2.2); }
+// z⁵ − 1 : the five fifth-roots of unity, evenly spaced on the unit circle.
+function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x^3*y^2+5*x*y^4-1", "5*x^4*y-10*x^2*y^3+y^5", 1.6); }
+// z⁵ − z − 1 : five roots, but a quintic with no solution in radicals (Abel–Ruffini).
+function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7); }
+
 // RGB along a parametric CURVE: a trefoil knot coloured per-vertex by three
 // expressions in the curve parameter t.
 function curveRgbScene(){
@@ -1171,6 +1204,10 @@ Object.assign(SCENES, {
   "tut-schwarz": schwarzScene,
   "tut-tex-flat": texFlatImplicitScene,
   "tut-tex-schwarz": texSchwarzScene,
+  "dc-z": dcIdentityScene,
+  "dc-sq": dcSquareScene,
+  "dc-roots5": dcRoots5Scene,
+  "dc-quintic": dcQuinticScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
   "implicit-tex": implicitTexScene,
