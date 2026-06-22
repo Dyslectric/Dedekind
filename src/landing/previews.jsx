@@ -1258,6 +1258,51 @@ function littlewoodScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[P.id]:P,[pts.id]:pts},camId:cam.id,animated:false};
 }
 
+// The SAME roots, plotted implicitly as a live GPU field instead of a baked cloud.
+// F(z) = min over all ±1 sign choices of |c0 + c1 z + ... + cd z^d|^2 is zero
+// exactly at a Littlewood root, so it is the implicit equation of the root set. We
+// colour brightness by eps/(eps+F), a glow that lights up where F→0, evaluated per
+// pixel (so it zooms and pans live, and the sharpness slider is interactive). The
+// catch: the field is a min over 2^d sign choices, so the expression grows
+// exponentially with degree — practical only to a low degree (here 4), which shows
+// the early structure rather than the full fractal. Re/Im of z^k are written as
+// flat real polynomials in x,y so the expression stays a few kilobytes.
+function _littlewoodField(D){
+  const binom=(n,r)=>{ let v=1; for(let i=0;i<r;i++) v=v*(n-i)/(i+1); return Math.round(v); };
+  const reim=k=>{ const re=[], im=[];
+    for(let j=0;2*j<=k;j++)   re.push(`${j%2?"-":"+"}${binom(k,2*j)}*x^${k-2*j}*y^${2*j}`);
+    for(let j=0;2*j+1<=k;j++) im.push(`${j%2?"-":"+"}${binom(k,2*j+1)}*x^${k-2*j-1}*y^${2*j+1}`);
+    return {re:re.join("")||"0", im:im.join("")||"0"}; };
+  const ri=[]; for(let k=0;k<=D;k++) ri.push(reim(k));
+  const terms=[];
+  for(let d=2; d<=D; d++){ const combos=1<<d;             // c_d=+1, c_0..c_{d-1} vary
+    for(let c=0;c<combos;c++){ const re=[`(${ri[d].re})`], im=[`(${ri[d].im})`];
+      for(let k=0;k<d;k++){ const s=((c>>k)&1)?"+":"-"; re.push(`${s}(${ri[k].re})`); im.push(`${s}(${ri[k].im})`); }
+      terms.push(`((${re.join("")})^2+(${im.join("")})^2)`); } }
+  let F=terms[0]; for(let t=1;t<terms.length;t++) F=`min(${F},${terms[t]})`;
+  return F;
+}
+function littlewoodFieldScene(){
+  const D=4, R=2.2;
+  const F=_littlewoodField(D);
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="±1 roots as a live field";cam.props.showOpenBtn=false;
+  cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
+  cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
+  const eps=makeNode("slider",{x:40,y:340});eps.name="eps";eps.label="eps · glow";eps.value=0.04;
+  eps.props.min="0.004";eps.props.max="0.25";eps.props.step="0.002";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";
+  const tr=makeNode("transformer",{x:720,y:160});tr.label="min |±1 poly|";tr.color="#8aadf4";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
+  const V=`(eps/(eps+(${F})))`;                            // glow: 1 at a root, fading out
+  tr.props.matR=`0.55*${V}`;tr.props.matG=`0.85*${V}`;tr.props.matB=`${V}`;
+  tr.attachments=[fn.id,eps.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[eps.id]:eps},camId:cam.id,animated:false};
+}
+
 // ── Groups, symmetry and winding ─────────────────────────────────────────────
 // Star polygons {N/K}: place N points evenly on a circle and join each point i to
 // point i+K, indices taken mod N. When gcd(N,K)=1 the chords visit every vertex in
@@ -1559,6 +1604,7 @@ Object.assign(SCENES, {
   "winding-flat": windingFlatScene,
   "dc-movable": dcMovableRootsScene,
   "littlewood": littlewoodScene,
+  "littlewood-field": littlewoodFieldScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
   "sierpinski-low": sierpinskiLowScene,
