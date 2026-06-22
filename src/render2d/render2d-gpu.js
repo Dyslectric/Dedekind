@@ -964,7 +964,9 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
 
   const VIEW_FILLING=new Set(["fn1d","quiver2d"]);
   // Types whose element size is constant-on-screen (so zoom changes geometry).
-  const ZOOM_SIZED=new Set(["fn1d","curve3d","pointSeq","points","point","quiver2d","quiver3d","glyphField","transformer","flow"]);
+  // rawGeom is included so its pixel-width segments/points/glyphs (and disk radii)
+  // re-fit on zoom instead of going stale until an unrelated slider forces a rebuild.
+  const ZOOM_SIZED=new Set(["fn1d","curve3d","pointSeq","points","point","quiver2d","quiver3d","glyphField","transformer","flow","rawGeom"]);
 
   for(const childId of (camNode.attachments||[])){
     const rawNode=nodes[childId]; if(!rawNode) continue;
@@ -982,7 +984,7 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     // and keep constant on-screen size, so they use the COARSE zoom bucket: they
     // re-fit their pixel width at wide zoom intervals instead of rebuilding on every
     // fine scroll step. Other zoom-sized line plots use the fine bucket.
-    const COARSE_ZOOM=new Set(["pointSeq","points","point","flow"]);
+    const COARSE_ZOOM=new Set(["pointSeq","points","point","flow","rawGeom"]);
     const zPart=ZOOM_SIZED.has(t)?`|z${COARSE_ZOOM.has(t)?zoomBucketCoarse:zoomBucket}`:"";
     const vPart=VIEW_FILLING.has(t)?`|v${viewSig}`:"";
     const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;
