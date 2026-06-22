@@ -977,6 +977,73 @@ function buildRawGeom3d(p, scope, color){
   return [mesh, wire];
 }
 
+// ── Embedded mesh asset ──────────────────────────────────────────────────────
+// A `mesh` node stores its geometry as a compact JSON string in props.data:
+//   {"p":[x,y,z,…],"i":[a,b,c,…]}   — positions are MATH space (z up), indices
+// flat (triangle list). meshDataFromGeometry() encodes a three BufferGeometry
+// (file convention: y up) into that string, rounding to keep the payload small;
+// buildMesh3d() decodes it and builds the renderable mesh. The pair is the
+// import↔render bridge: loaders → BufferGeometry → data string → node → mesh.
+const _round5=(v)=>Math.round(v*1e5)/1e5;
+function meshDataFromGeometry(geom){
+  const pos=geom.getAttribute("position"); if(!pos) return "";
+  const n=pos.count, p=new Array(n*3);
+  for(let i=0;i<n;i++){
+    // file/three space is y-up; store math (z-up): math(x,y,z)=three(x,z,y).
+    p[i*3]   = _round5(pos.getX(i));
+    p[i*3+1] = _round5(pos.getZ(i));
+    p[i*3+2] = _round5(pos.getY(i));
+  }
+  const idx = geom.index ? Array.from(geom.index.array) : null;
+  return JSON.stringify(idx ? {p,i:idx} : {p});
+}
+// A tiny order-sensitive checksum of a data string — used as the rebuild-cache
+// fingerprint so re-importing a different asset of identical length still
+// invalidates. Cheap (samples the string) rather than hashing every byte.
+function meshDataSig(data){
+  if(!data) return "";
+  let h=2166136261>>>0; const L=data.length, step=Math.max(1,(L/512)|0);
+  for(let i=0;i<L;i+=step){ h^=data.charCodeAt(i); h=Math.imul(h,16777619); }
+  return L+":"+(h>>>0).toString(36);
+}
+function buildMesh3d(p, scope, color){
+  let data=null; try{ data = p.data ? JSON.parse(p.data) : null; }catch{ data=null; }
+  if(!data || !Array.isArray(data.p) || data.p.length<9) return [];
+  const s = resolveNum(p.scale, scope, 1);
+  const src=data.p, n=(src.length/3)|0;
+  const posArr=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const mx=src[i*3]||0, my=src[i*3+1]||0, mz=src[i*3+2]||0;
+    // math(x,y,z) → builder three-space (x,z,y); the world group's scale.z=−1
+    // carries it to final (x,z,−y), exactly like every other plot builder.
+    posArr[i*3]   = mx*s;
+    posArr[i*3+1] = mz*s;
+    posArr[i*3+2] = my*s;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(posArr,3));
+  if(Array.isArray(data.i) && data.i.length){
+    geo.setIndex(n>65535 ? data.i : data.i.map(v=>v|0));
+  }
+  geo.computeVertexNormals();
+  const c3=hexToThree(color);
+  const opacity=resolveNum(p.opacity,scope,1);
+  const transparent=opacity<1;
+  const side=p.doubleSide===false ? THREE.FrontSide : THREE.DoubleSide;
+  const lit=p.lit!==false;
+  // Lit → a MeshPhong shaded by the scene's lights (added to the root group, so
+  // a standard material reacts automatically). Unlit → flat MeshBasic.
+  const mat = lit
+    ? new THREE.MeshPhongMaterial({color:c3, side, transparent, opacity,
+        shininess:resolveNum(p.shininess,scope,36), flatShading:p.flatShading===true})
+    : new THREE.MeshBasicMaterial({color:c3, side, transparent, opacity});
+  const mesh=new THREE.Mesh(geo,mat);
+  if(p.showWire!==true) return [mesh];
+  const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geo),
+    new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.3}));
+  return [mesh, wire];
+}
+
 // Ramp helper for rawGeom (mirrors transformer's rampColors but reads rawGeom's
 // own color props). Returns one [r,g,b] per input scalar.
 function rampRaw(vals, p, scope){
@@ -1186,5 +1253,5 @@ function parseRawRows(text, prim, scope){
 }
 
 export {
-  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume, buildRawGeom3d, parseRawRows, sampleRawGeom
+  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume, buildRawGeom3d, buildMesh3d, meshDataFromGeometry, meshDataSig, parseRawRows, sampleRawGeom
 };

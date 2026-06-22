@@ -5,7 +5,7 @@ import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/
 import { disposeObjs, addPlotObj, updateGpuUniforms, syncThreeLights } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
-  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildRawGeom3d, buildSegments3d
+  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildRawGeom3d, buildMesh3d, buildSegments3d
 } from "./builders.js";
 import { buildFlowFromSeeds } from "./flow.js";
 import { buildTransformer, sampleParamSpace } from "./transformer.js";
@@ -267,6 +267,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     if(node.type==="plane"){const c=[resolveNum(p.centerX,scope,0),resolveNum(p.centerY,scope,0),resolveNum(p.centerZ,scope,0)],n=[resolveNum(p.normalX,scope,0),resolveNum(p.normalY,scope,1),resolveNum(p.normalZ,scope,0)];objs=buildPlane3d(c,n,resolveNum(p.size,scope,8),node.color||"#52d47e");}
     if(node.type==="point")objs=buildPoint3d(resolveNum(p.x,scope,0),resolveNum(p.y,scope,0),resolveNum(p.z,scope,0),node.color||"#ff70bb",resolveNum(p.radius,scope,0.08));
     if(node.type==="rawGeom")objs=buildRawGeom3d(p,scope,node.color||"#ff70bb");
+    if(node.type==="mesh")objs=buildMesh3d(p,scope,node.color||"#cfd6e0");
     if(node.type==="__scalarVol"){
       objs=buildScalarVolume(p,scope,node.color||"#6df");
     }
