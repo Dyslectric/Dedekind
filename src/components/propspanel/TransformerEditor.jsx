@@ -227,8 +227,14 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             <option value="off">Flat (node colour)</option>
             <option value="ramp">Ramp (scalar → two colours)</option>
             <option value="rgb">RGB (three expressions)</option>
+            <option value="texture">Texture (wired image / video)</option>
           </select>
         </PR>
+        {cmode==="texture"&&<div style={{fontSize:12.5,color:(deps.some(d=>d.type==="texture"||d.type==="video")?ui.uiFaint:ui.uiDanger),marginTop:2,lineHeight:1.5}}>
+          {deps.some(d=>d.type==="texture"||d.type==="video")
+            ? "Sampled at the surface's UV (its grid coordinates). Wire a Texture or Video node's output into this transformer."
+            : "No texture wired — connect a Texture or Video node's output into this transformer."}
+        </div>}
         {cmode==="ramp"&&<>
           <PR label="value"><EI v={node.props.matColor||""} sc={scope} onChange={v=>set("matColor",v)} placeholder="scalar, e.g. sin(3x)·cos(3y)"/></PR>
           <PR label="low"><ColorRow v={node.props.matColorLo||"#3a6aff"} onChange={v=>set("matColorLo",v)}/></PR>

@@ -2,6 +2,7 @@ import { uid, nextColor } from "../core/math.js";
 import { catOf, SCALAR_TYPES } from "../core/taxonomy.js";
 import { UI_KEYS, UI_DEFAULTS } from "../theme/tokens.jsx";
 import { THEME_PRESETS } from "../theme/presets.js";
+import { DEFAULT_TEXTURE_SRC } from "./textureDefault.js";
 
 // ── Node Canvas (SVG) ────────────────────────────────────────────────────────
 const NW=200;
@@ -32,6 +33,8 @@ const TYPE_META={
   flow:     {tag:"FLW",  tc:"#9ff",   bg:"#061818",hdr:"#082020"},
   glyphField:{tag:"GLY", tc:"#5ec",   bg:"#06180f",hdr:"#0a2418"},
   // ── Unified kinds ──
+  texture:   {tag:"TEX",  tc:"#f5bde6",bg:"#1c1018",hdr:"#241420"},
+  video:     {tag:"VID",  tc:"#f5a97f",bg:"#1c1410",hdr:"#241a12"},
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
   points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   rawGeom:   {tag:"RAW",  tc:"#9fd6a0",bg:"#0e1810",hdr:"#122218"},
@@ -82,6 +85,19 @@ function makeNode(type,pos){
       arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff"},attachments:[]},
 
     // ── Unified kinds ──────────────────────────────────────────────────────
+    // texture: a static image source (uploaded file → data-URI, or a URL),
+    // sampled by a surface's shader as a material channel. Defaults to the cute
+    // Dedekind tile so a fresh node shows something. filter: linear|nearest,
+    // wrap: clamp|repeat.
+    texture:{label:"Texture",color:"__AUTO__",props:{
+      src:DEFAULT_TEXTURE_SRC, filter:"linear", wrap:"clamp",
+    },attachments:[]},
+    // video: a video source (URL or local file → object URL); its current frame
+    // is uploaded each render tick (THREE.VideoTexture). Not embedded in the
+    // project — the URL/reference is stored, the footage is the user's.
+    video:{label:"Video",color:"__AUTO__",props:{
+      src:"", filter:"linear", wrap:"clamp",
+    },attachments:[]},
     // paramSpace: a parameterized manifold of `degree` 1 (curve), 2 (surface),
     // or 3 (volume), mapped into 3-D Euclidean space.
     paramSpace:{label:"Curve",color:"__AUTO__",props:{

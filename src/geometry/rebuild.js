@@ -9,6 +9,7 @@ import {
 } from "./builders.js";
 import { buildFlowFromSeeds } from "./flow.js";
 import { buildTransformer, sampleParamSpace } from "./transformer.js";
+import { getNodeTexture } from "./textures.js";
 import { parsePointSeq, parseGlyphField, parsePointsExplicit, parseGlyphsExplicit } from "./parse.js";
 import { normalizedNode } from "../nodes/normalize.js";
 import { buildScalarVolume } from "./builders.js";
@@ -200,12 +201,13 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       objs=buildScalarVolume(p,scope,node.color||"#6df");
     }
     if(node.type==="transformer"){
-      let fnNode=null, paramNode=null, eqNode=null, eqNode2=null;
+      let fnNode=null, paramNode=null, eqNode=null, eqNode2=null, texNode=null;
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
         if(dep.type==="fnMap" && !fnNode) fnNode=dep;
         else if(dep.type==="equation"){ if(!eqNode) eqNode=dep; else if(!eqNode2) eqNode2=dep; }
         else if(dep.type==="paramSpace" && !paramNode) paramNode=dep;
+        else if((dep.type==="texture"||dep.type==="video") && !texNode) texNode=dep;
       }
       // Each structural input (fnMap / equation / paramSpace) owns its own
       // expressions, which may reference scalars/functions wired directly into
@@ -223,7 +225,10 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       // same-named scalars evaluate against their own wiring, not the merged scope.
       const scopeF = eqNode  ? {...scope, ...(paramSc||{}), ...(fnSc||{}), ...(eqSc||{})}  : tScope;
       const scopeG = eqNode2 ? {...scope, ...(paramSc||{}), ...(fnSc||{}), ...(eqSc2||{})} : tScope;
-      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG);
+      const tex = texNode ? getNodeTexture(texNode) : null;
+      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG,tex);
+      // A video texture self-updates each frame; keep the render loop ticking.
+      if(texNode && texNode.type==="video" && objs && objs.length) objs._glyphAnim=true;
     }
     if(node.type==="pointSeq"){
       let pts, cols;

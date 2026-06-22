@@ -211,7 +211,7 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
 //   colorInfo (optional): { lo, hi, cmin, cmax } for a gradient fill driven by
 //     whichever output is bound to "color". Returns null (→ CPU) if an output
 //     expression isn't GLSL-translatable or the config isn't a 2-in graph.
-function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo){
+function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex){
   if(inDim!==2) return null;                      // only 2-input → surface here
   const AX={x:0,y:1,z:2};                          // color/none/undefined → not spatial
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
@@ -260,6 +260,9 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
       const b=tp.matB?exprToGLSL(tp.matB,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
       if(r&&g&&b) shade.rgb=[r,g,b];
       matOpts={ shade };
+    } else if(mode==="texture" && tex){
+      // sampled at the surface's UV (the unit grid coord) in the shader
+      shade.texture=tex; matOpts={ shade };
     } else if(mode==="ramp" && tp.matColor){
       const cG=exprToGLSL(tp.matColor,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable);
       matOpts = cG

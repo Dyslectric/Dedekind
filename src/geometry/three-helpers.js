@@ -57,6 +57,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     uniforms.uSpe   = { value: shade.specular ?? 0.35 };
     uniforms.uShine = { value: shade.shininess ?? 32.0 };
     if(shade.emitExpr) uniforms.uEmitColor = { value: new THREE.Color(hexToThree(shade.emitColor||"#ffffff")) };
+    if(shade.texture) uniforms.uTex = { value: shade.texture };
   }
   const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
   const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
@@ -153,12 +154,14 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     const specExpr = shade.specExpr || null;
     const emitExpr = shade.emitExpr || null;
     const rgb = (shade.rgb && shade.rgb.length===3) ? shade.rgb : null;   // [r,g,b] GLSL → albedo
+    const texAlb = !!shade.texture;                                       // sample uTex at vUv → albedo
     const needXY = analytic || colored || !!rgb || !!specExpr || !!emitExpr;
     litVert = `
       ${decls}
-      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk;
+      varying vec3 vViewPos; varying vec2 vDomain; varying vec2 vUv; varying float vOk;
       void main(){
         vec2 _gd = position.xy;
+        vUv = _gd;                          // the unit grid coord IS the surface's UV
         float x=_gd.x; float y=_gd.y; ${body}
         vec3 p = vec3(P.x, P.z, P.y);
         vDomain = vec2(x,y);
@@ -175,7 +178,8 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       uniform float uAmb; uniform float uDif; uniform float uSpe; uniform float uShine;
       ${colored ? "uniform vec3 uColorLo; uniform vec3 uColorHi; uniform float uCMin; uniform float uCMax;" : ""}
       ${emitExpr ? "uniform vec3 uEmitColor;" : ""}
-      varying vec3 vViewPos; varying vec2 vDomain; varying float vOk;
+      ${texAlb ? "uniform sampler2D uTex;" : ""}
+      varying vec3 vViewPos; varying vec2 vDomain; varying vec2 vUv; varying float vOk;
       void main(){
         if(vOk<0.5) discard;
         ${needXY ? "float x=vDomain.x; float y=vDomain.y;" : ""}
@@ -196,7 +200,9 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         vec3 H = normalize(L + V);
         float spe = pow(max(dot(N,H), 0.0), uShine);
         float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
-        ${rgb
+        ${texAlb
+          ? `vec3 albedo = texture2D(uTex, vUv).rgb;`
+          : rgb
           ? `vec3 albedo = clamp(vec3((${rgb[0]}),(${rgb[1]}),(${rgb[2]})), 0.0, 1.0);`
           : colored
           ? `float _cv = (${opts.colorBody}); float _sp=(uCMax-uCMin); float _t=(abs(_sp)<1e-12)?0.0:clamp((_cv-uCMin)/_sp,0.0,1.0); vec3 albedo=mix(uColorLo,uColorHi,_t);`

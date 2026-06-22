@@ -32,6 +32,9 @@ const CATEGORY = {
   //   transformer— a plot that takes an fnMap + a domain and renders it as a
   //                graph (axis mapping) or a vector field (quiver/glyph).
   fnMap:"map", equation:"map", transformer:"plot",
+  // Texture sources: an image or a video frame, sampled by a surface's shader.
+  // Category "texture": attaches to a plot (the renderer that samples it).
+  texture:"texture", video:"texture",
   // Cameras split into explicit 3D and 2D kinds (both category "camera").
   // Legacy single "camera" kind kept for migration of old projects.
   camera:"camera", camera3d:"camera", camera2d:"camera", project:"project",
@@ -55,6 +58,8 @@ const ATTACH_RULES = {
   // transformer as a parametric domain source, so plot→plot is allowed; the
   // finer rule (only paramSpace→transformer) is enforced in canAttach below.
   plot:     new Set(["camera","plot"]),
+  // A texture source attaches to a plot (the surface/transformer that samples it).
+  texture:  new Set(["plot"]),
   camera:   new Set([]),
   project:  new Set([]),
 };

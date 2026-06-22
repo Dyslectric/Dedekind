@@ -640,6 +640,23 @@ function matGlowScene(){
     mat:{ matEmit:"pow(max(0.0, sin(2.5*(x+y) - t)), 3.0)", matEmitColor:"#5be0c0" } });
 }
 
+// TEXTURE SOURCE: a Texture node (the default Dedekind tile) wired into the
+// transformer, sampled as albedo at the surface's UV (its grid coordinates).
+function texSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1120,y:120}));cam.label="textured surface";
+  cam.props.orbRadius="9";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="30";
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="z = ½ sin(x)cos(y)";fn.color="#8aadf4";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0.5*sin(x)*cos(y)";
+  const tex=makeNode("texture",{x:360,y:360});tex.label="Dedekind tile";tex.color="#f5bde6";   // src defaults to the embedded ◈ tile
+  const tr=makeNode("transformer",{x:740,y:200});tr.label="graph · textured";tr.color="#8aadf4";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.14";tr.props.aMax="3.14";tr.props.bMin="-3.14";tr.props.bMax="3.14";tr.props.res="80";
+  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="texture";
+  tr.attachments=[fn.id,tex.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tex.id]:tex,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
 // Register the new scenes alongside the originals.
 Object.assign(SCENES, {
   spheretorus: sphereTorusScene,
@@ -663,6 +680,7 @@ Object.assign(SCENES, {
   "mat-rings": matRingsScene,
   "mat-rgb": matRgbScene,
   "mat-glow": matGlowScene,
+  "tex-surface": texSurfaceScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────

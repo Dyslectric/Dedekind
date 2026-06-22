@@ -249,7 +249,7 @@ function geomSignature(node, scope){
       return `raw|${c}|${p.prim}|${p.src||"list"}|${resolved}${colSig}${aSig}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.normalize?1:0}|${p.lenMode||""}|${p.showWire!==false?1:0}|${isIdx?scopeSig(node,scope):""}`;
     }
     case "__scalarVol": return `sv|${c}|${p.expr}|${p.xMin}|${p.xMax}|${p.yMin}|${p.yMax}|${p.zMin}|${p.zMax}|${resolveNum(p.res,scope,18)}|${p.colorByValue?1:0}|${p.colorLo}|${p.colorHi}|${scopeSig(node,scope)}`;
-    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|sh:${p.shading||""}|${p.matColorMode||""}|${p.matColor||""}|${p.matR||""}|${p.matG||""}|${p.matB||""}|${p.matColorLo||""}|${p.matColorHi||""}|${p.matColorMin||""}|${p.matColorMax||""}|${p.matSpec||""}|${p.matEmit||""}|${p.matEmitColor||""}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
+    case "transformer": return `tr|${c}|${p.mode}|${p.domainSrc}|${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${p.outAxis0}|${p.outAxis1}|${p.outAxis2}|${p.outAxis3}|${p.normalize?1:0}|${resolveNum(p.arrowLen,scope,0.5)}|${p.aMin}|${p.aMax}|${p.bMin}|${p.bMax}|${p.cMin}|${p.cMax}|${p.dMin}|${p.dMax}|${resolveNum(p.res,scope,60)}|${p.colorMode||""}|${p.colorShift||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}|${p.showWire!==false?1:0}|${p.wireOnly?1:0}|sh:${p.shading||""}|${p.matColorMode||""}|${p.matColor||""}|${p.matR||""}|${p.matG||""}|${p.matB||""}|${p.matColorLo||""}|${p.matColorHi||""}|${p.matColorMin||""}|${p.matColorMax||""}|${p.matSpec||""}|${p.matEmit||""}|${p.matEmitColor||""}|${p.__texSig||""}|${p.__fnSig||""}|${p.__paramSig||""}|${p.__eqSig||""}|${
       // For a transpilable implicit equation (GPU raymarch), the wired sliders/
       // animators become live shader uniforms — they must NOT invalidate the
       // geometry cache, or every animated frame triggers a full CPU rebuild
@@ -276,14 +276,15 @@ function geomSignature(node, scope){
 function plotSignature(node, p, scope, nodes, animVals){
   let pSig=p, sigScope=scope;
   if(node.type==="transformer"||node.type==="flow"){
-    let fnSig="",paramSig="",eqSig="";
+    let fnSig="",paramSig="",eqSig="",texSig="";
     let eqRaymarch=false;   // equation wired AND transpilable → GPU uniform path
     const structScopes=[];
     const animV=animVals||{};
     const eqDeps=[];
     for(const depId of (node.attachments||[])){
       const dep=nodes[depId]; if(!dep) continue;
-      if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      if(dep.type==="texture"||dep.type==="video"){ texSig=`${dep.type}|${dep.props?.src||""}|${dep.props?.filter||""}|${dep.props?.wrap||""}`; }
+      else if(dep.type==="fnMap"){ fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="equation"){ eqDeps.push(dep); structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="paramSpace"){ const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="points"){ const q=dep.props; paramSig=`pts|${q.kind}|${q.mode}|${q.listPoints}|${q.idxPoint}|${q.idxCount}|${q.recInit}|${q.recStep}|${q.recCount}|${q.listGlyphs}|${q.idxGlyph}|${q.idxGlyphCount}|${q.recGlyphInit}|${q.recGlyphStep}|${q.recGlyphCount}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
@@ -304,7 +305,7 @@ function plotSignature(node, p, scope, nodes, animVals){
         }
       }
     }
-    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__eqRaymarch:eqRaymarch};
+    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch};
     sigScope={...scope}; for(const s of structScopes) Object.assign(sigScope,s);
   }
   return geomSignature({...node,props:pSig},sigScope);
