@@ -804,6 +804,42 @@ function listCubeScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
 
+// OCTAHEDRON from lists — a second polyhedron for Euler's formula (V−E+F=2):
+// 6 vertices, 12 edges referencing them by index, 8 faces. Same construction as
+// the cube, a different solid, the same invariant.
+function octaListScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="octahedron from lists";
+  cam.props.orbRadius="7";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="22";
+  const V=makeNode("list",{x:360,y:140});V.name="V";V.label="vertices";V.color="#f7d9a0";
+  V.props.expr="[[2,0,0],[-2,0,0],[0,2,0],[0,-2,0],[0,0,2],[0,0,-2]]";
+  const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
+  E.props.expr="[[5,1],[5,3],[5,2],[5,4],[6,1],[6,3],[6,2],[6,4],[1,3],[3,2],[2,4],[4,1]]";
+  const pts=makeNode("points",{x:740,y:200});pts.label="octahedron";pts.color="#5be0c0";
+  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
+  pts.props.drawLines=false;pts.props.radius="6";
+  pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
+}
+
+// MÖBIUS STRIP — the simplest non-orientable surface: a strip given a half-twist
+// before its ends are joined, so it has only one side and one edge. A parametric
+// surface, lit so the twist reads as the camera orbits.
+function mobiusScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="Möbius strip";
+  cam.props.orbRadius="7";cam.props.orbTheta="0.7";cam.props.orbPhi="0.86";cam.props.spin="loop";cam.props.spinPeriod="24";
+  const ps=makeNode("paramSpace",{x:380,y:160});ps.label="Möbius";ps.color="#c6a0f6";
+  ps.props.degree="2";
+  ps.props.exprXu="2*(1+(v/2)*cos(u/2))*cos(u)";
+  ps.props.exprYu="2*(1+(v/2)*cos(u/2))*sin(u)";
+  ps.props.exprZu="2*(v/2)*sin(u/2)";
+  ps.props.uMin="0";ps.props.uMax="2*pi";ps.props.vMin="-1";ps.props.vMax="1";ps.props.uRes="200";ps.props.vRes="18";
+  ps.props.showWire=false;ps.props.shading="lit";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+
 // CULMINATION: one scene, every system at once. A normal-mapped brick sphere
 // (texture albedo + brick normal map, sampled at its own u,v) sits inside a
 // wireframe cage whose edges REFERENCE a shared vertex list by index, with an
@@ -1005,6 +1041,8 @@ Object.assign(SCENES, {
   "lights-param": lightsParamScene,
   "brick-sphere": brickSphereScene,
   "list-cube": listCubeScene,
+  "tut-octa-list": octaListScene,
+  "tut-mobius": mobiusScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
   "implicit-tex": implicitTexScene,

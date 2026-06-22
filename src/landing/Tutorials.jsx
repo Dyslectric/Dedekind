@@ -172,6 +172,16 @@ const SECTIONS = [
           { heading: "One equation, every conic", body: "The general conic is A·x² + B·xy + C·y² + D·x + E·y + F = 0. Those six numbers contain every ellipse, parabola, and hyperbola, plus their degenerate cases of crossed and parallel lines. With six sliders on the plot you can steer the whole family by hand. The type is decided by the discriminant B² − 4AC: negative gives an ellipse, zero a parabola, positive a hyperbola. Set A = C = 1 with everything else zero for a circle, then raise B past 2 and the closed curve splits open into a hyperbola as the discriminant crosses zero. The cross term B rotates the axes; D and E slide the center; F sets the size.", kind: "tut-conic-zoo" },
         ],
       },
+      {
+        slug: "texturing-level-sets",
+        title: "Texturing and lighting a level set",
+        summary: "A ray-marched implicit surface has no UV coordinates, yet it can still carry an image and react to light — by projecting the texture from three directions and shading at each point the ray meets it.",
+        steps: [
+          { heading: "The bare level set", body: "Start with the surface alone: the gyroid, sin(x)cos(y) + sin(y)cos(z) + sin(z)cos(x) = 0, ray-marched straight from its equation with no mesh. The colour here just encodes orientation. Being an implicit surface, the zero set of a function, it has no built-in (u,v) grid — so there is no obvious place to attach an image.", kind: "gyroid" },
+          { heading: "Map an image with no UV", body: "An implicit surface has no parameterization, so a texture has no coordinates to land on. Triplanar mapping sidesteps that completely: sample the image three times — projected from the x, y, and z planes using the hit point's position — and blend the three by the surface normal, so whichever way the surface faces, the best-aligned projection wins. Here a turbulent plasma is mapped onto a morphing gyroid. No unwrapping, no seams to author, and it works on any level set however tangled. Drag the tile scale on the transformer to zoom the pattern.", kind: "implicit-tex" },
+          { heading: "Relief, and lights that move", body: "The same triplanar projection carries a normal map, perturbing the shading normal for bump relief without touching the geometry. And the surface obeys the scene's Light nodes — the very same swinging point light and sweeping sun that light the meshes and parametric surfaces — accumulated per pixel right where the ray meets the surface. Colour, relief, and moving light on the zero set of an equation, every one of them computed at the ray hit. This is the trippy plot the whole shading stack was building toward.", kind: "implicit-tex" },
+        ],
+      },
     ],
   },
   {
@@ -339,6 +349,51 @@ const SECTIONS = [
         summary: "Curvature is an abstract number until you draw it. The osculating circle is the curve's best-fitting circle at a point, and its radius is exactly one over the curvature.",
         steps: [
           { heading: "Curvature you can measure", body: "How sharply a curve bends at a point is captured by a single number, the curvature κ. The cleanest way to feel it is the osculating circle: the unique circle that hugs the curve at that point, matching its position, its tangent, and its bending. Its radius is exactly 1/κ, so a gently bending curve has a big circle and a sharp turn has a tiny one. Here the curve is a bump, y = a·e^(−(x/w)²), and the circle is drawn at its apex. Drag w to make the bump wider and the circle swells; drag a to make it taller and sharper and the circle shrinks into the peak. At the top of this bump the curvature works out to 2a/w², so the radius is w²/2a, which is exactly what you watch the circle do as you slide the two knobs.", kind: "tut-osculating" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "topology",
+    title: "Topology & fractals",
+    blurb: "Shape up to deformation: how many handles a surface has, when it has only one side, the knottedness of a loop, and the self-similar forms whose dimension isn't a whole number — built from the engine's lists, parametric surfaces, and ray-marched level sets.",
+    pages: [
+      {
+        slug: "polyhedra-euler",
+        title: "Polyhedra and Euler's formula",
+        summary: "A polyhedron is just vertices, edges, and faces. Counting them turns up a number that never changes — the first invariant of topology, built here straight from lists.",
+        steps: [
+          { heading: "A solid from shared data", body: "A cube is eight corners and twelve edges. With first-class Lists you store the eight corner positions once, then give a second list of index pairs naming which corners each edge joins — so the edges reference the vertices rather than copying their coordinates. Edit a corner and every edge that touches it follows, because there is only one copy. The structure of the solid is right there as data: V = 8 vertices, E = 12 edges, and its six square faces give F = 6.", kind: "list-cube" },
+          { heading: "Count V − E + F", body: "Take vertices minus edges plus faces. For the cube: 8 − 12 + 6 = 2. That combination, V − E + F, is the Euler characteristic χ. It looks like a coincidence of the cube — until you try it on something else.", kind: "list-cube" },
+          { heading: "A different solid, the same number", body: "Here is an octahedron, built the same way from a vertex list and an edge list: V = 6, E = 12, F = 8. Count again: 6 − 12 + 8 = 2. The same χ = 2 as the cube — and you get 2 for any convex polyhedron at all, because every one of them is topologically a sphere. χ doesn't see the particular shape, only the surface underneath; deform the polyhedron however you like short of tearing it and the number holds. That invariance, a number attached to a shape that survives deformation, is where algebraic topology begins.", kind: "tut-octa-list" },
+        ],
+      },
+      {
+        slug: "fractals-dimension",
+        title: "Self-similarity and dimension",
+        summary: "A fractal is a shape assembled from smaller copies of itself. Counting the copies and how much each shrinks gives a dimension that needn't be a whole number.",
+        steps: [
+          { heading: "A shape made of itself", body: "The Sierpiński octahedron is built by replacing one octahedron with six half-size copies, one at each of its vertices, then doing the same to each of those, over and over. This is depth six — 6⁶ = 46,656 little octahedra, lit and colour-graded. Zoom into any corner and you meet the whole shape again: that exact self-similarity, structure repeating at every scale, is the defining feature of a fractal.", kind: "sierpinski" },
+          { heading: "A dimension between two and three", body: "How big is it, really? If a shape is made of N copies of itself each scaled down by a factor s, its dimension is log N / log s — the rule that gives a line dimension 1 and a square dimension 2. Halve the scale here and six copies appear, so the dimension is log 6 / log 2 ≈ 2.585: more than a surface, less than a solid. A non-integer dimension is exactly what 'fractal' means, and it's why this object reads at once like a membrane and like a foam.", kind: "sierpinski" },
+          { heading: "Structure as data, geometry as a rule", body: "It is made from the same parts as the polyhedra. The 46,656 octahedron centres are generated into three Lists, and a single raw-geometry index template stamps one octahedron's eight faces at every centre, coloured by position and reacting to the scene lights. The recursion lives as data in the lists; the drawing is one rule repeated. That separation is how a shape this intricate stays a small, readable graph instead of a wall of coordinates.", kind: "sierpinski" },
+        ],
+      },
+      {
+        slug: "knots",
+        title: "Knots in space",
+        summary: "A knot is a closed loop in three dimensions, considered up to deformation without cutting. The simplest one that isn't secretly a circle is the trefoil.",
+        steps: [
+          { heading: "The trefoil", body: "This closed space curve, (sin t + 2 sin 2t, cos t − 2 cos 2t, −sin 3t), is a trefoil knot. It is genuinely knotted: no amount of pushing and bending — short of cutting the strand and rejoining it — will untangle it into a plain circle. The circle (the 'unknot') and the trefoil are different knots, and deciding when two loops are the same knot is the whole subject of knot theory. The strand is coloured along its parameter t with three RGB expressions, so you can follow it over and under itself at each of its three crossings.", kind: "curve-rgb" },
+        ],
+      },
+      {
+        slug: "surface-topology",
+        title: "Genus, handles, and one-sided surfaces",
+        summary: "Closed surfaces are classified by how many handles they have and whether they have two sides. A torus, a Möbius strip, and a minimal surface span the idea.",
+        steps: [
+          { heading: "Genus: counting handles", body: "Topologically a torus is a sphere with one handle — its genus is 1. Genus counts handles, and for orientable closed surfaces it is a complete invariant: two of them can be deformed into each other exactly when their genus matches. It ties straight to the Euler characteristic by χ = 2 − 2g, so the sphere (g = 0) has χ = 2 and the torus (g = 1) has χ = 0 — the same χ you counted on the polyhedra, now read off the number of holes.", kind: "tex-paramsurf" },
+          { heading: "A surface with only one side", body: "Give a strip a half-twist before joining its ends and you get a Möbius strip. Trace along its middle and you return to where you began having visited 'both' faces without ever crossing the edge — it has a single side and a single boundary curve. It is the simplest non-orientable surface: the first shape on which you cannot consistently choose a normal direction over the whole thing, which is exactly why the half-twist matters. It's a parametric surface here, lit so the twist reads as the camera circles it.", kind: "tut-mobius" },
+          { heading: "Infinite genus: a minimal surface", body: "The gyroid is a triply-periodic minimal surface: it repeats in all three directions and divides space into two interlocking, congruent labyrinths. As a level set it has no boundary and infinitely many handles — genus beyond counting. It's also the renderer flexing: ray-marched from one equation, triplanar-textured, bump-lit, reacting to moving lights, and morphing, all at once. Topology you can reach out and texture.", kind: "implicit-tex" },
         ],
       },
     ],
