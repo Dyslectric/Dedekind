@@ -36,7 +36,7 @@ const GREETS =
 
 // The live stage: builds the morph project once, runs its animators (gated by
 // `paused`) and gently orbits the camera, suppressing all viewport chrome.
-const DemoStage = memo(function DemoStage({ mobile, pausedRef }){
+const DemoStage = memo(function DemoStage({ mobile, pausedRef, phaseRef }){
   const built = useMemo(()=>getShowcaseScene(KIND), []);
   const baseScene = useMemo(()=>{
     if(!built) return null;
@@ -81,6 +81,7 @@ const DemoStage = memo(function DemoStage({ mobile, pausedRef }){
         // Punch IN on a wild fractal while it is held crisp (dwell), pull back to
         // frame the whole shape during a morph, and stay wide on the calm sphere.
         const sv = sId!=null ? (animValsRef.current[sId] ?? 0) : 0;
+        if(phaseRef) phaseRef.current = sv;   // publish the live phase so the chrome label stays in lock-step with the geometry
         const frac = sv - Math.floor(sv);
         const stage = Math.floor(sv) % 5;                 // 0=sphere, 1..4=fractals
         const morphProg = smoothstep(0.62, 1.0, frac);    // 0 during dwell → 1 by stage end
@@ -116,21 +117,18 @@ export function DemoScene(){
   const mobile = useIsMobile();
   const [paused, setPaused] = useState(false);
   const [hintOn, setHintOn] = useState(true);
-  const [, force] = useState(0);                 // re-render the chrome on the clock
-  const tRef = useRef(0);
+  const [, force] = useState(0);                 // re-render the chrome each frame
   const pausedRef = useRef(false);
+  // The morph clock published by the live stage (0..5). Reading it here — rather
+  // than a parallel clock — keeps the title/timeline in exact lock-step with the
+  // geometry on screen (no drift, and it freezes correctly when paused).
+  const phaseRef = useRef(0);
   useEffect(()=>{ pausedRef.current=paused; }, [paused]);
 
-  // A light chrome clock, kept in step with the stage's own morph clock (both run
-  // on wall time from 0), so the on-screen title names the surface in view.
+  // Re-render the chrome each frame so it reflects the stage's published phase.
   useEffect(()=>{
-    let raf, last=performance.now();
-    const loop=(now)=>{
-      const dt=(now-last)/1000; last=now;
-      if(!pausedRef.current) tRef.current=(tRef.current+dt)%LOOP_SECS;
-      force(f=>(f+1)&1023);
-      raf=requestAnimationFrame(loop);
-    };
+    let raf;
+    const loop=()=>{ force(f=>(f+1)&1023); raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
     return ()=>cancelAnimationFrame(raf);
   }, []);
@@ -147,8 +145,7 @@ export function DemoScene(){
   }, []);
   useEffect(()=>{ const h=setTimeout(()=>setHintOn(false), 6500); return ()=>clearTimeout(h); }, []);
 
-  const t = tRef.current;
-  const sClock = t/STAGE_SECS;                          // 0..5
+  const sClock = phaseRef.current;                      // 0..5, straight from the geometry
   const idx = Math.floor(sClock) % STAGES.length;       // the fractal being held
   // The shape is held crisp for the first 62% of a stage (the dwell), then morphs.
   // Show the title during the dwell; fade it out as the morph starts, in at stage
@@ -159,7 +156,7 @@ export function DemoScene(){
 
   return (
     <div style={{position:"fixed",inset:0,background:"#04050a",overflow:"hidden",fontFamily:"ui-monospace,Menlo,Consolas,monospace",userSelect:"none"}}>
-      <div style={{position:"absolute",inset:0}}><DemoStage mobile={mobile} pausedRef={pausedRef}/></div>
+      <div style={{position:"absolute",inset:0}}><DemoStage mobile={mobile} pausedRef={pausedRef} phaseRef={phaseRef}/></div>
 
       {/* vignette */}
       <div style={{position:"absolute",inset:0,pointerEvents:"none",
@@ -186,7 +183,7 @@ export function DemoScene(){
 
       {/* phase bar */}
       <div style={{position:"absolute",left:0,right:0,bottom:34,height:3,background:"rgba(120,150,220,0.16)",pointerEvents:"none"}}>
-        <div style={{height:"100%",width:`${(t/LOOP_SECS)*100}%`,background:"linear-gradient(90deg,#5b9cf6,#b388ff)",boxShadow:"0 0 10px rgba(91,156,246,0.7)"}}/>
+        <div style={{height:"100%",width:`${(sClock/STAGES.length)*100}%`,background:"linear-gradient(90deg,#5b9cf6,#b388ff)",boxShadow:"0 0 10px rgba(91,156,246,0.7)"}}/>
         {STAGES.map((_,i)=>(<div key={i} style={{position:"absolute",left:`${(i/STAGES.length)*100}%`,top:-2,width:1,height:7,background:i===idx?"#fff":"rgba(150,175,235,0.4)"}}/>))}
       </div>
 
