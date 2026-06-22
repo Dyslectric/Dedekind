@@ -857,14 +857,15 @@ function showcaseScene(){
     [V.id]:V,[E.id]:E,[cage.id]:cage,[cv.id]:cv,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
-// SIERPINSKI OCTAHEDRON: a depth-4 octahedron fractal — 6⁴ = 1296 small octahedra,
-// 10368 coloured triangles. The 1296 centres are generated into three first-class
+// SIERPINSKI OCTAHEDRON: a depth-6 octahedron fractal — 6⁶ = 46656 small octahedra,
+// 373248 coloured triangles. The 46656 centres are generated into three first-class
 // Lists (Cx, Cy, Cz); a rawGeom index template stamps the 8 faces of an octahedron
 // at each centre (face f picks a sign per axis), and the colour is a position-based
-// RGB field so the whole fractal is a smooth rainbow. The index template compiles
-// to native JS (the JIT handles the list lookups), so it stamps in ~140ms.
+// RGB field so the whole fractal is a smooth rainbow. The octahedron index is split
+// across two loop dims (i·NK+k) so each stays under rawGeom's per-dimension cap, and
+// the template compiles to native JS (the JIT handles the list lookups) — ~2.7s.
 function sierpinskiOctaScene(){
-  const L=4, S=3.0;
+  const L=6, S=3.0;
   const dirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
   let pts=[[0,0,0]], half=S;
   for(let l=0;l<L;l++){ const off=half/2, np=[];
@@ -872,24 +873,26 @@ function sierpinskiOctaScene(){
     pts=np; half/=2; }
   const R=half;                                   // small-octahedron radius
   const col=a=>"["+pts.map(p=>+p[a].toFixed(4)).join(",")+"]";
+  // split the 6^L octahedron index across i and k so each loop dim stays small
+  const NK=Math.pow(6,Math.floor(L/2)), NI=Math.pow(6,Math.ceil(L/2));   // NI·NK = 6^L
+  const o=`(i*${NK}+k)`;                           // flat octahedron index → list lookup
 
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1280,y:120}));cam.label="Sierpiński octahedron";
-  cam.props.orbRadius="9.5";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="48";
+  cam.props.orbRadius="9.5";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="60";
   const Cx=makeNode("list",{x:300,y:80});Cx.name="Cx";Cx.label="centres x";Cx.color="#f7d9a0";Cx.props.expr=col(0);
   const Cy=makeNode("list",{x:300,y:210});Cy.name="Cy";Cy.label="centres y";Cy.color="#f7d9a0";Cy.props.expr=col(1);
   const Cz=makeNode("list",{x:300,y:340});Cz.name="Cz";Cz.label="centres z";Cz.color="#f7d9a0";Cz.props.expr=col(2);
-  const Rn=makeNode("constant",{x:300,y:470});Rn.name="R";Rn.label="cell radius";Rn.props.value=String(+R.toFixed(5));
+  const Rn=makeNode("constant",{x:300,y:470});Rn.name="R";Rn.label="cell radius";Rn.props.value=String(+R.toFixed(6));
   const g=makeNode("rawGeom",{x:720,y:220});g.label="fractal";g.color="#8aadf4";
   g.props.prim="triangles";g.props.src="index";
   g.props.idxTris=
-    "Cx[i+1]+(1-2*mod(floor(j/4),2))*R, Cy[i+1], Cz[i+1] | "+
-    "Cx[i+1], Cy[i+1]+(1-2*mod(floor(j/2),2))*R, Cz[i+1] | "+
-    "Cx[i+1], Cy[i+1], Cz[i+1]+(1-2*mod(j,2))*R";
-  g.props.idxCount=`${pts.length}, 8`;
-  // No wireframe overlay: at 10k triangles its edge haze buries the structure and
-  // looks the same at any depth. Solid faces let the recursive (Sierpiński-triangle)
-  // holes read, so the depth is actually visible.
+    `Cx[${o}+1]+(1-2*mod(floor(j/4),2))*R, Cy[${o}+1], Cz[${o}+1] | `+
+    `Cx[${o}+1], Cy[${o}+1]+(1-2*mod(floor(j/2),2))*R, Cz[${o}+1] | `+
+    `Cx[${o}+1], Cy[${o}+1], Cz[${o}+1]+(1-2*mod(j,2))*R`;
+  g.props.idxCount=`${NI}, 8, ${NK}`;
+  // No wireframe overlay: its edge haze buries the structure and looks the same at
+  // any depth. Solid faces let the recursive (Sierpiński-triangle) holes read.
   g.props.showWire=false;
   g.props.colorOn=true;g.props.colorMode="rgb";
   g.props.colorR="512+512*sin(1.5*x)";
