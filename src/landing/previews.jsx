@@ -996,6 +996,24 @@ function implicitTexScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[tM.id]:tM,[ph.id]:ph,[eq.id]:eq,[tex.id]:tex,[nrm.id]:nrm,[lamp.id]:lamp,[sun.id]:sun,[tr.id]:tr},camId:cam.id,animated:true};
 }
 
+// Textured gyroid, ALBEDO ONLY — triplanar plasma, no normal map, no scene lights
+// (fixed key light). The "before" to the relief-and-lights version, so the two
+// teaching steps look different.
+function texFlatImplicitScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1240,y:120}));cam.label="textured gyroid";
+  cam.props.orbRadius="13";cam.props.orbTheta="0.7";cam.props.orbPhi="0.95";cam.props.spin="loop";cam.props.spinPeriod="58";
+  const tM=makeNode("animator",{x:40,y:120});tM.name="t";tM.value=0;tM.props.min="0";tM.props.max="6.283";tM.props.period="16";tM.props.loop="loop";tM.playing=true;
+  const eq=makeNode("equation",{x:360,y:140});eq.label="gyroid";eq.color="#c6a0f6";
+  eq.props.dims="3d";eq.props.lhs="sin(x)*cos(y)+sin(y)*cos(z)+sin(z)*cos(x)";eq.props.rhs="0.8*sin(t)";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";eq.attachments=[tM.id];
+  const tex=makeNode("texture",{x:360,y:320});tex.label="plasma";tex.color="#f5bde6";tex.props.src="builtin:plasma";tex.props.wrap="repeat";
+  const tr=makeNode("transformer",{x:720,y:200});tr.label="raymarch · triplanar";tr.color="#c6a0f6";
+  tr.props.aMin="-6.5";tr.props.aMax="6.5";tr.props.bMin="-6.5";tr.props.bMax="6.5";tr.props.cMin="-6.5";tr.props.cMax="6.5";
+  tr.props.res="150";tr.props.colorMode="texture";tr.props.uvScaleU="0.45";
+  tr.attachments=[eq.id,tex.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[tM.id]:tM,[eq.id]:eq,[tex.id]:tex,[tr.id]:tr},camId:cam.id,animated:true};
+}
+
 // TETRAHEDRON from lists — the simplest polyhedron (V=4, E=6, F=4 → 2).
 function tetraListScene(){
   const project=makeProjectNode("preview");
@@ -1151,6 +1169,7 @@ Object.assign(SCENES, {
   "tut-sierp-tetra": sierpTetraScene,
   "tut-knot-fig8": fig8KnotScene,
   "tut-schwarz": schwarzScene,
+  "tut-tex-flat": texFlatImplicitScene,
   "tut-tex-schwarz": texSchwarzScene,
   "showcase": showcaseScene,
   "sierpinski": sierpinskiOctaScene,
@@ -1546,17 +1565,18 @@ function tutRawTorusScene(){
   const SX=makeNode("fnDef",{x:540,y:-40});SX.name="SX";SX.label="SX(u,v)";SX.props.params="u,v";SX.props.expr="(RR(u) + rt*cos(W(u,v)))*cos(u)";SX.attachments=[RRf.id,Wf.id,rt.id];
   const SY=makeNode("fnDef",{x:540,y:70}); SY.name="SY";SY.label="SY(u,v)";SY.props.params="u,v";SY.props.expr="(RR(u) + rt*cos(W(u,v)))*sin(u)";SY.attachments=[RRf.id,Wf.id,rt.id];
   const SZ=makeNode("fnDef",{x:540,y:180});SZ.name="SZ";SZ.label="SZ(u,v)";SZ.props.params="u,v";SZ.props.expr="rt*sin(W(u,v))";SZ.attachments=[Wf.id,rt.id];
-  // color + alpha functions (0..1024 per channel)
+  // color functions (0..1024 per channel)
   const CR=makeNode("fnDef",{x:540,y:300});CR.name="CR";CR.label="CR(u,v) · red";  CR.props.params="u,v";CR.props.expr="512 + 512*sin(3*u)";
   const CG=makeNode("fnDef",{x:540,y:410});CG.name="CG";CG.label="CG(u,v) · green";CG.props.params="u,v";CG.props.expr="512 + 512*sin(3*u + v + 2.1)";
   const CB=makeNode("fnDef",{x:540,y:520});CB.name="CB";CB.label="CB(u,v) · blue"; CB.props.params="u,v";CB.props.expr="512 + 512*sin(3*u + 2*v + 4.2)";
-  const CA=makeNode("fnDef",{x:540,y:630});CA.name="CA";CA.label="CA(u,v) · alpha";CA.props.params="u,v";CA.props.expr="720 + 304*sin(2*v)";
   // mesh: two raw nodes (upper + lower triangle of each lattice cell)
   const U=(di)=>`(2*pi*(i+${di})/M)`, V=(dj)=>`(2*pi*(j+${dj})/M)`;
   const VTX=(di,dj)=>{const u=U(di),v=V(dj);return `SX(${u},${v}), SY(${u},${v}), SZ(${u},${v})`;};
   const u0=U(0), v0=V(0);
-  const colProps={colorOn:true,colorMode:"rgb",alphaOn:true,colorR:`CR(${u0},${v0})`,colorG:`CG(${u0},${v0})`,colorB:`CB(${u0},${v0})`,colorA:`CA(${u0},${v0})`};
-  const colAtt=[CR.id,CG.id,CB.id,CA.id];
+  // Opaque: per-vertex alpha would make the two lattice meshes transparent, and two
+  // transparent meshes sort per-object so one triangle of each quad blends wrong.
+  const colProps={colorOn:true,colorMode:"rgb",colorR:`CR(${u0},${v0})`,colorG:`CG(${u0},${v0})`,colorB:`CB(${u0},${v0})`};
+  const colAtt=[CR.id,CG.id,CB.id];
   const upper=_rawNode({x:920,y:120},"torus · upper tris","#7a5cf0",{prim:"triangles",src:"index",idxCount:"M, M",showWire:false,...colProps,
     idxTris:`${VTX(0,0)} | ${VTX(1,0)} | ${VTX(0,1)}`});
   upper.attachments=[SX.id,SY.id,SZ.id,M.id,...colAtt];
@@ -1567,7 +1587,7 @@ function tutRawTorusScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,
     [R0.id]:R0,[A.id]:A,[rt.id]:rt,[P.id]:P,[Q.id]:Q,[M.id]:M,
     [RRf.id]:RRf,[Wf.id]:Wf,[SX.id]:SX,[SY.id]:SY,[SZ.id]:SZ,
-    [CR.id]:CR,[CG.id]:CG,[CB.id]:CB,[CA.id]:CA,[upper.id]:upper,[lower.id]:lower},
+    [CR.id]:CR,[CG.id]:CG,[CB.id]:CB,[upper.id]:upper,[lower.id]:lower},
     camId:cam.id,animated:true};
 }
 
