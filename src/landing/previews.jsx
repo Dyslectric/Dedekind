@@ -236,6 +236,68 @@ function barthScene(){
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
+// IMPLICIT METAMORPHOSIS: one level set f(x,y,z)=0 whose function is an animator-
+// driven crossfade through six classic algebraic surfaces — sphere, torus,
+// tanglecube, chair, heart and Goursat — so the form melts continuously from one
+// into the next and loops. Each surface is its own named fnDef; the blend weight
+// w(s,c) is a unit triangle, so at any instant only two surfaces are active and
+// their weights sum to one (a partition of unity). The whole thing rides the GPU
+// raymarcher: the morph clock s is the ONLY shader uniform, so the metamorphosis
+// animates with zero geometry rebuild, and two lights orbit on a second animator.
+// It is a small, legible graph — open it and read the equation straight off.
+function metamorphScene(){
+  const project=makeProjectNode("Implicit Metamorphosis");
+  const cam=previewCam(makeNode("camera3d",{x:1320,y:120}));cam.label="metamorphosis";
+  cam.props.orbRadius="6.6";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";
+  // morph clock: 0..6, one unit per surface, looping (0 and 6 are both the sphere).
+  const s=makeNode("animator",{x:40,y:80});s.name="s";s.label="s · morph clock";s.value=0;
+  s.props.min="0";s.props.max="6";s.props.period="42";s.props.loop="loop";s.playing=true;
+  // light-orbit clock.
+  const lt=makeNode("animator",{x:40,y:200});lt.name="lt";lt.label="lt · light orbit";lt.value=0;
+  lt.props.min="0";lt.props.max="6.283";lt.props.period="15";lt.props.loop="loop";lt.playing=true;
+  // blend weight: a unit triangle centred at c, so neighbours overlap and sum to 1.
+  const w=makeNode("fnDef",{x:340,y:60});w.name="w";w.label="w(s,c) · blend weight";w.color="#9aa6c8";
+  w.props.params="s,c";w.props.expr="max(0, 1 - abs(s - c))";
+  // inflation: zero at every integer s (the exact surfaces) and peaking between
+  // them. Subtracting it carves a guaranteed interior during a crossfade, so when
+  // two surfaces' insides don't overlap the form melts through a blob instead of
+  // briefly vanishing. q = fractional part of s; 4·q·(1−q) peaks at 1 mid-stage.
+  const infl=makeNode("fnDef",{x:340,y:-30});infl.name="infl";infl.label="infl(s) · melt";infl.color="#9aa6c8";
+  infl.props.params="s";infl.props.expr="4*(s - floor(s))*(1 - (s - floor(s)))";
+  // the six surfaces, each a named level set f = 0 (scaled to a comparable size).
+  const mk=(name,label,col,y,expr)=>{ const n=makeNode("fnDef",{x:340,y});n.name=name;n.label=label;n.color=col;n.props.params="x,y,z";n.props.expr=expr;return n; };
+  const sphere = mk("sphere", "sphere",          "#7cc8ff",170,"x^2 + y^2 + z^2 - 2");
+  const torus  = mk("torus",  "torus",           "#7ad7c0",250,"(sqrt(x^2+y^2) - 1.1)^2 + z^2 - 0.35");
+  const tangle = mk("tangle", "tanglecube",      "#b8a0ff",330,"(x^4 - 5*x^2 + y^4 - 5*y^2 + z^4 - 5*z^2 + 11.8)/6");
+  const chair  = mk("chair",  "chair",           "#ffd479",410,"((x^2+y^2+z^2 - 0.95*1.44)^2 - 0.8*((z-1.2)^2 - 2*x^2)*((z+1.2)^2 - 2*y^2))/3");
+  const heart  = mk("heart",  "heart",           "#ff6ea8",490,"(((x/1.3)^2 + 2.25*(y/1.3)^2 + (z/1.3)^2 - 1)^3 - (x/1.3)^2*(z/1.3)^3 - 0.1125*(y/1.3)^2*(z/1.3)^3)/2");
+  const goursat= mk("goursat","Goursat surface", "#9fd6a0",570,"x^4 + y^4 + z^4 - 1.5*(x^2+y^2+z^2) + 0.8");
+  // the morphing equation: a weighted sum of the six surfaces = 0. The trailing
+  // w(s,6)·sphere closes the loop (target 6 is the sphere again), so s:0→6 returns
+  // home seamlessly.
+  const eq=makeNode("equation",{x:740,y:300});eq.label="Σ w(s,k)·fₖ = 0";eq.color="#c6a0f6";
+  eq.props.dims="3d";eq.props.varA="x";eq.props.varB="y";eq.props.varC="z";eq.props.rhs="0";
+  eq.props.lhs="w(s,0)*sphere(x,y,z) + w(s,1)*torus(x,y,z) + w(s,2)*tangle(x,y,z) + w(s,3)*chair(x,y,z) + w(s,4)*heart(x,y,z) + w(s,5)*goursat(x,y,z) + w(s,6)*sphere(x,y,z) - infl(s)";
+  eq.attachments=[s.id,w.id,infl.id,sphere.id,torus.id,tangle.id,chair.id,heart.id,goursat.id];
+  // ray-march it, iridescent so the shifting normals read as colour under the lights.
+  const tr=makeNode("transformer",{x:1060,y:300});tr.label="raymarch · iridescent";tr.color="#c6a0f6";
+  tr.props.mode="graph";
+  tr.props.aMin="-2.6";tr.props.aMax="2.6";tr.props.bMin="-2.6";tr.props.bMax="2.6";tr.props.cMin="-2.6";tr.props.cMax="2.6";
+  tr.props.res="160";tr.props.colorMode="iridescent";
+  tr.attachments=[eq.id];
+  // two orbiting lights driven by lt.
+  const warm=makeNode("light",{x:1060,y:80});warm.label="warm key";warm.color="#ffd28a";
+  warm.props.kind="point";warm.props.color="#ffd2a8";warm.props.intensity="2.2";warm.props.falloff="0.02";
+  warm.props.posX="3.6*cos(lt)";warm.props.posY="3.6*sin(lt)";warm.props.posZ="2.6";
+  warm.attachments=[lt.id];
+  const cool=makeNode("light",{x:1060,y:170});cool.label="cool fill";cool.color="#8fb7ff";
+  cool.props.kind="directional";cool.props.color="#86a8ff";cool.props.intensity="0.55";
+  cool.props.dirX="-0.5";cool.props.dirY="-0.35";cool.props.dirZ="0.7";
+  cam.attachments=[tr.id,warm.id,cool.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[lt.id]:lt,[w.id]:w,[infl.id]:infl,
+    [sphere.id]:sphere,[torus.id]:torus,[tangle.id]:tangle,[chair.id]:chair,[heart.id]:heart,[goursat.id]:goursat,
+    [eq.id]:eq,[tr.id]:tr,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
+}
 function whitneyScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera3d",{x:1040,y:120}));cam.label="whitney";
@@ -1684,6 +1746,7 @@ Object.assign(SCENES, {
   "implicit-tex": implicitTexScene,
   "curve-rgb": curveRgbScene,
   "teapot": teapotScene,
+  "metamorph": metamorphScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────
@@ -3997,4 +4060,9 @@ function LivePreview(props){
   );
 }
 
-export { LivePreview, makeDemoProject, openDemoProject };
+// Build a showcase scene by kind, returning the full {scene, camId, animated}
+// bundle (not just the node map makeDemoProject hands back). Used by the
+// self-running demoscene player, which needs the camera id to drive it.
+function getShowcaseScene(kind){ return SCENES[kind] ? SCENES[kind]() : null; }
+
+export { LivePreview, makeDemoProject, openDemoProject, getShowcaseScene };

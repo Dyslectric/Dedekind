@@ -29,6 +29,8 @@ const Benchmarks = lazy(()=>import("./bench/Benchmarks.jsx").then(m=>({default:m
 const isBenchHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "bench";
 const RawShowcases = lazy(()=>import("./landing/RawShowcases.jsx").then(m=>({default:m.RawShowcases})));
 const isRawShowcasesHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "raw-showcases";
+const DemoScene = lazy(()=>import("./landing/DemoScene.jsx").then(m=>({default:m.DemoScene})));
+const isDemoSceneHash = (h) => (h||"").replace(/^#/,"").split("?")[0] === "demoscene";
 
 // Catch render-time errors — most importantly a failed lazy chunk import (a
 // flaky network, a stale deploy whose hashed chunk no longer exists, or a host
@@ -251,6 +253,7 @@ export default function App(){
   // (this component returns early and runs no hooks of its own on the bench path).
   if(isBenchHash(window.location.hash)) return <ChunkErrorBoundary><Suspense fallback={<div style={{minHeight:"100vh",background:"#070810"}}/>}><Benchmarks/></Suspense></ChunkErrorBoundary>;
   if(isRawShowcasesHash(window.location.hash)) return <ChunkErrorBoundary><Suspense fallback={<div style={{minHeight:"100vh",background:"#070810"}}/>}><RawShowcases/></Suspense></ChunkErrorBoundary>;
+  if(isDemoSceneHash(window.location.hash)) return <ChunkErrorBoundary><Suspense fallback={<div style={{minHeight:"100vh",background:"#04050a"}}/>}><DemoScene/></Suspense></ChunkErrorBoundary>;
   return <MainApp/>;
 }
 
