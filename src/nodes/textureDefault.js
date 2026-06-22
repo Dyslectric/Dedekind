@@ -15,4 +15,24 @@ const DEDEKIND_SVG =
 </svg>`;
 const DEFAULT_TEXTURE_SRC = "data:image/svg+xml;utf8," + encodeURIComponent(DEDEKIND_SVG);
 
-export { DEFAULT_TEXTURE_SRC };
+// Default NORMAL map: a tileable grid of four-sided pyramid bumps. Each pyramid is
+// four flat facets, each painted with the constant tangent-space normal of a 45°
+// slope — encoded the usual way (R=x, G=y, B=z, mapped 0..1 → 0..255). Sampling
+// this as a normal map gives a crisp embossed-tile look under the light. Pure SVG
+// so it's self-contained like the albedo default; flat facets survive the SVG→
+// bitmap rasterize without colour bleeding at 45° edges.
+const N_FACET = { up:"#8026b4", down:"#80dab4", east:"#da80b4", west:"#2680b4" }; // (0,∓.7,.7)/(±.7,0,.7)
+const NORMAL_SVG =
+`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs><g id="p">
+<polygon points="0,0 64,0 32,32" fill="${N_FACET.up}"/>
+<polygon points="64,0 64,64 32,32" fill="${N_FACET.east}"/>
+<polygon points="64,64 0,64 32,32" fill="${N_FACET.down}"/>
+<polygon points="0,64 0,0 32,32" fill="${N_FACET.west}"/>
+</g></defs>
+<rect width="256" height="256" fill="#8080ff"/>
+${[0,64,128,192].flatMap(y=>[0,64,128,192].map(x=>`<use href="#p" x="${x}" y="${y}"/>`)).join("")}
+</svg>`;
+const DEFAULT_NORMAL_SRC = "data:image/svg+xml;utf8," + encodeURIComponent(NORMAL_SVG);
+
+export { DEFAULT_TEXTURE_SRC, DEFAULT_NORMAL_SRC };

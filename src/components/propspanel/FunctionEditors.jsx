@@ -149,7 +149,8 @@ export function ParamSpaceEditor({ node, scope, onChange }){
             <PR label="UV offset v"><EI v={node.props.uvOffV??"0"} sc={scope} onChange={v=>set("uvOffV",v)} placeholder="0"/></PR>
             <PR label="UV rotate"><EI v={node.props.uvRot??"0"} sc={scope} onChange={v=>set("uvRot",v)} placeholder="0"/></PR>
           </>}
-          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Lit uses screen-space normals on a parametric surface (no closed-form normal).</div>
+          <PR label="normal map ×"><EI v={node.props.matNormalStrength??""} sc={scope} onChange={v=>set("matNormalStrength",v)} placeholder="1 (needs a normal-role texture wired)"/></PR>
+          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Lit uses screen-space normals on a parametric surface (no closed-form normal). Wire a Texture set to <em>normal map</em> to add surface bumps; this scales their strength.</div>
         </>}
       </Sec>
     </>:<>

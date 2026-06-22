@@ -150,7 +150,7 @@ function placeGraph(tp, inVec, outVec, inDim, outDim){
 // Map a math triple [X,Y,Z] → three.js position (x, z, y).
 function toWorld(m){ return [m[0], m[2], m[1]]; }
 
-function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode2=null, scopeF=null, scopeG=null, tex=null){
+function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode2=null, scopeF=null, scopeG=null, tex=null, ntex=null, nstr=1){
   const tp=tNode.props||{};
 
   // ── Implicit equation node ──
@@ -354,7 +354,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       }
       // Either a flat surface (no color binding, or color binding without a
       // range → flat) or a fully-ranged gradient: both render straight on the GPU.
-      const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex);
+      const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr);
       if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
     }
     const nu=dom.nu, nv=dom.nv, rows=[], colRows=surfGradient?[]:null, flatVals=surfGradient?[]:null;

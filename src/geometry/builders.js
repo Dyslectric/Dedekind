@@ -28,7 +28,7 @@ function gpuUniformsResolvable(uniforms, ascope){
 
 // Attempt a GPU-evaluated surface. Returns [mesh, wire] or null if the
 // expression(s) can't be translated to GLSL.
-function buildSurfGPU(kind, p, scope, color, tex){
+function buildSurfGPU(kind, p, scope, color, tex, ntex, nstr){
   // a parametrized grid of (u,v) or (x,y) in [0,1]^2 mapped to the domain
   const showWire = p.showWire!==false;
   const fnTable=fnTableFromScope(scope);
@@ -105,6 +105,14 @@ function buildSurfGPU(kind, p, scope, color, tex){
         shade };
     } else {
       matOpts={ shade };
+    }
+    // Normal map — perturbs the lit normal, independent of the colour channel.
+    if(ntex){
+      shade.normalTex=ntex;
+      shade.normalStrength=(nstr==null?1:nstr);
+      if(!shade.uv) shade.uv={ scaleU:resolveNum(p.uvScaleU,scope,1), scaleV:resolveNum(p.uvScaleV,scope,1),
+                 offU:resolveNum(p.uvOffU,scope,0), offV:resolveNum(p.uvOffV,scope,0),
+                 rot:resolveNum(p.uvRot,scope,0) };
     }
   }
 
@@ -219,7 +227,7 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
 //   colorInfo (optional): { lo, hi, cmin, cmax } for a gradient fill driven by
 //     whichever output is bound to "color". Returns null (→ CPU) if an output
 //     expression isn't GLSL-translatable or the config isn't a 2-in graph.
-function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex){
+function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr){
   if(inDim!==2) return null;                      // only 2-input → surface here
   const AX={x:0,y:1,z:2};                          // color/none/undefined → not spatial
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
@@ -261,6 +269,9 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
     const specG=tp.matSpec?exprToGLSL(tp.matSpec,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
     const emitG=tp.matEmit?exprToGLSL(tp.matEmit,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
     const shade={ fx:fxG, fy:fyG, specExpr:specG, emitExpr:emitG, emitColor:tp.matEmitColor };
+    const uvObj={ scaleU:resolveNum(tp.uvScaleU,scope,1), scaleV:resolveNum(tp.uvScaleV,scope,1),
+                  offU:resolveNum(tp.uvOffU,scope,0), offV:resolveNum(tp.uvOffV,scope,0),
+                  rot:resolveNum(tp.uvRot,scope,0) };
     const mode=tp.matColorMode||"off";
     if(mode==="rgb"){
       const r=tp.matR?exprToGLSL(tp.matR,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable):null;
@@ -269,12 +280,8 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
       if(r&&g&&b) shade.rgb=[r,g,b];
       matOpts={ shade };
     } else if(mode==="texture" && tex){
-      // sampled at the surface's UV (the unit grid coord) in the shader, with an
-      // optional UV transform (tiling scale / offset / rotation).
-      shade.texture=tex;
-      shade.uv={ scaleU:resolveNum(tp.uvScaleU,scope,1), scaleV:resolveNum(tp.uvScaleV,scope,1),
-                 offU:resolveNum(tp.uvOffU,scope,0), offV:resolveNum(tp.uvOffV,scope,0),
-                 rot:resolveNum(tp.uvRot,scope,0) };
+      // sampled at the surface's UV (the unit grid coord) in the shader
+      shade.texture=tex; shade.uv=uvObj;
       matOpts={ shade };
     } else if(mode==="ramp" && tp.matColor){
       const cG=exprToGLSL(tp.matColor,ax2,uniforms,GLSL_UNIFORM_PREFIX,fnTable);
@@ -282,6 +289,8 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
         ? { colorBody:cG, colorLo:new THREE.Color(hexToThree(tp.matColorLo||"#3a6aff")), colorHi:new THREE.Color(hexToThree(tp.matColorHi||"#ff5ea8")), cmin:resolveNum(tp.matColorMin,scope,-1), cmax:resolveNum(tp.matColorMax,scope,1), shade }
         : { shade };
     } else { matOpts={ shade }; }
+    // Normal map perturbs the lighting normal regardless of the colour mode.
+    if(ntex){ shade.normalTex=ntex; shade.normalStrength=(nstr==null?1:nstr); if(!shade.uv) shade.uv=uvObj; }
   }
   if(fnTable && !gpuUniformsResolvable(uniforms, ascope)) return null;
   for(let k=0;k<outDim;k++){

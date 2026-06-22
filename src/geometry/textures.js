@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { DEFAULT_TEXTURE_SRC } from "../nodes/textureDefault.js";
+import { DEFAULT_TEXTURE_SRC, DEFAULT_NORMAL_SRC } from "../nodes/textureDefault.js";
 
 // ── Texture sources ──────────────────────────────────────────────────────────
 // Image + video sources become THREE textures sampled by a surface's shader. The
@@ -10,15 +10,19 @@ import { DEFAULT_TEXTURE_SRC } from "../nodes/textureDefault.js";
 const _MAX = 24;                 // cache cap; evicts + disposes the oldest
 const _cache = new Map();        // key → THREE.Texture
 
-function _applyParams(tex, filter, wrap){
+function _applyParams(tex, filter, wrap, linear){
   const nearest = filter==="nearest";
   tex.magFilter = nearest ? THREE.NearestFilter : THREE.LinearFilter;
   tex.minFilter = nearest ? THREE.NearestFilter : THREE.LinearMipmapLinearFilter;
   const w = wrap==="repeat" ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
   tex.wrapS = w; tex.wrapT = w;
-  // Albedo textures are authored in sRGB; tag them so three linearizes on sample
-  // (the surface shader applies its own gamma at the end).
-  if("colorSpace" in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  // Albedo textures are authored in sRGB (tag so three linearizes on sample; the
+  // shader applies its own gamma at the end). A normal map is DATA, not colour —
+  // it must stay linear or the decoded vectors are wrong.
+  if("colorSpace" in tex){
+    if(linear) tex.colorSpace = (THREE.NoColorSpace || THREE.LinearSRGBColorSpace || "");
+    else if(THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  }
   tex.needsUpdate = true;
 }
 function _store(key, tex){
@@ -34,12 +38,12 @@ function _store(key, tex){
 // SVG data-URIs (no intrinsic pixel size) and odd/NPOT sources normalize to one
 // clean, mipmap-friendly texture. Returns the texture immediately; the pixels
 // fill in when the image finishes loading (three re-uploads on needsUpdate).
-function getStaticTexture(src, filter="linear", wrap="clamp"){
+function getStaticTexture(src, filter="linear", wrap="clamp", linear=false){
   if(!src) return null;
-  const key = `img|${src}|${filter}|${wrap}`;
+  const key = `img|${src}|${filter}|${wrap}|${linear?"lin":"srgb"}`;
   const hit = _cache.get(key); if(hit) return hit;
   const tex = new THREE.Texture();
-  _applyParams(tex, filter, wrap);
+  _applyParams(tex, filter, wrap, linear);
   if(typeof Image !== "undefined" && typeof document !== "undefined"){
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -75,12 +79,17 @@ function getVideoTexture(src, filter="linear", wrap="clamp"){
   return tex;
 }
 
-// Resolve a texture/video node's props to a THREE texture (or null).
+// Resolve a texture/video node's props to a THREE texture (or null). A texture
+// flagged role "normal" samples in linear space (it's a normal map, not colour).
 function getNodeTexture(node){
   if(!node) return null;
   const p = node.props || {};
   if(node.type === "video") return getVideoTexture(p.src, p.filter, p.wrap);
-  return getStaticTexture(p.src || DEFAULT_TEXTURE_SRC, p.filter, p.wrap);
+  const linear = p.role === "normal";
+  // No src (or a media src that was stripped on share): fall back to a sensible
+  // default — the ◈ tile for colour, the pyramid-bump map for a normal role.
+  const dft = linear ? DEFAULT_NORMAL_SRC : DEFAULT_TEXTURE_SRC;
+  return getStaticTexture(p.src || dft, p.filter, p.wrap, linear);
 }
 
 export { getStaticTexture, getVideoTexture, getNodeTexture, DEFAULT_TEXTURE_SRC };

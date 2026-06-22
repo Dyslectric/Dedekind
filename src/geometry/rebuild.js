@@ -101,8 +101,9 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     // so fold its source into the signature here (swapping the image rebuilds).
     if(sig!=null && (node.type==="surf3d"||node.type==="paramsurf")){
       for(const depId of (nodes[childId]?.attachments||[])){ const d=nodes[depId];
-        if(d&&(d.type==="texture"||d.type==="video")){ sig+=`|tex:${d.type}|${d.props?.src||""}|${d.props?.filter||""}|${d.props?.wrap||""}|${p.matColorMode||""}|${p.uvScaleU||""},${p.uvScaleV||""},${p.uvOffU||""},${p.uvOffV||""},${p.uvRot||""}`; break; }
+        if(d&&(d.type==="texture"||d.type==="video")){ sig+=`|tex:${d.type}|${d.props?.role||"color"}|${d.props?.src||""}|${d.props?.filter||""}|${d.props?.wrap||""}`; }
       }
+      sig+=`|mat:${p.matColorMode||""}|${p.uvScaleU||""},${p.uvScaleV||""},${p.uvOffU||""},${p.uvOffV||""},${p.uvRot||""}|ns:${p.matNormalStrength||""}`;
     }
     // sigScope is needed below for live uniform updates on cache hits.
     let sigScope=scope;
@@ -136,12 +137,18 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       let gpu=null;
       // A texture/video wired into this surface (a parametric surface can be
       // texturable) — resolve it so buildSurfGPU can sample it as albedo.
-      let surfTex=null, surfTexNode=null;
+      let surfTex=null, surfTexNode=null, surfNorm=null, surfNormNode=null;
       if(node.type==="surf3d"||node.type==="paramsurf"){
-        for(const depId of (nodes[childId]?.attachments||[])){ const d=nodes[depId]; if(d&&(d.type==="texture"||d.type==="video")){ surfTexNode=d; surfTex=getNodeTexture(d); break; } }
+        for(const depId of (nodes[childId]?.attachments||[])){ const d=nodes[depId]; if(!d) continue;
+          if(d.type==="texture"||d.type==="video"){
+            if(d.props && d.props.role==="normal"){ if(!surfNormNode){ surfNormNode=d; surfNorm=getNodeTexture(d); } }
+            else if(!surfTexNode){ surfTexNode=d; surfTex=getNodeTexture(d); }
+          }
+        }
       }
-      if(node.type==="surf3d") gpu=buildSurfGPU("surf3d",p,scope,node.color||"#5b9cf6",surfTex);
-      else if(node.type==="paramsurf") gpu=buildSurfGPU("paramsurf",p,scope,node.color||"#c761f7",surfTex);
+      const surfNstr=resolveNum(p.matNormalStrength,scope,1);
+      if(node.type==="surf3d") gpu=buildSurfGPU("surf3d",p,scope,node.color||"#5b9cf6",surfTex,surfNorm,surfNstr);
+      else if(node.type==="paramsurf") gpu=buildSurfGPU("paramsurf",p,scope,node.color||"#c761f7",surfTex,surfNorm,surfNstr);
       else if(node.type==="fn1d") gpu=buildFn1dGPU(p,scope,node.color||"#f7cc4f");
       else if(node.type==="quiver3d") gpu=buildQuiver3dGPU(p,scope,node.color||"#5b9cf6");
       else if(node.type==="glyphField"){
@@ -168,7 +175,7 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         gpu._gpu=true; gpu._sig=sig;
         // mark animated glyph sets so the scene keeps redrawing & advancing time
         if(node.type==="glyphField" && gpu[0]?._glyphAnim) gpu._glyphAnim=true;
-        if(surfTexNode && surfTexNode.type==="video") gpu._glyphAnim=true;   // keep ticking for video frames
+        if((surfTexNode && surfTexNode.type==="video")||(surfNormNode && surfNormNode.type==="video")) gpu._glyphAnim=true;   // keep ticking for video frames
         objMap.set(childId,gpu);
         return;
       }
@@ -226,13 +233,16 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       objs=buildScalarVolume(p,scope,node.color||"#6df");
     }
     if(node.type==="transformer"){
-      let fnNode=null, paramNode=null, eqNode=null, eqNode2=null, texNode=null;
+      let fnNode=null, paramNode=null, eqNode=null, eqNode2=null, texNode=null, normTexNode=null;
       for(const depId of (node.attachments||[])){
         const dep=nodes[depId]; if(!dep) continue;
         if(dep.type==="fnMap" && !fnNode) fnNode=dep;
         else if(dep.type==="equation"){ if(!eqNode) eqNode=dep; else if(!eqNode2) eqNode2=dep; }
         else if(dep.type==="paramSpace" && !paramNode) paramNode=dep;
-        else if((dep.type==="texture"||dep.type==="video") && !texNode) texNode=dep;
+        else if(dep.type==="texture"||dep.type==="video"){
+          if(dep.props && dep.props.role==="normal"){ if(!normTexNode) normTexNode=dep; }
+          else if(!texNode) texNode=dep;
+        }
       }
       // Each structural input (fnMap / equation / paramSpace) owns its own
       // expressions, which may reference scalars/functions wired directly into
@@ -251,9 +261,11 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       const scopeF = eqNode  ? {...scope, ...(paramSc||{}), ...(fnSc||{}), ...(eqSc||{})}  : tScope;
       const scopeG = eqNode2 ? {...scope, ...(paramSc||{}), ...(fnSc||{}), ...(eqSc2||{})} : tScope;
       const tex = texNode ? getNodeTexture(texNode) : null;
-      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG,tex);
+      const ntex = normTexNode ? getNodeTexture(normTexNode) : null;
+      const nstr = resolveNum(node.props.matNormalStrength, tScope, 1);
+      objs=buildTransformer(node,fnNode,paramNode,tScope,node.color||"#ffb454",eqNode,eqNode2,scopeF,scopeG,tex,ntex,nstr);
       // A video texture self-updates each frame; keep the render loop ticking.
-      if(texNode && texNode.type==="video" && objs && objs.length) objs._glyphAnim=true;
+      if(((texNode&&texNode.type==="video")||(normTexNode&&normTexNode.type==="video")) && objs && objs.length) objs._glyphAnim=true;
     }
     if(node.type==="pointSeq"){
       let pts, cols;

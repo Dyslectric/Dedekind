@@ -259,6 +259,8 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
         <PR label="specular ×"><EI v={node.props.matSpec||""} sc={scope} onChange={v=>set("matSpec",v)} placeholder="multiplies highlight"/></PR>
         <PR label="emission"><EI v={node.props.matEmit||""} sc={scope} onChange={v=>set("matEmit",v)} placeholder="adds glow, e.g. 0.5+0.5·sin(x-t)"/></PR>
         {node.props.matEmit&&<PR label="glow colour"><ColorRow v={node.props.matEmitColor||"#ffffff"} onChange={v=>set("matEmitColor",v)}/></PR>}
+        <PR label="normal map ×"><EI v={node.props.matNormalStrength??""} sc={scope} onChange={v=>set("matNormalStrength",v)} placeholder="1 (needs a normal-role texture wired)"/></PR>
+        <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Wire a Texture node set to <em>normal map</em> to perturb the lit normals; this scales the bump strength (0 = flat, &gt;1 = exaggerated). It shares the UV transform above.</div>
       </Sec>;
     })()}
     {(()=>{

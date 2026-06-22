@@ -32,6 +32,12 @@ export function TextureEditor({ node, onChange }){
       </div>
     </Sec>
     <Sec title="Sampling">
+      <PR label="use as">
+        <select value={node.props.role||"color"} onChange={e=>set("role",e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="color">colour (albedo)</option>
+          <option value="normal">normal map (bumps)</option>
+        </select>
+      </PR>
       <PR label="filter">
         <select value={node.props.filter||"linear"} onChange={e=>set("filter",e.target.value)} style={{...S.inp,width:"100%"}}>
           <option value="linear">linear (smooth)</option>
@@ -45,7 +51,7 @@ export function TextureEditor({ node, onChange }){
         </select>
       </PR>
       <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        Wire this node's output into a <strong>Transformer</strong> and set its Material colour to <em>Texture</em>. The surface samples the image at its UV (grid) coordinates.
+        Wire this node's output into a <strong>Transformer</strong> (or a parametric surface). A <em>colour</em> texture drives the albedo when Material colour is set to Texture; a <em>normal map</em> perturbs the lighting normals (set its strength on the surface). A normal map is sampled in linear space.
       </div>
     </Sec>
   </>;

@@ -90,7 +90,7 @@ function makeNode(type,pos){
     // Dedekind tile so a fresh node shows something. filter: linear|nearest,
     // wrap: clamp|repeat.
     texture:{label:"Texture",color:"__AUTO__",props:{
-      src:DEFAULT_TEXTURE_SRC, filter:"linear", wrap:"clamp",
+      src:DEFAULT_TEXTURE_SRC, filter:"linear", wrap:"clamp", role:"color",
     },attachments:[]},
     // video: a video source (URL or local file → object URL); its current frame
     // is uploaded each render tick (THREE.VideoTexture). Not embedded in the

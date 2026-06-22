@@ -57,8 +57,12 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     uniforms.uSpe   = { value: shade.specular ?? 0.35 };
     uniforms.uShine = { value: shade.shininess ?? 32.0 };
     if(shade.emitExpr) uniforms.uEmitColor = { value: new THREE.Color(hexToThree(shade.emitColor||"#ffffff")) };
-    if(shade.texture){
-      uniforms.uTex = { value: shade.texture };
+    if(shade.texture) uniforms.uTex = { value: shade.texture };
+    if(shade.normalTex){
+      uniforms.uNormalTex = { value: shade.normalTex };
+      uniforms.uNormalStrength = { value: shade.normalStrength ?? 1.0 };
+    }
+    if(shade.texture || shade.normalTex){     // UV transform shared by albedo + normal sampling
       const uv = shade.uv || {};
       uniforms.uUvScale  = { value: new THREE.Vector2(uv.scaleU ?? 1, uv.scaleV ?? 1) };
       uniforms.uUvOffset = { value: new THREE.Vector2(uv.offU ?? 0, uv.offV ?? 0) };
@@ -161,6 +165,8 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     const emitExpr = shade.emitExpr || null;
     const rgb = (shade.rgb && shade.rgb.length===3) ? shade.rgb : null;   // [r,g,b] GLSL → albedo
     const texAlb = !!shade.texture;                                       // sample uTex at vUv → albedo
+    const normalMap = !!shade.normalTex;                                  // perturb N from a normal texture
+    const uvAny = texAlb || normalMap;
     const needXY = analytic || colored || !!rgb || !!specExpr || !!emitExpr;
     litVert = `
       ${decls}
@@ -184,7 +190,9 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       uniform float uAmb; uniform float uDif; uniform float uSpe; uniform float uShine;
       ${colored ? "uniform vec3 uColorLo; uniform vec3 uColorHi; uniform float uCMin; uniform float uCMax;" : ""}
       ${emitExpr ? "uniform vec3 uEmitColor;" : ""}
-      ${texAlb ? "uniform sampler2D uTex; uniform vec2 uUvScale; uniform vec2 uUvOffset; uniform float uUvRot;" : ""}
+      ${texAlb ? "uniform sampler2D uTex;" : ""}
+      ${normalMap ? "uniform sampler2D uNormalTex; uniform float uNormalStrength;" : ""}
+      ${uvAny ? "uniform vec2 uUvScale; uniform vec2 uUvOffset; uniform float uUvRot;" : ""}
       varying vec3 vViewPos; varying vec2 vDomain; varying vec2 vUv; varying float vOk;
       void main(){
         if(vOk<0.5) discard;
@@ -199,6 +207,17 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         ` : `
         N = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
         `}
+        ${uvAny ? "vec2 _uv=vUv-0.5; float _cr=cos(uUvRot),_sr=sin(uUvRot); _uv=mat2(_cr,_sr,-_sr,_cr)*_uv; _uv=_uv*uUvScale+0.5+uUvOffset;" : ""}
+        ${normalMap ? `
+        // tangent-space normal map → perturb N, with a screen-space cotangent
+        // frame (no precomputed tangents needed; works on any surface).
+        vec3 _nm = texture2D(uNormalTex, _uv).xyz*2.0 - 1.0; _nm.xy *= uNormalStrength;
+        vec3 _dp1=dFdx(vViewPos), _dp2=dFdy(vViewPos); vec2 _du1=dFdx(_uv), _du2=dFdy(_uv);
+        vec3 _dp2p=cross(_dp2,N), _dp1p=cross(N,_dp1);
+        vec3 _T=_dp2p*_du1.x+_dp1p*_du2.x; vec3 _Bt=_dp2p*_du1.y+_dp1p*_du2.y;
+        float _im=inversesqrt(max(dot(_T,_T),dot(_Bt,_Bt)));
+        N = normalize(mat3(_T*_im,_Bt*_im,N)*_nm);
+        ` : ""}
         vec3 V = normalize(-vViewPos);
         if(dot(N,V) < 0.0) N = -N;                 // face the camera (DoubleSide)
         vec3 L = normalize((viewMatrix * vec4(uLightDir, 0.0)).xyz);
@@ -207,7 +226,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         float spe = pow(max(dot(N,H), 0.0), uShine);
         float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
         ${texAlb
-          ? `vec2 _uv=vUv-0.5; float _cr=cos(uUvRot),_sr=sin(uUvRot); _uv=mat2(_cr,_sr,-_sr,_cr)*_uv; _uv=_uv*uUvScale+0.5+uUvOffset; vec3 albedo = texture2D(uTex, _uv).rgb;`
+          ? `vec3 albedo = texture2D(uTex, _uv).rgb;`
           : rgb
           ? `vec3 albedo = clamp(vec3((${rgb[0]}),(${rgb[1]}),(${rgb[2]})), 0.0, 1.0);`
           : colored
