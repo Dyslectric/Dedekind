@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { canAttach, isCameraType } from "./core/taxonomy.js";
 import { buildScopeForCamera, resolveScope, collectScalarDeps } from "./core/scope.js";
 import { serializeProject, deserializeProject, serializeCameraShare } from "./core/serialize.js";
+import { downloadProjectArchive, openProjectFile } from "./core/projectfile.js";
 import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from "./nodes/model.js";
 import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
 import { uid, makeFn, resolveNum } from "./core/math.js";
@@ -161,6 +162,43 @@ function Editor({initialHash, active=true}){
     navigator.clipboard?.writeText(window.location.origin+window.location.pathname+"#"+s);
     setCopied(type==="project"?"project":camId);setTimeout(()=>setCopied(null),1800);
   },[nodes]);
+
+  // ── Project file (.ddk) ───────────────────────────────────────────────────
+  // Save the whole scene — including imported mesh/texture/video assets that
+  // the URL hash can't carry — to a downloadable archive. The hash stays the
+  // quick-share path; the file is the durable, asset-complete one.
+  const fileInputRef=useRef(null);
+  const saveProject=useCallback(()=>{
+    try{
+      const name=projectNode?.props?.name||"scene";
+      downloadProjectArchive(nodes,name,{appVersion:"0.9.0"});
+      setClipMsg("saved .ddk"); setTimeout(()=>setClipMsg(null),1800);
+    }catch(e){
+      setClipMsg("save failed"); setTimeout(()=>setClipMsg(null),2200);
+    }
+  },[nodes,projectNode]);
+  // Open replaces the current scene (assets and all). Guarded like Load demo.
+  const openProjectFromFile=useCallback(async(file)=>{
+    if(!file) return;
+    if(!window.confirm("Open this project? This replaces your current scene.")) return;
+    try{
+      const { nodes:loaded }=await openProjectFile(file);
+      if(!loaded||!Object.keys(loaded).length){ setClipMsg("empty project"); setTimeout(()=>setClipMsg(null),2000); return; }
+      setDetached(new Set());
+      setSelected(null);
+      setSelectionSet(new Set());
+      beginStep();
+      setNodes(loaded);
+      setClipMsg("opened project"); setTimeout(()=>setClipMsg(null),1800);
+    }catch(e){
+      setClipMsg("not a .ddk file"); setTimeout(()=>setClipMsg(null),2200);
+    }
+  },[setNodes,beginStep]);
+  const onOpenFileChange=useCallback((e)=>{
+    const file=e.target.files&&e.target.files[0];
+    e.target.value="";          // allow re-opening the same file later
+    openProjectFromFile(file);
+  },[openProjectFromFile]);
 
   const updateNode=useCallback((id,patch)=>setNodes(ns=>({...ns,[id]:{...ns[id],...patch}})),[setNodes]);
   const moveNode=useCallback((id,pos)=>setNodes(ns=>({...ns,[id]:{...ns[id],pos}})),[setNodes]);
@@ -567,6 +605,9 @@ function Editor({initialHash, active=true}){
           <button onClick={redo} disabled={!hist.canRedo} title="Redo (Ctrl+Shift+Z)" style={{...uiCtx.S.btnSm,color:hist.canRedo?ui.uiAccent:ui.uiFaint,borderColor:(hist.canRedo?ui.uiAccent:ui.uiFaint)+"40",opacity:hist.canRedo?1:0.5,cursor:hist.canRedo?"pointer":"default"}}>↷</button>
           <button onClick={loadDemo} title="Load the feature showcase" style={{...uiCtx.S.btnSm,color:ui.uiGood,borderColor:ui.uiGood+"55"}}>✦ demo</button>
           <button onClick={()=>copyUrl("project")} style={{...uiCtx.S.btnSm,color:copied==="project"?ui.uiGood:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>{copied==="project"?"✓ copied":"⎘ copy url"}</button>
+          <button onClick={saveProject} title="Save the project to a .ddk file (includes imported meshes, textures and video)" style={{...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>↓ save</button>
+          <button onClick={()=>fileInputRef.current?.click()} title="Open a .ddk / .ded project file" style={{...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>↥ open</button>
+          <input ref={fileInputRef} type="file" accept=".ddk,.ded,application/zip" onChange={onOpenFileChange} style={{display:"none"}}/>
           <button onClick={importFromClipboard} title="Import a selection (JSON) from the clipboard as new nodes" style={{...uiCtx.S.btnSm,color:ui.uiAccent,borderColor:ui.uiAccent+"55"}}>⇲ import sel</button>
           {clipMsg&&<span style={{color:ui.uiGood,fontSize:12.5,fontFamily:"monospace"}}>{clipMsg}</span>}
           {ALL_KINDS.filter(t=>kindEnabled(projectNode,t)).map(t=>{const m=TYPE_META[t]||{tc:ui.uiAccent,tag:t};

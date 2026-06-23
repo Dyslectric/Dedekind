@@ -79,6 +79,15 @@ function debloatNodes(nodes){
        && (props.src.startsWith("data:")||props.src.startsWith("blob:"))){
       delete props.src;
     }
+    // Mesh geometry is likewise too big for a URL — a real import is easily
+    // megabytes of vertex data. The durable home for meshes is a .ddk project
+    // file (which carries the geometry as an archive asset); the hash drops the
+    // payload (keeping only the lightweight props) so sharing a link never
+    // produces a giant URL. __dataSig goes too — it only fingerprints `data`.
+    if(n.type==="mesh"){
+      if(typeof props.data==="string" && props.data) delete props.data;
+      if("__dataSig" in props) delete props.__dataSig;
+    }
     const copy={...n};
     if(Object.keys(props).length) copy.props=props; else delete copy.props;
     out[id]=copy;
