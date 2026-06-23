@@ -1,6 +1,12 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { uid } from "./math.js";
-import { migrateModel } from "./serialize.js";
+// NOTE: this module deliberately does NOT import from serialize.js. Doing so
+// pulls serialize's heavy transitive deps (model.js → tokens.jsx/React) across
+// the lazy Editor-chunk boundary, and Rollup's chunk split then produced a
+// cross-chunk initialization cycle (a TDZ "can't access lexical declaration
+// before initialization" crash when the Editor chunk loaded). The one piece
+// we need — migrateModel — is injected by the caller instead (see
+// readProjectArchive's `migrate` param), keeping this module a clean leaf.
 
 // ── .ddk / .ded project archive ─────────────────────────────────────────────
 // The URL hash is great for sharing small scenes but can't hold big binary
@@ -197,9 +203,13 @@ function buildProjectArchive(nodes, meta={}){
 // ── Open ──────────────────────────────────────────────────────────────────────
 // Parse archive bytes back into a live node map: unzip, read project.json,
 // re-inline each {__asset} ref from assets/, then run the same id-refresh +
-// migrateModel path the hash loader uses so old files keep working. Returns
+// migration the hash loader uses so old files keep working. `migrate` is
+// injected by the caller (the Editor passes serialize.js's migrateModel) so
+// this module needn't import serialize.js — see the note at the top of the
+// file for why that edge is avoided. If omitted, migration is skipped (the
+// nodes are still valid; only legacy-format upgrades are missed). Returns
 // {nodes, manifest} or throws.
-function readProjectArchive(buf){
+function readProjectArchive(buf, migrate){
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   const entries=unzipSync(bytes);
   if(!entries["project.json"]) throw new Error("not a project archive (no project.json)");
@@ -246,7 +256,7 @@ function readProjectArchive(buf){
     out[ni[i]]={ ...n, id:ni[i],
       attachments:(n.attachments||[]).map(a=>o2n[a]||a).filter(Boolean) };
   });
-  return { nodes: migrateModel(out), manifest };
+  return { nodes: (typeof migrate==="function" ? migrate(out) : out), manifest };
 }
 
 // ── Browser save/open helpers (DOM; no-ops are caller's concern) ─────────────
@@ -261,10 +271,12 @@ function downloadProjectArchive(nodes, filename="scene", meta={}){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
-// Read a File (from an <input type=file> or drop) into a node map.
-async function openProjectFile(file){
+// Read a File (from an <input type=file> or drop) into a node map. `migrate`
+// (serialize.js's migrateModel) is injected by the caller to avoid importing
+// serialize here — see the top-of-file note on the chunk cycle.
+async function openProjectFile(file, migrate){
   const buf=new Uint8Array(await file.arrayBuffer());
-  return readProjectArchive(buf);
+  return readProjectArchive(buf, migrate);
 }
 
 export {
