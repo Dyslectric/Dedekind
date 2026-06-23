@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { canAttach, isCameraType } from "./core/taxonomy.js";
 import { buildScopeForCamera, resolveScope, collectScalarDeps } from "./core/scope.js";
-import { serializeProject, deserializeProject, serializeCameraShare, migrateModel } from "./core/serialize.js";
+import { serializeProject, deserializeProject, serializeCameraShare } from "./core/serialize.js";
 import { downloadProjectArchive, openProjectFile } from "./core/projectfile.js";
 import { makeNode, makeInitialScene, makeDemoScene, TYPE_META, PROJECT_ID } from "./nodes/model.js";
 import { collectDependencies, collectConnected, buildSelectionPayload, importSelection } from "./core/graph.js";
@@ -182,6 +182,11 @@ function Editor({initialHash, active=true}){
     if(!file) return;
     if(!window.confirm("Open this project? This replaces your current scene.")) return;
     try{
+      // Import the migration helper lazily here (not at module top) so the
+      // Editor chunk carries no static binding into the serialize module's
+      // chunk — a static cross-chunk import there reorders init and can trip a
+      // load-time TDZ in the lazy Editor chunk.
+      const { migrateModel }=await import("./core/serialize.js");
       const { nodes:loaded }=await openProjectFile(file, migrateModel);
       if(!loaded||!Object.keys(loaded).length){ setClipMsg("empty project"); setTimeout(()=>setClipMsg(null),2000); return; }
       setDetached(new Set());
