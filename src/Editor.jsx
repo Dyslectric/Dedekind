@@ -40,6 +40,11 @@ function Editor({initialHash, active=true}){
   // Animator playback commits (e.g. a "once" loop finishing) must NOT create
   // undo points — route them through the silent setter.
   const setNodesSilent=hist.setSilent;
+  // Force the next set() to start a new history step. Declared up here (with the
+  // other hist.* derivations) because callbacks defined below — including the
+  // project-file open handler — close over it; a later `const` would leave it in
+  // the temporal dead zone at render time and crash the editor on mount.
+  const beginStep=hist.beginStep;
   const[selected,setSelected]=useState(null);
   // Multi-selection: a set of node ids. `selected` is the PRIMARY node (drives
   // the properties editor); `selectionSet` is the full set (includes primary).
@@ -215,7 +220,6 @@ function Editor({initialHash, active=true}){
     return next;
   }),[setNodes]);
 
-  const beginStep=hist.beginStep;
   // Unified attachment: a dependency is stored on the CONSUMER that uses it.
   // attach(consumerId, depId) where canAttach(dep.type, consumer.type) must hold.
   // The legacy `kind` argument ("cam"/"scalar") is still accepted: for "cam",
