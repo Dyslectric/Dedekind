@@ -74,9 +74,9 @@ function parseRecursiveSeq(text, scope) {
 
   for (let n = 1; n < count; n++) {
     const sc = { ...scope, __xp: xp, __yp: yp, __zp: zp, n };
-    const nx = safeEval(xExpr, sc);
-    const ny = safeEval(yExpr, sc);
-    const nz = zExpr ? (safeEval(zExpr, sc) ?? 0) : 0;
+    const nx = safeEval(xExpr, sc, true);
+    const ny = safeEval(yExpr, sc, true);
+    const nz = zExpr ? (safeEval(zExpr, sc, true) ?? 0) : 0;
     if (nx == null || ny == null || !isFinite(nx) || !isFinite(ny)) break;
     pts.push([nx, ny, nz]);
     xp = nx; yp = ny; zp = nz;
@@ -105,9 +105,9 @@ function parseIndexSeq(text, scope) {
   const pts = [];
   for (let i = 0; i < count; i++) {
     const sc = { ...scope, i, n: i };
-    const x = safeEval(xExpr, sc);
-    const y = safeEval(yExpr, sc);
-    const z = zExpr ? (safeEval(zExpr, sc) ?? 0) : 0;
+    const x = safeEval(xExpr, sc, true);
+    const y = safeEval(yExpr, sc, true);
+    const z = zExpr ? (safeEval(zExpr, sc, true) ?? 0) : 0;
     if (x == null || y == null || !isFinite(x) || !isFinite(y)) continue;
     pts.push([x, y, z]);
   }
@@ -150,9 +150,9 @@ function parseMatrixSeq(text, scope) {
     for (let j = 0; j < nj; j++) {
       for (let k = 0; k < nk; k++) {
         const sc = { ...scope, i, j, k, n: (i * nj + j) * nk + k };
-        const x = safeEval(xExpr, sc);
-        const y = safeEval(yExpr, sc);
-        const z = zExpr ? (safeEval(zExpr, sc) ?? 0) : 0;
+        const x = safeEval(xExpr, sc, true);
+        const y = safeEval(yExpr, sc, true);
+        const z = zExpr ? (safeEval(zExpr, sc, true) ?? 0) : 0;
         if (x == null || y == null || !isFinite(x) || !isFinite(y)) continue;
         pts.push([x, y, z]);
       }
@@ -278,8 +278,8 @@ function parseGlyphSeq(text, scope){
   let xp=x0,yp=y0,zp=z0,vxp=vx0,vyp=vy0,vzp=vz0;
   for(let n=1;n<count;n++){
     const sc={...scope,__xp:xp,__yp:yp,__zp:zp,__vxp:vxp,__vyp:vyp,__vzp:vzp,n};
-    const nx=safeEval(ex.x,sc), ny=safeEval(ex.y,sc), nz=ex.z?safeEval(ex.z,sc)??0:0;
-    const nvx=ex.vx?safeEval(ex.vx,sc)??0:0, nvy=ex.vy?safeEval(ex.vy,sc)??0:0, nvz=ex.vz?safeEval(ex.vz,sc)??0:0;
+    const nx=safeEval(ex.x, sc, true), ny=safeEval(ex.y, sc, true), nz=ex.z?safeEval(ex.z, sc, true)??0:0;
+    const nvx=ex.vx?safeEval(ex.vx, sc, true)??0:0, nvy=ex.vy?safeEval(ex.vy, sc, true)??0:0, nvz=ex.vz?safeEval(ex.vz, sc, true)??0:0;
     if([nx,ny,nz,nvx,nvy,nvz].some(v=>v==null||!isFinite(v))) break;
     out.push({pos:[nx,ny,nz],vec:[nvx,nvy,nvz]});
     xp=nx;yp=ny;zp=nz;vxp=nvx;vyp=nvy;vzp=nvz;
@@ -298,8 +298,8 @@ function parseGlyphIndex(text, scope){
   const out=[];
   for(let i=0;i<count;i++){
     const sc={...scope,i,n:i};
-    const x=safeEval(p[0],sc), y=safeEval(p[1]||"0",sc), z=safeEval(p[2]||"0",sc);
-    const vx=safeEval(v[0],sc), vy=safeEval(v[1]||"0",sc), vz=safeEval(v[2]||"0",sc);
+    const x=safeEval(p[0], sc, true), y=safeEval(p[1]||"0", sc, true), z=safeEval(p[2]||"0", sc, true);
+    const vx=safeEval(v[0], sc, true), vy=safeEval(v[1]||"0", sc, true), vz=safeEval(v[2]||"0", sc, true);
     if([x,y,z,vx,vy,vz].some(n=>n==null||!isFinite(n))) continue;
     out.push({pos:[x,y,z],vec:[vx,vy,vz]});
   }
@@ -325,8 +325,8 @@ function parseGlyphMatrix(text, scope){
   const out=[];
   for(let i=0;i<ni;i++) for(let j=0;j<nj;j++) for(let k=0;k<nk;k++){
     const sc={...scope,i,j,k,n:(i*nj+j)*nk+k};
-    const x=safeEval(p[0],sc), y=safeEval(p[1]||"0",sc), z=safeEval(p[2]||"0",sc);
-    const vx=safeEval(v[0],sc), vy=safeEval(v[1]||"0",sc), vz=safeEval(v[2]||"0",sc);
+    const x=safeEval(p[0], sc, true), y=safeEval(p[1]||"0", sc, true), z=safeEval(p[2]||"0", sc, true);
+    const vx=safeEval(v[0], sc, true), vy=safeEval(v[1]||"0", sc, true), vz=safeEval(v[2]||"0", sc, true);
     if([x,y,z,vx,vy,vz].some(n=>n==null||!isFinite(n))) continue;
     out.push({pos:[x,y,z],vec:[vx,vy,vz]});
   }
@@ -453,10 +453,10 @@ function pointsIndex(props, scope, useColor){
   for(let i=0;i<ni;i++) for(let j=0;j<nj;j++) for(let k=0;k<nk;k++){
     const idx=(i*nj+j)*nk+k;
     const sc={...scope, i, j, k, n:idx};
-    const x=safeEval(xE,sc), y=safeEval(yE,sc), z=zE?safeEval(zE,sc)??0:0;
+    const x=safeEval(xE, sc, true), y=safeEval(yE, sc, true), z=zE?safeEval(zE, sc, true)??0:0;
     if(x==null||y==null||!isFinite(x)||!isFinite(y)) continue;
     pts.push([x,y,z]);
-    if(useColor){ const c=safeEval(colE,{...sc, x, y, z}); cols.push(c==null||!isFinite(c)?0:c); }
+    if(useColor){ const c=safeEval(colE,{...sc,x,y,z},true); cols.push(c==null||!isFinite(c)?0:c); }
   }
   return { pts, cols };
 }
@@ -477,10 +477,10 @@ function pointsRecursive(props, scope, useColor){
   let xp=x0, yp=y0, zp=z0??0, cp=c0;
   for(let n=1;n<count;n++){
     const sc={...scope, __xp:xp, __yp:yp, __zp:zp, __cp:cp, n};
-    const nx=safeEval(xE,sc), ny=safeEval(yE,sc), nz=zE?safeEval(zE,sc)??0:0;
+    const nx=safeEval(xE, sc, true), ny=safeEval(yE, sc, true), nz=zE?safeEval(zE, sc, true)??0:0;
     if(nx==null||ny==null||!isFinite(nx)||!isFinite(ny)) break;
     pts.push([nx,ny,nz]);
-    if(useColor){ const nc=safeEval(cE,sc); cp=(nc==null||!isFinite(nc))?cp:nc; cols.push(cp); }
+    if(useColor){ const nc=safeEval(cE, sc, true); cp=(nc==null||!isFinite(nc))?cp:nc; cols.push(cp); }
     xp=nx; yp=ny; zp=nz;
   }
   return { pts, cols };
@@ -536,11 +536,11 @@ function glyphsIndex(props, scope, useColor){
   for(let i=0;i<ni;i++) for(let j=0;j<nj;j++) for(let k=0;k<nk;k++){
     const idx=(i*nj+j)*nk+k;
     const sc={...scope, i, j, k, n:idx};
-    const x=safeEval(seed[0],sc), y=safeEval(seed[1],sc), z=seed[2]!=null?safeEval(seed[2],sc)??0:0;
-    const vx=safeEval(vec[0],sc), vy=safeEval(vec[1],sc), vz=vec[2]!=null?safeEval(vec[2],sc)??0:0;
+    const x=safeEval(seed[0], sc, true), y=safeEval(seed[1], sc, true), z=seed[2]!=null?safeEval(seed[2], sc, true)??0:0;
+    const vx=safeEval(vec[0], sc, true), vy=safeEval(vec[1], sc, true), vz=vec[2]!=null?safeEval(vec[2], sc, true)??0:0;
     if([x,y,z,vx,vy,vz].some(v=>v==null||!isFinite(v))) continue;
     pairs.push({pos:[x,y,z], vec:[vx,vy,vz]});
-    if(useColor){ const c=safeEval(colE,{...sc,x,y,z}); cols.push(c==null||!isFinite(c)?0:c); }
+    if(useColor){ const c=safeEval(colE,{...sc,x,y,z},true); cols.push(c==null||!isFinite(c)?0:c); }
   }
   return { pairs, cols };
 }
@@ -562,11 +562,11 @@ function glyphsRecursive(props, scope, useColor){
   let xp=x0,yp=y0,zp=z0,vxp=vx0,vyp=vy0,vzp=vz0,cp=c0;
   for(let n=1;n<count;n++){
     const sc={...scope,__xp:xp,__yp:yp,__zp:zp,__vxp:vxp,__vyp:vyp,__vzp:vzp,__cp:cp,n};
-    const nx=safeEval(ex.x,sc), ny=safeEval(ex.y,sc), nz=ex.z?safeEval(ex.z,sc)??0:0;
-    const nvx=ex.vx?safeEval(ex.vx,sc)??0:0, nvy=ex.vy?safeEval(ex.vy,sc)??0:0, nvz=ex.vz?safeEval(ex.vz,sc)??0:0;
+    const nx=safeEval(ex.x, sc, true), ny=safeEval(ex.y, sc, true), nz=ex.z?safeEval(ex.z, sc, true)??0:0;
+    const nvx=ex.vx?safeEval(ex.vx, sc, true)??0:0, nvy=ex.vy?safeEval(ex.vy, sc, true)??0:0, nvz=ex.vz?safeEval(ex.vz, sc, true)??0:0;
     if([nx,ny,nz,nvx,nvy,nvz].some(v=>v==null||!isFinite(v))) break;
     pairs.push({pos:[nx,ny,nz],vec:[nvx,nvy,nvz]});
-    if(useColor){ const nc=safeEval(cE,sc); cp=(nc==null||!isFinite(nc))?cp:nc; cols.push(cp); }
+    if(useColor){ const nc=safeEval(cE, sc, true); cp=(nc==null||!isFinite(nc))?cp:nc; cols.push(cp); }
     xp=nx;yp=ny;zp=nz;vxp=nvx;vyp=nvy;vzp=nvz;
   }
   return { pairs, cols };

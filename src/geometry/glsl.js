@@ -12,6 +12,47 @@ const _GLSL_FN1 = { sin:1,cos:1,tan:1,asin:1,acos:1,atan:1,sinh:1,cosh:1,tanh:1,
   asinh:1,acosh:1,atanh:1,trunc:"trunc",exp2:"exp2",log2:"log2",radians:"radians",degrees:"degrees" };
 const _GLSL_FN2 = { pow:"pow",atan2:"atan",mod:"mod",min:"min",max:"max",step:"step" };
 const _GLSL_CONST = { pi:"3.141592653589793",e:"2.718281828459045",tau:"6.283185307179586",phi:"1.618033988749895" };
+// Greek glyph → ASCII, mirroring core/math.js so the GPU path normalizes the
+// same way (π/τ/φ are the constants; the rest are conventional variable names).
+const _GREEK_GLSL = {
+  "π":"pi","τ":"tau","φ":"phi","θ":"theta","α":"alpha","β":"beta","γ":"gamma",
+  "λ":"lambda","μ":"mu","ω":"omega","σ":"sigma","δ":"delta","ρ":"rho","ε":"epsilon",
+};
+// Single-char constants that are always valid juxtaposition tokens (mirrors CPU).
+const _GLSL_SINGLE_CONST = new Set(["e","i"]);
+// Greedy longest-match tokenizer for a glued letter run: `pi` first, then known
+// axis letters / single-char constants. Returns token names or null (leave run
+// intact). Identical rule to core/math.js _tokenizeRun.
+function _glslTokenizeRun(name, knownLetters){
+  if(name.length<2 || !/^[A-Za-z]+$/.test(name)) return null;
+  const toks=[]; let p=0;
+  while(p<name.length){
+    if(name.startsWith("pi",p)){ toks.push("pi"); p+=2; continue; }
+    const c=name[p];
+    if(knownLetters.has(c) || _GLSL_SINGLE_CONST.has(c)){ toks.push(c); p+=1; continue; }
+    return null;
+  }
+  return toks.length>=2 ? toks : null;
+}
+// Rewrite glued letter-run SymbolNodes into single-token products, using the
+// axis variable set as the known letters. A name that is an axis var, a builtin
+// constant, or `i` (imaginary) is left intact for the walker to resolve/reject.
+function _glslSplitJux(root, vars){
+  const RESERVED = (n)=> n==="pi" || n==="e" || n==="i";
+  return root.transform(function(n){
+    if(n.isSymbolNode){
+      const nm=n.name;
+      if(vars.has(nm) || RESERVED(nm)) return n;
+      const toks=_glslTokenizeRun(nm, vars);
+      if(toks){
+        let acc=new math.SymbolNode(toks[0]);
+        for(let i=1;i<toks.length;i++) acc=new math.OperatorNode("*","multiply",[acc,new math.SymbolNode(toks[i])]);
+        return acc;
+      }
+    }
+    return n;
+  });
+}
 // ── Fractal distance-estimator intrinsics ────────────────────────────────────
 // Genuine fractals need ITERATION, which a closed-form expression can't express,
 // so these are recognized as function calls that emit a GLSL helper with a real
@@ -155,7 +196,18 @@ function _glslPow(a, b, bNode){
 // GPU path instead of falling back to CPU. Recursion is depth/cycle guarded.
 // Returns GLSL string or null.
 function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
-  let root; try { root = math.parse(expr); } catch { return null; }
+  // Normalize Greek glyphs to ASCII so π/τ/φ transpile as the constants, matching
+  // the CPU path (core/math.js normalizeGreek). Kept inline to avoid importing
+  // math.js into the shader layer.
+  let text = String(expr);
+  for(const g in _GREEK_GLSL) if(text.indexOf(g)>=0) text = text.split(g).join(_GREEK_GLSL[g]);
+  let root; try { root = math.parse(text); } catch { return null; }
+  // Apply the SAME juxtaposition rule as the CPU path so `xy`→x*y, `pir`→pi*r,
+  // etc. transpile identically (without this, a glued run would be emitted as a
+  // single bogus uniform). Known letters here are the axis vars; `pi`/`e` are
+  // constants and `i` is the imaginary unit (which can't go to GLSL, so a run
+  // containing it makes the whole expression non-transpilable → CPU fallback).
+  root = _glslSplitJux(root, vars);
   // Substitute parameter SymbolNodes in an fnDef body AST with the call's argument
   // ASTs, so the inlined body references the caller's expressions/vars directly.
   const substitute = (node, bind) => {
@@ -175,6 +227,11 @@ function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
       case "ParenthesisNode": { const c=walk(node.content, depth); return c==null?null:"("+c+")"; }
       case "SymbolNode": {
         if(vars.has(node.name)) return node.name;
+        // `i` is the imaginary unit — GLSL has no complex numbers, so any
+        // expression that actually references it cannot transpile. Returning
+        // null makes the caller fall back to the (complex-correct) CPU path
+        // instead of silently emitting a wrong real-valued uniform named "i".
+        if(node.name==="i") return null;
         if(_GLSL_CONST[node.name]) return _GLSL_CONST[node.name];
         // a free scalar (slider/animator/constant) → uniform. Collect the original
         // name (scope is keyed on it) but EMIT a prefixed identifier so it can't

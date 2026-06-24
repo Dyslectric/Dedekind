@@ -206,7 +206,17 @@ function XF({v,sc,onChange,placeholder}){ return <MathField2 v={v} sc={sc} onCha
 // that a name can't begin with a digit/underscore. `width` sizes the field.
 function NameField({v,onChange,placeholder,width}){
   const mode = useUISetting("mathInputMode");
-  const clean = s => (s||"").replace(/^[0-9_]+/, "");   // valid identifier start
+  // Reserved constants may never be used as a node name: pi/e/i always mean the
+  // mathematical constants, so a variable called pi or i would be unreachable and
+  // confusing. We strip a value that reduces to one of these (also catching the π
+  // glyph, which normalizes to "pi"). The name is simply cleared, so the field
+  // rejects the entry rather than silently keeping a shadowing name.
+  const RESERVED = new Set(["pi","e","i"]);
+  const reserved = s => RESERVED.has(String(s||"").replace(/π/g,"pi").replace(/\s+/g,""));
+  const clean = s => {
+    const out = (s||"").replace(/^[0-9_]+/, "");   // valid identifier start
+    return reserved(out) ? "" : out;
+  };
   if(mode==="live"){
     return <div style={{width:width||"100%"}}><LiveMathInput
       v={v||""} sc={null} nameMode placeholder={placeholder}

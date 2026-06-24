@@ -246,18 +246,220 @@ function compileExpr(expr) {
   return entry;
 }
 
+// ── Constants, Greek normalization, multiplication by juxtaposition ──────────
+// Three related concerns handled here, all at the text/AST level before eval:
+//
+// 1. RESERVED CONSTANTS. pi, e, i ALWAYS mean π, Euler's number, and the
+//    imaginary unit. A scoped variable may never shadow them (mathjs lets scope
+//    win by default — `evaluate("e",{e:99})===99` — which we override by deleting
+//    those keys from the scope before evaluating). Naming a node pi/e/i is
+//    blocked in the UI (see NameField), but this is the runtime backstop.
+//
+// 2. GREEK NORMALIZATION. The input shows π/τ/φ for readability, but mathjs only
+//    knows the ASCII names, so we map the glyphs back before parsing.
+//
+// 3. JUXTAPOSITION. mathjs treats an unbroken letter run as ONE identifier: `xy`
+//    is a single symbol, not x*y. Mathematicians expect products. We rewrite a
+//    glued run into a product by GREEDY LONGEST-MATCH tokenizing left-to-right:
+//      • `pi` (the only multi-char constant token) is matched greedily first, so
+//        `pir` → pi*r and `piei` → pi*e*i.
+//      • otherwise a single char is a token iff it is a known letter (a scoped /
+//        axis / bound variable) or a single-char constant (e, i).
+//      • if any position matches nothing (an unknown letter with no `pi`), the
+//        WHOLE run is left as its original symbol so it errors honestly rather
+//        than silently inventing a free variable.
+//    A name that is itself a known whole token (a scoped `foo`, builtin `sin`)
+//    is never split.
+
+// Greek glyph → ASCII constant/name. π/τ/φ are the constants; the rest are just
+// conventional variable spellings mathjs can't lex, normalized to ASCII so a
+// variable typed as θ resolves to a scalar named `theta`, etc.
+const _GREEK_TO_ASCII = {
+  "π":"pi","τ":"tau","φ":"phi","θ":"theta","α":"alpha","β":"beta","γ":"gamma",
+  "λ":"lambda","μ":"mu","ω":"omega","σ":"sigma","δ":"delta","ρ":"rho","ε":"epsilon",
+};
+function _normalizeGreek(text) {
+  let s = String(text);
+  for (const g in _GREEK_TO_ASCII) if (s.indexOf(g) >= 0) s = s.split(g).join(_GREEK_TO_ASCII[g]);
+  return s;
+}
+
+// Reserved constant names that scope must never shadow.
+const RESERVED_CONSTANTS = new Set(["pi", "e", "i"]);
+// Single-character constants that are always valid juxtaposition tokens.
+const _SINGLE_CONST = new Set(["e", "i"]);
+// Sentinel symbol that `\i` compiles to (a name no user can type — backslash is
+// stripped from identifiers), bound to the imaginary unit at eval time so it
+// stays imaginary even in index contexts where bare `i` is the loop index.
+const _IMAG_SENTINEL = "__imag_unit__";
+
+function _isBuiltinName(name) {
+  return (name in math) && (typeof math[name] === "number" || typeof math[name] === "function" || typeof math[name] === "object");
+}
+// Single-letter names known by virtue of scope membership. Numbers, functions,
+// arrays (list nodes) all count — any defined binding makes the letter a token.
+// Reserved-constant letters (e, i) are excluded here; they are always-available
+// constants, handled separately, and must not be treated as scoped variables.
+function _singleLetterKnownInScope(scope) {
+  const out = new Set();
+  if (!scope) return out;
+  const keys = (scope instanceof Map || (scope && typeof scope.keys === "function" && typeof scope.forEach === "function"))
+    ? [...scope.keys()] : Object.keys(scope);
+  for (const k of keys) if (k.length === 1 && /^[A-Za-z]$/.test(k) && !RESERVED_CONSTANTS.has(k)) out.add(k);
+  return out;
+}
+// Harvest single-letter variables that the expression's own operators bind:
+// the index/var of summation/product/integrate/differentiate (arg[1]) and the
+// independent-variable list of partial (arg[1] + the [..] names in arg[2]).
+function _harvestBoundLetters(root) {
+  const out = new Set();
+  try {
+    root.traverse(function (n) {
+      if (!n.isFunctionNode) return;
+      const fn = n.fn && n.fn.name;
+      if (!fn) return;
+      if (fn === "summation" || fn === "product" || fn === "integrate" || fn === "differentiate" || fn === "partial") {
+        const v = n.args && n.args[1];
+        if (v && v.isSymbolNode && v.name.length === 1) out.add(v.name);
+      }
+      if (fn === "partial") {
+        const lst = n.args && n.args[2];
+        if (lst && lst.isArrayNode) for (const it of (lst.items || [])) if (it.isSymbolNode && it.name.length === 1) out.add(it.name);
+      }
+    });
+  } catch {}
+  return out;
+}
+// Greedy longest-match tokenizer for a pure-letter run. `pi` is matched first
+// (the only multi-char constant), then single known letters / single-char
+// constants. Returns the token-name array, or null if any position fails (→ the
+// run is left intact).
+function _tokenizeRun(name, knownLetters) {
+  if (name.length < 2 || !/^[A-Za-z]+$/.test(name)) return null;
+  const toks = [];
+  let p = 0;
+  while (p < name.length) {
+    if (name.startsWith("pi", p)) { toks.push("pi"); p += 2; continue; }   // greedy π
+    const c = name[p];
+    if (knownLetters.has(c) || _SINGLE_CONST.has(c)) { toks.push(c); p += 1; continue; }
+    return null;   // unknown char and not the start of `pi` → whole run fails
+  }
+  return toks.length >= 2 ? toks : null;
+}
+// Rewrite glued letter-run SymbolNodes into left-associated products per the
+// tokenizer. Known whole names (scoped or builtin) pass through. mathjs's
+// transform does not re-transform replacement nodes, so this terminates.
+function _splitJuxtaposition(root, knownLetters) {
+  return root.transform(function (n) {
+    if (n.isSymbolNode) {
+      const nm = n.name;
+      // a known whole token (scoped var, builtin fn/const, or a reserved
+      // constant like pi/e/i) is never split
+      if (knownLetters.has(nm) || _isBuiltinName(nm) || RESERVED_CONSTANTS.has(nm)) return n;
+      const toks = _tokenizeRun(nm, knownLetters);
+      if (toks) {
+        let acc = new math.SymbolNode(toks[0]);
+        for (let i = 1; i < toks.length; i++) acc = new math.OperatorNode("*", "multiply", [acc, new math.SymbolNode(toks[i])]);
+        return acc;
+      }
+    }
+    return n;
+  });
+}
+
+// Strip reserved-constant keys from a scope so pi/e/i can never be shadowed by a
+// user binding. In an index context, `i` is the loop index and is NOT stripped.
+// Returns the same object when nothing needs removing (the common case), else a
+// shallow copy with the offending keys deleted (never mutates the caller's scope).
+function _shieldConstants(scope, idxContext) {
+  if (!scope) scope = {};
+  const reserved = idxContext ? ["pi", "e"] : ["pi", "e", "i"];
+  let hit = false;
+  for (const k of reserved) { if (_scopeHas(scope, k)) { hit = true; break; } }
+  // Always provide the imaginary sentinel (cheap) so `\i` resolves; copy only
+  // when we must remove a shadowing reserved key or add the sentinel.
+  const needSentinel = !_scopeHas(scope, _IMAG_SENTINEL);
+  if (!hit && !needSentinel) return scope;
+  const copy = (scope instanceof Map) ? new Map(scope) : { ...scope };
+  for (const k of reserved) {
+    if (copy instanceof Map) copy.delete(k); else delete copy[k];
+  }
+  const imag = math.complex(0, 1);
+  if (copy instanceof Map) copy.set(_IMAG_SENTINEL, imag); else copy[_IMAG_SENTINEL] = imag;
+  return copy;
+}
+
+// Scope-aware compile: normalize Greek, parse, split juxtaposition against the
+// scope's known single-letter names (+ the expression's own bound vars), then
+// compile. Cached by (text | idx-flag | sorted-known-single-letters) because the
+// split depends only on which single letters are known, not their values — so
+// animating a slider reuses the compiled form, while defining/removing a
+// single-letter scalar correctly recompiles. Falls back to the plain compile if
+// anything goes wrong, so this can never make a previously-working expr fail.
+//
+// `idxContext` (set by the index/matrix/recursive point & glyph parsers) flips
+// two behaviors: `i` becomes a known loop-index letter rather than the imaginary
+// constant, and `\i` (written by the user to mean imaginary in those contexts)
+// is normalized to the imaginary unit. Elsewhere bare `i` is already imaginary.
+const _scopedCache = new Map();
+const _SCOPED_CACHE_MAX = 4000;
+function compileExprScoped(expr, scope, idxContext = false) {
+  if (expr == null) return null;
+  let text = _normalizeGreek(String(expr));
+  // `\i` → imaginary unit. In index contexts bare `i` is the loop index, so `\i`
+  // is how the user writes the imaginary unit; mapping it to a reserved sentinel
+  // symbol (bound to complex(0,1) at eval time by _shieldConstants) keeps it
+  // imaginary even though `i` itself resolves to the index. Outside index
+  // contexts it resolves to the same imaginary unit.
+  if (text.indexOf("\\i") >= 0) text = text.split("\\i").join(_IMAG_SENTINEL);
+  let root;
+  try { root = math.parse(text); } catch { try { return math.compile(text); } catch { return null; } }
+  const known = _singleLetterKnownInScope(scope);
+  for (const b of _harvestBoundLetters(root)) known.add(b);
+  if (idxContext) known.add("i");   // loop index, not imaginary, in this context
+  const sig = (idxContext ? "@" : "") + [...known].sort().join("");
+  const key = text + "\u0001" + sig;
+  let entry = _scopedCache.get(key);
+  if (entry !== undefined) return entry;
+  try {
+    const rewritten = _splitJuxtaposition(root, known);
+    entry = rewritten.compile();
+  } catch {
+    try { entry = math.compile(text); } catch { entry = null; }   // never regress
+  }
+  if (_scopedCache.size >= _SCOPED_CACHE_MAX) {
+    const firstKey = _scopedCache.keys().next().value;
+    _scopedCache.delete(firstKey);
+  }
+  _scopedCache.set(key, entry);
+  return entry;
+}
+
+// Coerce an evaluation result to a plain real number, or null if it isn't one.
+// mathjs returns a Complex object for any expression touching the imaginary unit
+// (even when the result is real, e.g. i^2 = -1+0i), so a near-zero imaginary part
+// is treated as a real number; a genuinely complex value (nonzero imaginary) is
+// not plottable and returns null.
+function _toReal(v) {
+  if (typeof v === "number") return v;
+  if (v && typeof v === "object" && typeof v.re === "number" && typeof v.im === "number") {
+    return Math.abs(v.im) < 1e-12 ? v.re : null;
+  }
+  return null;
+}
+
 function resolveNum(expr, scope, fallback = 0) {
   if (expr === "" || expr == null) return fallback;
   const n = Number(expr); if (!isNaN(n)) return n;
-  const c = compileExpr(expr);
+  const c = compileExprScoped(expr, scope);
   if (!c) return fallback;
-  try { const r = c.evaluate(scope); return typeof r === "number" ? r : fallback; }
+  try { const r = _toReal(c.evaluate(_shieldConstants(scope, false))); return r == null ? fallback : r; }
   catch { return fallback; }
 }
-function safeEval(expr, scope) {
-  const c = compileExpr(expr);
+function safeEval(expr, scope, idxContext = false) {
+  const c = compileExprScoped(expr, scope, idxContext);
   if (!c) return null;
-  try { const v = c.evaluate(scope); return typeof v === "number" ? v : null; }
+  try { return _toReal(c.evaluate(_shieldConstants(scope, idxContext))); }
   catch { return null; }
 }
 function linspace(a, b, n) {
@@ -267,7 +469,7 @@ function linspace(a, b, n) {
 // mathjs Matrix to a plain nested JS array; returns null if it isn't array-like.
 // Used by the list node — the one place scope keeps a value that isn't a number.
 function evalArray(expr, scope) {
-  const c = compileExpr(expr);
+  const c = compileExprScoped(expr, scope);
   if (!c) return null;
   try {
     let v = c.evaluate(scope);
@@ -278,7 +480,15 @@ function evalArray(expr, scope) {
 
 // ── Recursive user-defined functions ────────────────────────────────────────
 function makeFn(name, params, expr, sc) {
-  const compiled = compileExpr(expr);
+  // Compile the body with juxtaposition split against the names the body can see:
+  // its own parameters plus everything in its closed-over scope (sliders, other
+  // fnDefs). Params are bound per call, but which single letters are KNOWN is
+  // fixed, so we can split once here. A representative scope (params present as
+  // placeholders + the closure) drives the known-letter set.
+  const knownScope = {};
+  for (const k in (sc || {})) knownScope[k] = sc[k];
+  for (const p of (params || [])) if (!(p in knownScope)) knownScope[p] = 0;
+  const compiled = compileExprScoped(expr, knownScope);
   const fn = function(...args) {
     if (fn._d === 0) fn._calls = 0;
     fn._calls = (fn._calls||0) + 1;
@@ -351,5 +561,6 @@ function derivativeExpr(bodyText, varName) {
 
 export {
   math, parse,
-  uid, PAL, nextColor, compileExpr, resolveNum, safeEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr
+  uid, PAL, nextColor, compileExpr, compileExprScoped, resolveNum, safeEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr,
+  RESERVED_CONSTANTS, _normalizeGreek as normalizeGreek
 };

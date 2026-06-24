@@ -31,6 +31,45 @@ const FN2 = {
 };
 const CONST = { pi:"Math.PI", e:"Math.E", tau:"(2*Math.PI)", phi:"1.618033988749895" };
 
+// Greek glyph → ASCII (mirrors core/math.js / glsl.js).
+const _GREEK_JS = {
+  "π":"pi","τ":"tau","φ":"phi","θ":"theta","α":"alpha","β":"beta","γ":"gamma",
+  "λ":"lambda","μ":"mu","ω":"omega","σ":"sigma","δ":"delta","ρ":"rho","ε":"epsilon",
+};
+// Greedy longest tokenizer for a glued run. Splits `pi` first, then single
+// tokens. A single char is a token if it's a vertex var, a function name, OR any
+// bare letter (the JIT maps unknown letters to a scope lookup, so they're valid
+// product factors). This mirrors the other paths while respecting that the JIT
+// resolves scalars dynamically. `i`/`j`/`k`/`n` are vertex indices in this
+// context (not imaginary), so they tokenize as vertex vars.
+function _jsTokenizeRun(name, vertexVars){
+  if(name.length<2 || !/^[A-Za-z]+$/.test(name)) return null;
+  const toks=[]; let p=0;
+  while(p<name.length){
+    if(name.startsWith("pi",p)){ toks.push("pi"); p+=2; continue; }
+    const c=name[p];
+    if(/[A-Za-z]/.test(c)){ toks.push(c); p+=1; continue; }
+    return null;
+  }
+  return toks.length>=2 ? toks : null;
+}
+function _jsSplitJux(root, vertexVars, fnNames){
+  return root.transform(function(n){
+    if(n.isSymbolNode){
+      const nm=n.name;
+      // leave known whole names: vertex vars, constants, and wired fnDef names
+      if((vertexVars && vertexVars.has(nm)) || (CONST[nm]) || (fnNames && fnNames.has(nm))) return n;
+      const toks=_jsTokenizeRun(nm, vertexVars);
+      if(toks){
+        let acc=new math.SymbolNode(toks[0]);
+        for(let i=1;i<toks.length;i++) acc=new math.OperatorNode("*","multiply",[acc,new math.SymbolNode(toks[i])]);
+        return acc;
+      }
+    }
+    return n;
+  });
+}
+
 // Composite single-arg forms expressed inline.
 function comp1(n, a){
   switch(n){
@@ -57,7 +96,13 @@ function comp2(n, a, b){
 // Translate one expression to a JS source string, or null if unsupported.
 // `fnNames` / `vertexVars` are Sets used to classify SymbolNodes.
 function exprToJS(expr, fnNames, vertexVars){
-  let root; try { root = math.parse(expr); } catch { return null; }
+  let text = String(expr);
+  for(const g in _GREEK_JS) if(text.indexOf(g)>=0) text = text.split(g).join(_GREEK_JS[g]);
+  let root; try { root = math.parse(text); } catch { return null; }
+  // Same juxtaposition rule as the other eval paths: a glued letter run splits
+  // into a product of known tokens (vertex vars like i/j/k/n, plus pi/e). In this
+  // per-vertex context `i` is the vertex index (a vertexVar), not imaginary.
+  root = _jsSplitJux(root, vertexVars, fnNames);
   const walk = (node) => {
     switch(node.type){
       case "ConstantNode":
