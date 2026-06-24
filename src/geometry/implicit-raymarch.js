@@ -262,31 +262,48 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
     }
     // ── Analytic self-shadow ──────────────────────────────────────────────────
     // Implicit surfaces have no shadow map; instead we march a secondary ray from
-    // the (offset) hit point toward the light through the SAME field and look for
-    // another surface crossing before the light is reached. A sign flip of the
-    // field along the ray means the ray re-enters the solid → the point is in
-    // shadow. Returns 1.0 fully lit, →0.0 occluded. Cheap (few steps) and gated by
-    // uShadow so scenes that don't enable it pay nothing. dirW is the (normalized)
-    // WORLD-space direction toward the light; maxT caps the march (for point
-    // lights, the distance to the light; for directional, a fixed reach).
+    // the (offset) hit point toward the light through the SAME field. The field F
+    // isn't a true signed distance, so instead of looking only for a sign flip we
+    // use the first-order distance estimate d ≈ |F| / |∇F| (how far the surface is
+    // along the field's steepest direction) to both (a) take adaptive steps and
+    // (b) build a SOFT shadow: the closer the ray passes to the surface, the more
+    // it's occluded (penumbra), in the style of Quilez soft shadows. This avoids
+    // the harsh aliased edges and missed thin features of fixed-step sign testing.
+    // Returns 1.0 fully lit → uShadowDark fully occluded. Gated by uShadow.
+    // dirW is the normalized WORLD direction toward the light; maxT caps the march
+    // (distance to a point light; uShadowReach for directional).
     float shadowFactor(vec3 pW, vec3 nW, vec3 dirW, float maxT){
       if(uShadow < 0.5) return 1.0;
-      // start a little off the surface along the light dir + normal to skip the
-      // self-crossing at the origin (acne guard, the implicit analogue of bias).
-      float t = uShadowBias;
-      vec3 p0 = pW + nW*uShadowBias;
-      float fPrev = sampleF(p0 + dirW*t);
-      const int SH_STEPS = 24;
-      float dt = maxT / float(SH_STEPS);
+      // start off the surface along the normal + light dir (acne guard)
+      vec3  p0 = pW + nW*uShadowBias;
+      float t  = uShadowBias;
+      float occ = 1.0;                 // 1 = lit; driven toward 0 as the ray grazes
+      float k   = 12.0;                // penumbra hardness (higher = sharper)
+      float hMax = max(maxT, 1e-3);
+      const int SH_STEPS = 40;
+      float fPrev = sampleF(p0);
       for(int i=0;i<SH_STEPS;i++){
-        t += dt;
-        if(t > maxT) break;
-        float f = sampleF(p0 + dirW*t);
-        // sign flip between consecutive samples → crossed the surface → occluded
-        if(f*fPrev < 0.0) return mix(1.0, uShadowDark, 1.0);
+        vec3 sp = p0 + dirW*t;
+        float f = sampleF(sp);
+        // a sign flip means the ray is crossing the solid → hard occlusion
+        if(f*fPrev < 0.0) return uShadowDark;
         fPrev = f;
+        // distance estimate to the surface at this sample (|F|/|∇F|), with the
+        // gradient from the same central-difference helper used for shading.
+        vec3 g = gradM(sp, vec3(0.5*hMax/float(SH_STEPS)));
+        float gl = max(length(g), 1e-4);
+        float d = abs(f) / gl;
+        // soft penumbra: closeness scaled by distance along the ray (Quilez)
+        occ = min(occ, k*d/max(t,1e-3));
+        // adaptive step — at least a small floor so we always progress
+        float stepLen = clamp(d, hMax/float(SH_STEPS), hMax*0.25);
+        t += stepLen;
+        if(t > maxT) break;
       }
-      return 1.0;
+      occ = clamp(occ, 0.0, 1.0);
+      // map [0..1] lit-fraction onto [uShadowDark..1] so the control reads as
+      // "shadowed brightness": occ=1 → 1 (lit), occ=0 → uShadowDark (deep shadow).
+      return mix(uShadowDark, 1.0, occ);
     }
     void main(){
       vec3 ro = cameraPosition;
@@ -469,7 +486,7 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
       vec3 L = normalize(vec3(0.4,0.9,0.5));
       float diff = 0.5 + 0.5*abs(dot(nrm, L));
       float _sh = shadowFactor(pHit, nrm, L, uShadowReach);
-      vec3 col = base*diff*mix(1.0, _sh, step(0.5, uShadow));
+      vec3 col = base*diff*_sh;
       `}
       col = mix(col, col*0.35, seam);            // seam darkening
       gl_FragColor = vec4(col, 1.0);
@@ -486,6 +503,14 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
   mat.extensions = { fragDepth:true };
   const mesh=new THREE.Mesh(geo, mat);
   mesh.frustumCulled=false;
+  // The raymarch mesh's GEOMETRY is just the bounding box; the real surface only
+  // exists in the fragment shader (which the shadow depth pass doesn't run). So
+  // letting it cast would throw a box-shaped shadow — the "bugged" implicit
+  // shadow. Disable casting here. (Self-shadowing of the implicit is handled
+  // analytically by shadowFactor() in the shader; casting the true implicit shape
+  // ONTO other objects would need a raymarching custom depth material — deferred.)
+  mesh._castShadow = false;
+  mesh._receiveShadow = false;   // a screen-space raymarch can't receive a shadow map either
   mesh._gpuSurface = { uNames: freeUniforms, uPrefix: GLSL_UNIFORM_PREFIX, lights: sceneLights };  // updateGpuUniforms animates sliders + lights live
   mesh._raymarch = true;
   // The fragment shader needs the live projection matrix (which three doesn't pass

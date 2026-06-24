@@ -166,10 +166,10 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
       u.value.getNormalMatrix(_normMV);
     };
   }
-  // Shadow casting: if the lit material built a matching custom depth material
-  // (opaque lit surfaces only — see makeSurfaceShader), attach it so the shadow
-  // map renders the surface's REAL displaced shape, and opt the mesh into
-  // casting. _applyShadowDefaults reads _castShadow when the object is added.
+  // Shadow casting: the fill material builds a matching custom depth material for
+  // any non-wireframe surface (lit or not — see makeSurfaceShader), so the shadow
+  // map renders the surface's REAL displaced shape. Attach it and opt the mesh
+  // into casting. _applyShadowDefaults reads _castShadow when the object is added.
   if(matFill._depthMat){
     mesh.customDepthMaterial = matFill._depthMat;
     mesh._castShadow = true;
@@ -194,6 +194,7 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   const wire = new THREE.Mesh(geo, matWire);
   wire.frustumCulled = false;
   wire._sharedGeometry = true;
+  wire._castShadow = false;   // the wireframe overlay is just edges; never casts
   wire._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX };
   return [mesh, wire];
 }

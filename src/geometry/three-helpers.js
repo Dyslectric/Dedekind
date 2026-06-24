@@ -341,10 +341,17 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   // the UNDISPLACED grid positions — so a surface that's displaced in its vertex
   // shader would cast a flat-square shadow instead of its real shape. We give it
   // a matching depth material that runs the SAME mathPos() displacement, so the
-  // shadow silhouette matches the rendered surface. Only opaque lit surfaces cast
-  // (translucent gradient/flat surfaces and the wireframe pass don't); their
-  // builder leaves _castShadow false so _applyShadowDefaults won't enable it.
-  if(lit && !unlit && !wireframe){
+  // shadow silhouette matches the rendered surface.
+  //
+  // Casting is independent of LIT shading: writing depth only needs the
+  // displacement (body), which every surface has. So a parametric surface that
+  // isn't lit-shaded still casts (the earlier gate on `lit` was the reason param
+  // surfaces didn't cast). The wireframe pass never casts (it's just edges), and
+  // a fully see-through surface shouldn't throw a hard shadow — but the default
+  // unlit surface (alpha ~0.82) is solid enough to read as an occluder, so we
+  // cast for everything except the wireframe overlay. The mesh's _castShadow is
+  // still a per-object toggle upstream.
+  if(!wireframe){
     // RGBA-packed depth (three's standard for non-VSM shadow maps). Reuses the
     // surface's displacement uniforms so an animated/displaced surface's shadow
     // tracks it. vOk guards NaN/blown-up regions out of the shadow too.
