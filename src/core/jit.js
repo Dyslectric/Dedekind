@@ -36,20 +36,23 @@ const _GREEK_JS = {
   "π":"pi","τ":"tau","φ":"phi","θ":"theta","α":"alpha","β":"beta","γ":"gamma",
   "λ":"lambda","μ":"mu","ω":"omega","σ":"sigma","δ":"delta","ρ":"rho","ε":"epsilon",
 };
+// Single-char constants always available as juxtaposition tokens.
+const _JS_SINGLE_CONST = new Set(["e"]);   // 'i' is a vertex index here, in vertexVars
 // Greedy longest tokenizer for a glued run. Splits `pi` first, then single
-// tokens. A single char is a token if it's a vertex var, a function name, OR any
-// bare letter (the JIT maps unknown letters to a scope lookup, so they're valid
-// product factors). This mirrors the other paths while respecting that the JIT
-// resolves scalars dynamically. `i`/`j`/`k`/`n` are vertex indices in this
-// context (not imaginary), so they tokenize as vertex vars.
+// tokens that are KNOWN: a vertex variable (i/j/k/n/x/y/z/u/v/part) or a
+// single-char constant (e). A bare unknown letter is NOT a token — it could be
+// part of a deliberately-named multi-letter scalar (e.g. a slider `rt` or `tw`),
+// which must stay a single scope lookup, not split into r*t. Returns token names
+// or null (→ leave the run as one symbol). `i`/`j`/`k`/`n` are vertex indices in
+// this context (they're in vertexVars), not imaginary.
 function _jsTokenizeRun(name, vertexVars){
   if(name.length<2 || !/^[A-Za-z]+$/.test(name)) return null;
   const toks=[]; let p=0;
   while(p<name.length){
     if(name.startsWith("pi",p)){ toks.push("pi"); p+=2; continue; }
     const c=name[p];
-    if(/[A-Za-z]/.test(c)){ toks.push(c); p+=1; continue; }
-    return null;
+    if((vertexVars && vertexVars.has(c)) || _JS_SINGLE_CONST.has(c)){ toks.push(c); p+=1; continue; }
+    return null;   // unknown letter → whole run stays one symbol (scope lookup)
   }
   return toks.length>=2 ? toks : null;
 }

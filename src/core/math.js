@@ -347,15 +347,16 @@ function _tokenizeRun(name, knownLetters) {
   return toks.length >= 2 ? toks : null;
 }
 // Rewrite glued letter-run SymbolNodes into left-associated products per the
-// tokenizer. Known whole names (scoped or builtin) pass through. mathjs's
-// transform does not re-transform replacement nodes, so this terminates.
-function _splitJuxtaposition(root, knownLetters) {
+// tokenizer. Known whole names (scoped — at ANY length — or builtin) pass
+// through untouched, so a deliberately-named multi-letter scalar like `rt` or
+// `kT` is never split even when its component letters are also scoped.
+function _splitJuxtaposition(root, knownLetters, fullNames) {
   return root.transform(function (n) {
     if (n.isSymbolNode) {
       const nm = n.name;
-      // a known whole token (scoped var, builtin fn/const, or a reserved
-      // constant like pi/e/i) is never split
-      if (knownLetters.has(nm) || _isBuiltinName(nm) || RESERVED_CONSTANTS.has(nm)) return n;
+      // a known whole token (scoped var of any length, builtin fn/const, or a
+      // reserved constant like pi/e/i) is never split
+      if ((fullNames && fullNames.has(nm)) || knownLetters.has(nm) || _isBuiltinName(nm) || RESERVED_CONSTANTS.has(nm)) return n;
       const toks = _tokenizeRun(nm, knownLetters);
       if (toks) {
         let acc = new math.SymbolNode(toks[0]);
@@ -365,6 +366,16 @@ function _splitJuxtaposition(root, knownLetters) {
     }
     return n;
   });
+}
+// All scope key names (any length), used by the splitter to recognize a
+// deliberately-named multi-letter scalar as a whole token.
+function _allScopeNames(scope) {
+  const out = new Set();
+  if (!scope) return out;
+  const keys = (scope instanceof Map || (scope && typeof scope.keys === "function" && typeof scope.forEach === "function"))
+    ? [...scope.keys()] : Object.keys(scope);
+  for (const k of keys) if (/^[A-Za-z]\w*$/.test(k)) out.add(k);
+  return out;
 }
 
 // Strip reserved-constant keys from a scope so pi/e/i can never be shadowed by a
@@ -417,12 +428,23 @@ function compileExprScoped(expr, scope, idxContext = false) {
   const known = _singleLetterKnownInScope(scope);
   for (const b of _harvestBoundLetters(root)) known.add(b);
   if (idxContext) known.add("i");   // loop index, not imaginary, in this context
-  const sig = (idxContext ? "@" : "") + [...known].sort().join("");
+  // Full scope names (any length) let the splitter recognize a deliberately
+  // named multi-letter scalar (rt, kT, …) as a whole token instead of splitting
+  // it. For the cache key we only need the multi-char scope names that ACTUALLY
+  // appear as symbols in this expression — gather those so the key stays tight.
+  const fullNames = _allScopeNames(scope);
+  let relevantMulti = "";
+  try {
+    const appearing = new Set();
+    root.traverse(function (nn) { if (nn.isSymbolNode && nn.name.length > 1 && fullNames.has(nn.name)) appearing.add(nn.name); });
+    relevantMulti = [...appearing].sort().join(",");
+  } catch {}
+  const sig = (idxContext ? "@" : "") + [...known].sort().join("") + "\u0002" + relevantMulti;
   const key = text + "\u0001" + sig;
   let entry = _scopedCache.get(key);
   if (entry !== undefined) return entry;
   try {
-    const rewritten = _splitJuxtaposition(root, known);
+    const rewritten = _splitJuxtaposition(root, known, fullNames);
     entry = rewritten.compile();
   } catch {
     try { entry = math.compile(text); } catch { entry = null; }   // never regress
