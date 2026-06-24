@@ -23,9 +23,10 @@ function _applyShadowDefaults(o){
   o._shadowFlagged = true;
   const mat = Array.isArray(o.material) ? o.material[0] : o.material;
   if(!mat) return;
+  const before = o.receiveShadow;
   // explicit opt-in/out from a builder wins
   if(o._castShadow!==undefined) o.castShadow = !!o._castShadow;
-  if(o._receiveShadow!==undefined){ o.receiveShadow = !!o._receiveShadow; return; }
+  if(o._receiveShadow!==undefined){ o.receiveShadow = !!o._receiveShadow; if(o.receiveShadow!==before) mat.needsUpdate=true; return; }
   const lit = mat.isMeshPhongMaterial || mat.isMeshStandardMaterial || mat.isMeshLambertMaterial;
   const isLine = o.isLine || o.isLineSegments || o.isLine2;
   const opaqueEnough = !(mat.transparent && (mat.opacity!==undefined && mat.opacity<0.5));
@@ -38,6 +39,9 @@ function _applyShadowDefaults(o){
     if(o._castShadow===undefined) o.castShadow = opaqueEnough && !mat.wireframe;
     o.receiveShadow = false;
   }
+  // A material only gains shadow-map sampling code when it's (re)compiled; if we
+  // just turned receiveShadow on for an already-built material, force that.
+  if(o.receiveShadow!==before) mat.needsUpdate = true;
 }
 function addPlotObj(world,o){ _applyShadowDefaults(o); (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
 function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
@@ -441,6 +445,11 @@ function updateGpuUniforms(objs, scope){
 // panning here. We lean on a modest normalBias (offsets the shadow lookup along
 // the surface normal, robust under the flip) plus a small constant bias, and a
 // reasonably high-res map so hard-edged shadows stay crisp rather than blocky.
+// How far back a directional light is placed along its direction so its
+// orthographic shadow camera frames the whole scene (the light only needs a
+// direction, but three derives that from position→target, and a light sitting at
+// the scene centre can't cast a useful shadow map).
+const SHADOW_LIGHT_DIST = 30;
 function _configureShadowLight(L){
   if(!L) return;
   L.castShadow = true;
@@ -487,7 +496,19 @@ function syncThreeLights(root, lights){
     L.color.setHex(hexToThree(d.colorHex||"#ffffff"));
     L.intensity = Math.max(0, d.intensity ?? 1);
     if(d.kind==="point") L.position.set(d.posX, d.posZ, d.posY);          // math (x,y,z) → (x,z,y)
-    else { L.position.set(d.dirX, d.dirZ, d.dirY); if(L.target) L.target.position.set(0,0,0); }  // direction toward the light
+    else {
+      // A directional light's DIRECTION is (dirX,dirY,dirZ); three derives the
+      // light direction from position→target. Placing the light AT the unit
+      // direction vector (≈1 unit from origin) puts the shadow camera right at the
+      // scene centre, so its near/far range clips most of the scene and shadows
+      // vanish. Push the light far back along its direction (target stays at the
+      // origin) so the orthographic shadow frustum looks across the whole scene.
+      const dir=_lightVec(d.dirX, d.dirY, d.dirZ);   // math→three (x,z,y)
+      if(dir.lengthSq()<1e-9) dir.set(0.4,0.9,0.5);
+      dir.normalize().multiplyScalar(SHADOW_LIGHT_DIST);
+      L.position.copy(dir);
+      if(L.target){ L.target.position.set(0,0,0); L.target.updateMatrixWorld(); }
+    }
   }
 }
 

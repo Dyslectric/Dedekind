@@ -60,9 +60,11 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     const dl=new THREE.DirectionalLight(0xffffff,0.85);dl.position.set(5,10,7);dl.name="__defaultKey";
     // The default key light casts shadows so an imported mesh in a scene with no
     // explicit light nodes still self-shadows. Shadow-camera frustum + bias are
-    // configured by _configureShadowLight (shared with node lights).
+    // configured by _configureShadowLight (shared with node lights). Its target
+    // must be in the scene graph so its world matrix updates and the shadow camera
+    // aims at the scene origin.
     _configureShadowLight(dl);
-    scene.add(dl);
+    scene.add(dl); scene.add(dl.target);
     // Orientation. Per-builder code maps math (x,y,z) → three (x, z, y). We want
     // the on-screen frame: math X → RIGHT, math Z → UP, math Y → AWAY from the
     // viewer, i.e. world (x, z, −y) — the standard right-handed math frame
