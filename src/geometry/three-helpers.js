@@ -354,6 +354,40 @@ function updateGpuUniforms(objs, scope){
 // the same mapping the surface shader's light uniforms use. The scene's default
 // key light (tagged "__defaultKey") is hidden whenever node lights are present, so
 // node lighting fully takes over (matching the surface shader's behaviour).
+// Configure a light to cast hard shadows. Shared by the viewport's default key
+// light and the node-driven lights (syncThreeLights). The scene lives roughly
+// within the axis triad (±4) plus typical plot extents, so a directional
+// light's orthographic shadow frustum is sized to comfortably cover that; a
+// point light uses a perspective shadow camera with a wide range.
+//
+// The world group has scale.z = -1 (the math→screen mirror). A negative-
+// determinant transform flips face winding, which makes front/back faces swap
+// for the shadow depth pass and is the classic cause of shadow acne / peter-
+// panning here. We lean on a modest normalBias (offsets the shadow lookup along
+// the surface normal, robust under the flip) plus a small constant bias, and a
+// reasonably high-res map so hard-edged shadows stay crisp rather than blocky.
+function _configureShadowLight(L){
+  if(!L) return;
+  L.castShadow = true;
+  const s = L.shadow;
+  if(!s) return;
+  s.mapSize.set(2048, 2048);
+  s.bias = -0.0005;
+  s.normalBias = 0.02;
+  const cam = s.camera;
+  if(cam){
+    if(cam.isOrthographicCamera){
+      const R = 8;                        // half-extent of the shadow frustum
+      cam.left=-R; cam.right=R; cam.top=R; cam.bottom=-R;
+      cam.near=0.1; cam.far=60;
+    } else {
+      // point-light perspective shadow camera
+      cam.near=0.1; cam.far=60;
+    }
+    cam.updateProjectionMatrix();
+  }
+}
+
 function syncThreeLights(root, lights){
   if(!root) return;
   const want = lights || [];
@@ -369,6 +403,7 @@ function syncThreeLights(root, lights){
       let L;
       if(d.kind==="point"){ L=new THREE.PointLight(0xffffff,1,0,0); }   // decay 0 → predictable, distance-independent
       else { L=new THREE.DirectionalLight(0xffffff,1); rig.add(L.target); }
+      _configureShadowLight(L);            // hard shadow casting + frustum/bias
       L.__kind=d.kind; rig.add(L); return L;
     });
   }
@@ -382,5 +417,5 @@ function syncThreeLights(root, lights){
 }
 
 export {
-  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights, setLightUniforms
+  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights, setLightUniforms, _configureShadowLight
 };

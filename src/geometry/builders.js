@@ -1038,6 +1038,12 @@ function buildMesh3d(p, scope, color){
         shininess:resolveNum(p.shininess,scope,36), flatShading:p.flatShading===true})
     : new THREE.MeshBasicMaterial({color:c3, side, transparent, opacity});
   const mesh=new THREE.Mesh(geo,mat);
+  // Hard shadows (per-object toggles, default on). A mesh casts unless turned
+  // off. Receiving needs a lit material (MeshBasic has no lighting to darken),
+  // and a fully-transparent/low-opacity mesh shadows poorly, so only an opaque
+  // lit mesh receives. Casting works for both lit and unlit opaque meshes.
+  mesh.castShadow = (p.castShadow!==false) && !transparent;
+  mesh.receiveShadow = (p.receiveShadow!==false) && lit && !transparent;
   if(p.showWire!==true) return [mesh];
   const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geo),
     new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.3}));

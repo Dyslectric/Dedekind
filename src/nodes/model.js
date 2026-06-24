@@ -220,6 +220,7 @@ function makeNode(type,pos){
       data:"", __dataSig:"",
       scale:"1", lit:true, opacity:"1", shininess:"36",
       flatShading:false, doubleSide:true, showWire:false,
+      castShadow:true, receiveShadow:true,             // hard shadows (lit meshes)
     },attachments:[]},
 
     // ── Function / transformer model ───────────────────────────────────────
