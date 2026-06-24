@@ -31,7 +31,7 @@ const M = {
   charW: 0.55,        // nominal advance width for a monospace-ish glyph
   digitW: 0.55,
   opW: 0.62,          // binary operators get a touch more room (we add side gaps)
-  opGap: 0.12,        // gap on each side of a binary operator (+ - * / etc.)
+  opGap: 0.16,        // gap on each side of a binary operator (+ - * / etc.)
   ascent: 0.72,       // ascent of normal text above baseline
   descent: 0.22,      // descent below baseline
   supScale: 0.72,     // exponent shrink factor
@@ -74,11 +74,14 @@ function atomWidth(node, wf){
   if(node.t==="ws") return M.gapW * node.v.length;
   if(node.t==="op"){
     // operators that are truly binary get side gaps; parens/commas don't. The
-    // multiplication "*" renders as "·", so measure the dot's width (not the
-    // asterisk's) to keep caret/layout aligned with what's drawn.
-    const glyph = node.v==="*" ? "·" : node.v;
+    // rendered glyph differs from the source for "*" (→ "·") and "-" (→ "−"),
+    // so measure the GLYPH that's actually drawn to keep caret/layout aligned.
+    const glyph = node.v==="*" ? "·" : (node.v==="-" ? "\u2212" : node.v);
     const base = wf ? wf(glyph, "main") : (node.v==="," ? M.charW*0.6 : (node.v==="("||node.v===")") ? M.parenW : M.charW);
-    if("+-*=<>".includes(node.v)) return base + M.opGap*2;
+    // Binary infix operators get a gap on each side so they breathe — including
+    // "/" (division) which was previously tight. "(" / ")" / "," are not infix
+    // and keep their natural advance.
+    if("+-*/=<>".includes(node.v)) return base + M.opGap*2;
     if(node.v===",") return base + M.opGap;
     return base;
   }
@@ -339,11 +342,26 @@ function place(mz, x, baselineY, out){
       }
       // a whitespace atom draws nothing but still advances + anchors
       if(n.t!=="ws"){
-        // Display the multiplication "*" as a centered dot "·" (canonical text and
-        // source range stay "*", so mathjs still reads multiplication and the
-        // caret/editing are unaffected — only the rendered glyph changes).
-        const disp = (n.t==="op" && n.v==="*") ? "·" : n.v;
-        out.boxes.push({ type:"text", text:disp, x, y:baselineY, scale:mz.scale, tk:n.t, v:n.v, s:n.s, e:n.e });
+        // Display substitutions: multiplication "*" → centered dot "·", and the
+        // ASCII hyphen "-" → the typographic minus "−" (U+2212), which is wider
+        // and vertically centered on the math axis so it reads as an operator
+        // rather than a thin hyphen. The canonical text and source range stay the
+        // original ASCII (so mathjs still parses, and caret/editing are
+        // unaffected) — only the rendered glyph changes.
+        let disp = n.v;
+        let drawX = x;
+        if(n.t==="op"){
+          if(n.v==="*") disp = "·";
+          else if(n.v==="-") disp = "\u2212";
+          // Binary infix operators reserve a gap on BOTH sides (see atomWidth).
+          // The glyph is drawn at the atom's left edge by default, which would
+          // put the whole gap on the right and let the operator hug whatever
+          // precedes it (e.g. a closing paren). Shift the glyph right by one gap
+          // so the space is split evenly — left and right both breathe.
+          if("+-*/=<>".includes(n.v)) drawX = x + M.opGap*mz.scale;
+          else if(n.v===",") { /* comma keeps its single trailing gap */ }
+        }
+        out.boxes.push({ type:"text", text:disp, x:drawX, y:baselineY, scale:mz.scale, tk:n.t, v:n.v, s:n.s, e:n.e });
       }
       // anchor at the LEFT edge for offset n.s, and (handled by row) right edge
       pushAnchor(out, n.s, x, baselineY, mz);
