@@ -96,6 +96,12 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
       (tp.colorMode==="texture" && tex) ? 5.0 : 0.0 },
     uColorShift:{value: resolveNum(tp.colorShift, scope, 0)},
     uGradScale:{value: 0.5},
+    // analytic self-shadow (off by default → no cost/regression). Enabled via the
+    // surface's shadow toggle, which sets uShadow to 1.
+    uShadow:{value: tp.selfShadow ? 1.0 : 0.0},
+    uShadowBias:{value: resolveNum(tp.shadowBias, scope, 0.03)},   // ray start offset (acne guard)
+    uShadowDark:{value: resolveNum(tp.shadowDark, scope, 0.25)},   // shadowed diffuse multiplier
+    uShadowReach:{value: resolveNum(tp.shadowReach, scope, 6.0)},  // directional ray max distance
   };
   const hasTex = !!tex, hasNorm = !!ntex, uvAny = hasTex || hasNorm;
   // one tile scale for all three projection planes; reuse the UV-tile control
@@ -158,6 +164,10 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
     uniform float uColorMode;  // 0 flat|1 depth|2 gradient|3 normal|4 iridescent
     uniform float uColorShift; // hue offset (animated over time in iridescent mode)
     uniform float uGradScale;  // gradient-mode: log-compression scale
+    uniform float uShadow;      // 0 off | 1 on — analytic self-shadow
+    uniform float uShadowBias;  // start offset of the shadow ray (acne guard)
+    uniform float uShadowDark;  // shadowed diffuse multiplier (0 = black, 1 = none)
+    uniform float uShadowReach;  // directional shadow ray max distance (math units)
     ${uniDecls}
     ${uvAny ? "uniform float uTriScale;" : ""}
     ${hasTex ? "uniform sampler2D uTex;" : ""}
@@ -249,6 +259,34 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
     vec3 iridescence(float h){
       vec3 a = vec3(0.5), b = vec3(0.5), c = vec3(1.0), d = vec3(0.00,0.33,0.67);
       return a + b*cos(6.28318*(c*h + d));
+    }
+    // ── Analytic self-shadow ──────────────────────────────────────────────────
+    // Implicit surfaces have no shadow map; instead we march a secondary ray from
+    // the (offset) hit point toward the light through the SAME field and look for
+    // another surface crossing before the light is reached. A sign flip of the
+    // field along the ray means the ray re-enters the solid → the point is in
+    // shadow. Returns 1.0 fully lit, →0.0 occluded. Cheap (few steps) and gated by
+    // uShadow so scenes that don't enable it pay nothing. dirW is the (normalized)
+    // WORLD-space direction toward the light; maxT caps the march (for point
+    // lights, the distance to the light; for directional, a fixed reach).
+    float shadowFactor(vec3 pW, vec3 nW, vec3 dirW, float maxT){
+      if(uShadow < 0.5) return 1.0;
+      // start a little off the surface along the light dir + normal to skip the
+      // self-crossing at the origin (acne guard, the implicit analogue of bias).
+      float t = uShadowBias;
+      vec3 p0 = pW + nW*uShadowBias;
+      float fPrev = sampleF(p0 + dirW*t);
+      const int SH_STEPS = 24;
+      float dt = maxT / float(SH_STEPS);
+      for(int i=0;i<SH_STEPS;i++){
+        t += dt;
+        if(t > maxT) break;
+        float f = sampleF(p0 + dirW*t);
+        // sign flip between consecutive samples → crossed the surface → occluded
+        if(f*fPrev < 0.0) return mix(1.0, uShadowDark, 1.0);
+        fPrev = f;
+      }
+      return 1.0;
     }
     void main(){
       vec3 ro = cameraPosition;
@@ -423,12 +461,15 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
       ${sceneLights.map((lt,i)=> lt.kind==="point"
         ? `{ vec3 _d=uL${i}Pos-pHit; float _r2=dot(_d,_d); vec3 L=_d*inversesqrt(max(_r2,1e-12));
           float _att=1.0/(1.0+uL${i}Fall*_r2);
-          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_att; }`
-        : `{ vec3 L=normalize(uL${i}Dir); col += base*uL${i}Col*(0.85*abs(dot(nrm,L))); }`).join("\n      ")}
+          float _sh=shadowFactor(pHit, nrm, L, sqrt(max(_r2,1e-12)));
+          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_att*_sh; }`
+        : `{ vec3 L=normalize(uL${i}Dir); float _sh=shadowFactor(pHit, nrm, L, uShadowReach);
+          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_sh; }`).join("\n      ")}
       ` : `
       vec3 L = normalize(vec3(0.4,0.9,0.5));
       float diff = 0.5 + 0.5*abs(dot(nrm, L));
-      vec3 col = base*diff;
+      float _sh = shadowFactor(pHit, nrm, L, uShadowReach);
+      vec3 col = base*diff*mix(1.0, _sh, step(0.5, uShadow));
       `}
       col = mix(col, col*0.35, seam);            // seam darkening
       gl_FragColor = vec4(col, 1.0);

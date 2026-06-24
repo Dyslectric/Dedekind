@@ -166,6 +166,15 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
       u.value.getNormalMatrix(_normMV);
     };
   }
+  // Shadow casting: if the lit material built a matching custom depth material
+  // (opaque lit surfaces only — see makeSurfaceShader), attach it so the shadow
+  // map renders the surface's REAL displaced shape, and opt the mesh into
+  // casting. _applyShadowDefaults reads _castShadow when the object is added.
+  if(matFill._depthMat){
+    mesh.customDepthMaterial = matFill._depthMat;
+    mesh._castShadow = true;
+    mesh._receiveShadow = false;   // receive on custom GPU shaders deferred
+  }
   // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
   // shader, so three.js's CPU-side bounding volume (a tiny 1×1 patch) does NOT
   // reflect where the surface actually is. Without disabling frustum culling the
@@ -1041,9 +1050,10 @@ function buildMesh3d(p, scope, color){
   // Hard shadows (per-object toggles, default on). A mesh casts unless turned
   // off. Receiving needs a lit material (MeshBasic has no lighting to darken),
   // and a fully-transparent/low-opacity mesh shadows poorly, so only an opaque
-  // lit mesh receives. Casting works for both lit and unlit opaque meshes.
-  mesh.castShadow = (p.castShadow!==false) && !transparent;
-  mesh.receiveShadow = (p.receiveShadow!==false) && lit && !transparent;
+  // lit mesh receives. Casting works for both lit and unlit opaque meshes. These
+  // are read by _applyShadowDefaults when the object is added to the scene.
+  mesh._castShadow = (p.castShadow!==false) && !transparent;
+  mesh._receiveShadow = (p.receiveShadow!==false) && lit && !transparent;
   if(p.showWire!==true) return [mesh];
   const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geo),
     new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.3}));

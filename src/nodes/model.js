@@ -264,6 +264,11 @@ function makeNode(type,pos){
       // params, n index, plus wired scalars), mapped across [colorMin,colorMax]
       // (auto when blank) onto the colorLo→colorHi ramp.
       colorMode:"off", colorExpr:"out0", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
+      // Raymarched implicit self-shadow (analytic; marches a ray toward each light
+      // through the field). Off by default. shadowDark = shadowed brightness
+      // (0 black…1 none); shadowReach = directional ray length; shadowBias = start
+      // offset (acne guard).
+      selfShadow:false, shadowDark:"0.25", shadowReach:"6", shadowBias:"0.03",
     },attachments:[]},
   };
   // Build only the selected type's entry into a node. The defs literal assigns a

@@ -9,7 +9,37 @@ function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(
 // Screen-space fat-line curves (tagged `_unmirroredWorld`) break under that
 // negative-determinant matrix, so they go to an unmirrored sibling group
 // (world._unmirrored) and carry their own baked-in world coords.
-function addPlotObj(world,o){ (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
+// Apply sensible default shadow flags to a plot object as it's added, by
+// material type. Built-in lit materials (Phong/Lambert/Standard) cast and
+// receive automatically once flagged; an opaque-enough surface does both, a
+// very translucent one neither (translucent shadows look wrong). Custom
+// ShaderMaterial surfaces opt in separately (they carry _castShadow/_receiveShadow
+// set by their builder, since three.js can't shadow them without a custom depth
+// material + injected receive code). Lines/points/wireframes never receive; thin
+// wireframes don't cast. A builder that already set the flags (e.g. mesh with
+// per-object toggles) is respected — we only fill in unset defaults.
+function _applyShadowDefaults(o){
+  if(!o || o._shadowFlagged) return;
+  o._shadowFlagged = true;
+  const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+  if(!mat) return;
+  // explicit opt-in/out from a builder wins
+  if(o._castShadow!==undefined) o.castShadow = !!o._castShadow;
+  if(o._receiveShadow!==undefined){ o.receiveShadow = !!o._receiveShadow; return; }
+  const lit = mat.isMeshPhongMaterial || mat.isMeshStandardMaterial || mat.isMeshLambertMaterial;
+  const isLine = o.isLine || o.isLineSegments || o.isLine2;
+  const opaqueEnough = !(mat.transparent && (mat.opacity!==undefined && mat.opacity<0.5));
+  if(isLine){ if(o._castShadow===undefined) o.castShadow=false; o.receiveShadow=false; return; }
+  if(lit){
+    if(o._castShadow===undefined) o.castShadow = opaqueEnough;
+    o.receiveShadow = opaqueEnough;
+  } else {
+    // unlit (MeshBasic) or wireframe: can cast if opaque, never receives
+    if(o._castShadow===undefined) o.castShadow = opaqueEnough && !mat.wireframe;
+    o.receiveShadow = false;
+  }
+}
+function addPlotObj(world,o){ _applyShadowDefaults(o); (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
 function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
 // Light positions/directions are authored in MATH coords (z up); the rest of the
 // scene maps math (x,y,z) → three (x,z,y). Swap when sending a light to the GPU.
@@ -305,6 +335,44 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   mat._uniformNames = uniformNames;
   mat._uPrefix = uPrefix;
   mat._lit = lit;   // assembleSurfGPU keys the per-frame normal-matrix update on this
+
+  // ── Shadow CASTING (custom depth material) ────────────────────────────────
+  // three.js renders the shadow map with a depth material that, by default, uses
+  // the UNDISPLACED grid positions — so a surface that's displaced in its vertex
+  // shader would cast a flat-square shadow instead of its real shape. We give it
+  // a matching depth material that runs the SAME mathPos() displacement, so the
+  // shadow silhouette matches the rendered surface. Only opaque lit surfaces cast
+  // (translucent gradient/flat surfaces and the wireframe pass don't); their
+  // builder leaves _castShadow false so _applyShadowDefaults won't enable it.
+  if(lit && !unlit && !wireframe){
+    // RGBA-packed depth (three's standard for non-VSM shadow maps). Reuses the
+    // surface's displacement uniforms so an animated/displaced surface's shadow
+    // tracks it. vOk guards NaN/blown-up regions out of the shadow too.
+    const depthFrag = `
+      precision highp float;
+      varying float vOkD;
+      #include <packing>
+      void main(){
+        if(vOkD < 0.5) discard;
+        gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
+      }`;
+    const depthVert = `
+      ${decls}
+      varying float vOkD;
+      vec3 mathPosD(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return vec3(P.x, P.z, P.y); }
+      void main(){
+        vec3 p = mathPosD(position.xy);
+        vOkD = (abs(p.x)<1e6 && abs(p.y)<1e6 && abs(p.z)<1e6) ? 1.0 : 0.0;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0);
+      }`;
+    const depthMat = new THREE.ShaderMaterial({
+      uniforms,                       // SHARED uniforms → displacement stays in sync
+      vertexShader: depthVert,
+      fragmentShader: depthFrag,
+      side: THREE.DoubleSide,
+    });
+    mat._depthMat = depthMat;         // assembleSurfGPU attaches it to the mesh + opts the mesh into casting
+  }
   return mat;
 }
 
