@@ -49,11 +49,8 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             <option value="gradient">Gradient |∇F| (highlights singularities)</option>
             <option value="normal">Normal direction (orientation)</option>
             <option value="iridescent">Iridescent (animated)</option>
-            <option value="texture">Texture (triplanar — wire a Texture node)</option>
           </select>
         </PR>
-        {node.props.colorMode==="texture" &&
-          <PR label="texture tile"><EI v={node.props.uvScaleU??"0.5"} sc={scope} onChange={v=>set("uvScaleU",v)} placeholder="0.5"/></PR>}
         {(node.props.colorMode||"flat")!=="flat" && (node.props.colorMode!=="iridescent") &&
           <PR label="hue shift"><EI v={node.props.colorShift??"0"} sc={scope} onChange={v=>set("colorShift",v)} placeholder="0"/></PR>}
         <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
@@ -63,7 +60,6 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             if(m==="gradient") return "Hue encodes |∇F|; singular points (nodes, cusps, where the gradient vanishes) stand out as a distinct band.";
             if(m==="normal") return "Hue encodes surface orientation — useful for reading curvature.";
             if(m==="iridescent") return "Decorative oil-slick palette that shimmers over time (not a measured quantity).";
-            if(m==="texture") return "A wired Texture node, triplanar-mapped: projected from the x/y/z planes and blended by the surface normal (no UV needed). Set the tile scale above.";
             return "Surface drawn in its single flat color. Pick a mode to encode depth, gradient, or orientation as hue.";
           })()}
           {" Applies to GPU-rendered implicit surfaces."}
@@ -256,22 +252,8 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
             <option value="off">Flat (node colour)</option>
             <option value="ramp">Ramp (scalar → two colours)</option>
             <option value="rgb">RGB (three expressions)</option>
-            <option value="texture">Texture (wired image / video)</option>
           </select>
         </PR>
-        {cmode==="texture"&&<>
-          <div style={{fontSize:12.5,color:(deps.some(d=>d.type==="texture"||d.type==="video")?ui.uiFaint:ui.uiDanger),marginTop:2,lineHeight:1.5}}>
-            {deps.some(d=>d.type==="texture"||d.type==="video")
-              ? "Sampled at the surface's UV (its grid coordinates), with the transform below."
-              : "No texture wired — connect a Texture or Video node's output into this transformer."}
-          </div>
-          <PR label="UV tile u"><EI v={node.props.uvScaleU??"1"} sc={scope} onChange={v=>set("uvScaleU",v)} placeholder="1"/></PR>
-          <PR label="UV tile v"><EI v={node.props.uvScaleV??"1"} sc={scope} onChange={v=>set("uvScaleV",v)} placeholder="1"/></PR>
-          <PR label="UV offset u"><EI v={node.props.uvOffU??"0"} sc={scope} onChange={v=>set("uvOffU",v)} placeholder="0"/></PR>
-          <PR label="UV offset v"><EI v={node.props.uvOffV??"0"} sc={scope} onChange={v=>set("uvOffV",v)} placeholder="0"/></PR>
-          <PR label="UV rotate"><EI v={node.props.uvRot??"0"} sc={scope} onChange={v=>set("uvRot",v)} placeholder="0 (radians)"/></PR>
-          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Tile &gt; 1 repeats the image (set the texture's wrap to <em>repeat</em>); rotation is about the surface centre.</div>
-        </>}
         {cmode==="ramp"&&<>
           <PR label="value"><EI v={node.props.matColor||""} sc={scope} onChange={v=>set("matColor",v)} placeholder="scalar, e.g. sin(3x)·cos(3y)"/></PR>
           <PR label="low"><ColorRow v={node.props.matColorLo||"#3a6aff"} onChange={v=>set("matColorLo",v)}/></PR>
@@ -288,8 +270,6 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
         <PR label="specular ×"><EI v={node.props.matSpec||""} sc={scope} onChange={v=>set("matSpec",v)} placeholder="multiplies highlight"/></PR>
         <PR label="emission"><EI v={node.props.matEmit||""} sc={scope} onChange={v=>set("matEmit",v)} placeholder="adds glow, e.g. 0.5+0.5·sin(x-t)"/></PR>
         {node.props.matEmit&&<PR label="glow colour"><ColorRow v={node.props.matEmitColor||"#ffffff"} onChange={v=>set("matEmitColor",v)}/></PR>}
-        <PR label="normal map ×"><EI v={node.props.matNormalStrength??""} sc={scope} onChange={v=>set("matNormalStrength",v)} placeholder="1 (needs a normal-role texture wired)"/></PR>
-        <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Wire a Texture node set to <em>normal map</em> to perturb the lit normals; this scales the bump strength (0 = flat, &gt;1 = exaggerated). It shares the UV transform above.</div>
       </Sec>;
     })()}
     {(()=>{

@@ -139,24 +139,7 @@ export function ParamSpaceEditor({ node, scope, onChange }){
           </select>
         </PR>
         {node.props.shading==="lit"&&<>
-          <PR label="colour">
-            <select value={node.props.matColorMode||"off"} onChange={e=>set("matColorMode",e.target.value)} style={{...S.inp,width:"100%"}}>
-              <option value="off">Flat (node colour)</option>
-              <option value="texture">Texture (wired image / video)</option>
-            </select>
-          </PR>
-          {node.props.matColorMode==="texture"&&<>
-            <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>
-              Wire a <strong>Texture</strong> or <strong>Video</strong> node into this surface; it's sampled at the surface's UV (its u,v grid), with the transform below.
-            </div>
-            <PR label="UV tile u"><EI v={node.props.uvScaleU??"1"} sc={scope} onChange={v=>set("uvScaleU",v)} placeholder="1"/></PR>
-            <PR label="UV tile v"><EI v={node.props.uvScaleV??"1"} sc={scope} onChange={v=>set("uvScaleV",v)} placeholder="1"/></PR>
-            <PR label="UV offset u"><EI v={node.props.uvOffU??"0"} sc={scope} onChange={v=>set("uvOffU",v)} placeholder="0"/></PR>
-            <PR label="UV offset v"><EI v={node.props.uvOffV??"0"} sc={scope} onChange={v=>set("uvOffV",v)} placeholder="0"/></PR>
-            <PR label="UV rotate"><EI v={node.props.uvRot??"0"} sc={scope} onChange={v=>set("uvRot",v)} placeholder="0"/></PR>
-          </>}
-          <PR label="normal map ×"><EI v={node.props.matNormalStrength??""} sc={scope} onChange={v=>set("matNormalStrength",v)} placeholder="1 (needs a normal-role texture wired)"/></PR>
-          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Lit uses screen-space normals on a parametric surface (no closed-form normal). Wire a Texture set to <em>normal map</em> to add surface bumps; this scales their strength.</div>
+          <div style={{fontSize:12,color:ui.uiFaint,marginTop:2,lineHeight:1.5}}>Lit shading uses screen-space normals on a parametric surface (no closed-form normal). For coloured surfaces, render through a <strong>Transformer</strong>, whose material channels (ramp / RGB / specular / emission) are evaluated per pixel.</div>
         </>}
       </Sec>
     </>:<>
