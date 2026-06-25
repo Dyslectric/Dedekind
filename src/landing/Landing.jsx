@@ -185,7 +185,7 @@ function Landing({ onOpen, closing }){
                 re-samples the visible x-range every frame as you pan and zoom, so the curve stays at full
                 resolution at any magnification. Scroll to zoom in and the same structure repeats endlessly.</>}
               chips={[["var(--dk-cyan)","camera-follow domain"],["var(--dk-violet)","self-similar"],["var(--dk-amber)","resolution on demand"]]}
-              kind="self-similar-zoom" cap="self-similar zoom · scroll to zoom in" />
+              kind="self-similar-zoom" cap="self-similar zoom · R/F or scroll to zoom" />
           </div>
         </section>
 

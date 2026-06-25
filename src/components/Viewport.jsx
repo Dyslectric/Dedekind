@@ -569,6 +569,16 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
     const loop=()=>{
       rafRef.current=requestAnimationFrame(loop);
       const st=stRef.current;
+      // Held-key zoom (R in / F out), about the view center. Mirrors the wheel's
+      // multiplicative step so a held key glides in/out; marks the view dirty so
+      // the frame re-renders (and camera-follow plots re-sample).
+      const k2=st.keys2d;
+      if(k2&&(k2.KeyR||k2.KeyF)){
+        const v=viewRef.current;
+        const f=k2.KeyR?0.985:1.015;
+        v.hh=Math.max(1e-12,Math.min(1e9,v.hh*f));
+        st.viewDirty=true; st.plotDirty=true;
+      }
       // animator-driven plot updates: only mark dirty if a PLAYING animator
       // actually feeds this camera or one of its plots (cached plots that don't
       // depend on it stay hits and cost nothing).
@@ -619,7 +629,7 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
       const hw=v.hh*(W/H||1);
       const wx=v.cx+((e.clientX-rect.left)/rect.width-0.5)*hw*2;
       const wy=v.cy-((e.clientY-rect.top)/rect.height-0.5)*v.hh*2;
-      v.hh=Math.max(1e-4,Math.min(1e6,v.hh*f));
+      v.hh=Math.max(1e-12,Math.min(1e9,v.hh*f));
       const nhw=v.hh*(W/H||1);
       v.cx=wx-((e.clientX-rect.left)/rect.width-0.5)*nhw*2;
       v.cy=wy+((e.clientY-rect.top)/rect.height-0.5)*v.hh*2;
@@ -654,7 +664,7 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
           const hw0=v.hh*(W/H||1);
           const wx=v.cx+((m.x-rect.left)/rect.width-0.5)*hw0*2;
           const wy=v.cy-((m.y-rect.top)/rect.height-0.5)*v.hh*2;
-          v.hh=Math.max(1e-4,Math.min(1e6,v.hh*f));
+          v.hh=Math.max(1e-12,Math.min(1e9,v.hh*f));
           const nhw=v.hh*(W/H||1);
           v.cx=wx-((m.x-rect.left)/rect.width-0.5)*nhw*2;
           v.cy=wy+((m.y-rect.top)/rect.height-0.5)*v.hh*2;
@@ -680,6 +690,22 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
     overlay.addEventListener("touchend",onTE);
     overlay.addEventListener("touchcancel",onTE);
 
+    // ── Keyboard zoom (R = in, F = out), mirroring the 3-D viewport. Held keys
+    // zoom smoothly via the loop; the keys2d state is read each frame. Zoom is
+    // about the view center (v.cx, v.cy), scaling the half-height v.hh — the same
+    // quantity the wheel scales. We only act when this 2-D canvas has focus-ish
+    // intent (pointer is over it) so R/F typed elsewhere don't hijack the view.
+    const keys2d={};
+    const onKD2=e=>{ if(e.code==="KeyR"||e.code==="KeyF"){ if(ir.over){ keys2d[e.code]=true; } } };
+    const onKU2=e=>{ keys2d[e.code]=false; };
+    const onEnter=()=>{ ir.over=true; };
+    const onLeave=()=>{ ir.over=false; keys2d.KeyR=keys2d.KeyF=false; };
+    overlay.addEventListener("mouseenter",onEnter);
+    overlay.addEventListener("mouseleave",onLeave);
+    window.addEventListener("keydown",onKD2);
+    window.addEventListener("keyup",onKU2);
+    stRef.current.keys2d=keys2d;
+
     return()=>{
       cancelAnimationFrame(rafRef.current); if(resizeRaf)cancelAnimationFrame(resizeRaf); ro.disconnect();
       overlay.removeEventListener("mousedown",onMD);
@@ -690,6 +716,10 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
       overlay.removeEventListener("touchmove",onTM);
       overlay.removeEventListener("touchend",onTE);
       overlay.removeEventListener("touchcancel",onTE);
+      overlay.removeEventListener("mouseenter",onEnter);
+      overlay.removeEventListener("mouseleave",onLeave);
+      window.removeEventListener("keydown",onKD2);
+      window.removeEventListener("keyup",onKU2);
       for(const o of inScene) scene.remove(o);
       for(const [,entry] of plotCache){ for(const o of entry.objs){ o.geometry?.dispose?.(); (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m?.dispose?.()); } }
       plotCache.clear(); inScene.clear();
