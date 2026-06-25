@@ -764,6 +764,25 @@ function texParamSurfScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps,[tex.id]:tex},camId:cam.id,animated:false};
 }
 
+// A lit, NON-textured torus — used by the genus/topology lesson, which only needs
+// a clean torus to point at handles and χ. Coloured by an evaluated RGB field (the
+// material channels this branch keeps), not an image texture.
+function litTorusScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1120,y:120}));cam.label="torus (genus 1)";
+  cam.props.orbRadius="7.5";cam.props.orbTheta="0.7";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="32";
+  const ps=makeNode("paramSpace",{x:380,y:160});ps.label="torus";ps.color="#9b8cff";
+  ps.props.degree="2";
+  ps.props.exprXu="(2+cos(v))*cos(u)";ps.props.exprYu="(2+cos(v))*sin(u)";ps.props.exprZu="sin(v)";
+  ps.props.uMin="0";ps.props.uMax="2*pi";ps.props.vMin="0";ps.props.vMax="2*pi";ps.props.uRes="96";ps.props.vRes="48";
+  ps.props.showWire=false;ps.props.shading="lit";
+  // evaluated RGB colour over (u,v) — a gentle hue sweep around the tube, no texture
+  ps.props.matColorMode="rgb";
+  ps.props.matR="0.5+0.45*sin(u)";ps.props.matG="0.5+0.45*sin(v)";ps.props.matB="0.5+0.45*cos(u+v)";
+  cam.attachments=[ps.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[ps.id]:ps},camId:cam.id,animated:false};
+}
+
 // NORMAL MAP: a flat-ish lit surface carrying a tangent-space normal map. The
 // geometry is nearly planar (a gentle dome) but the embossed pyramid bumps come
 // entirely from the normal texture perturbing the lit normal — no extra polygons.
@@ -1763,6 +1782,7 @@ Object.assign(SCENES, {
   "mat-glow": matGlowScene,
   "tex-surface": texSurfaceScene,
   "tex-paramsurf": texParamSurfScene,
+  "lit-torus": litTorusScene,
   "normal-map": normalMapScene,
   "lights": lightsScene,
   "lights-param": lightsParamScene,
