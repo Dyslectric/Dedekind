@@ -484,6 +484,27 @@ function safeEval(expr, scope, idxContext = false) {
   try { return _toReal(c.evaluate(_shieldConstants(scope, idxContext))); }
   catch { return null; }
 }
+
+// Compile an expression ONCE into a reusable evaluator for hot sampling loops
+// (e.g. plotting thousands of points per frame). safeEval re-derives the compiled
+// form (cache lookup + key-string build) and re-runs the constant shield on every
+// call; across thousands of samples that overhead dominates. makeFastEval hoists
+// all of that out of the loop: it compiles against a representative `sampleScope`
+// (so juxtaposition splitting sees the same known single-letter vars the loop will
+// supply) and returns `(scope) => real|null`. The caller mutates ONE scope object
+// per sample (changing x and leaving the rest) and calls the returned fn — no
+// per-sample compile, no per-sample scope copy. Constants pi/e/i are pre-stripped
+// from the scope keys the caller must not set; callers building their own scope
+// simply never put pi/e/i in it (they resolve to the constants regardless).
+// Returns null if the expression can't compile at all.
+function makeFastEval(expr, sampleScope, idxContext = false) {
+  const c = compileExprScoped(expr, sampleScope || {}, idxContext);
+  if (!c) return null;
+  return (scope) => {
+    try { return _toReal(c.evaluate(scope)); }
+    catch { return null; }
+  };
+}
 function linspace(a, b, n) {
   const r = []; for (let i = 0; i < n; i++) r.push(a + (b-a)*i/(n-1)); return r;
 }
@@ -583,6 +604,6 @@ function derivativeExpr(bodyText, varName) {
 
 export {
   math, parse,
-  uid, PAL, nextColor, compileExpr, compileExprScoped, resolveNum, safeEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr,
+  uid, PAL, nextColor, compileExpr, compileExprScoped, resolveNum, safeEval, makeFastEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr,
   RESERVED_CONSTANTS, _normalizeGreek as normalizeGreek
 };
