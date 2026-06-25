@@ -176,6 +176,16 @@ function Landing({ onOpen, closing }){
                 integrated.</>}
               chips={[["var(--dk-mint)","RK4 stream surface"],["var(--dk-amber)","field quiver"],["var(--dk-mint)","seed line"]]}
               kind="flowsurface" cap="stream surface + field · live" />
+
+            <Feat num="05 — Camera-follow domain" title="A self-similar curve you can zoom into forever"
+              body={<>The graph <span className="dk-mono">y = s·x·sin(2π·log_b|x|)</span> is discretely
+                self-similar: scaling <span className="dk-mono">x</span> by <span className="dk-mono">b</span>
+                shifts the log-sine by exactly one period, so <span className="dk-mono">f(b·x)=b·f(x)</span> and
+                the curve maps onto itself. The transformer's domain <em>follows the 2-D camera</em> — it
+                re-samples the visible x-range every frame as you pan and zoom, so the curve stays at full
+                resolution at any magnification. Scroll to zoom in and the same structure repeats endlessly.</>}
+              chips={[["var(--dk-cyan)","camera-follow domain"],["var(--dk-violet)","self-similar"],["var(--dk-amber)","resolution on demand"]]}
+              kind="self-similar-zoom" cap="self-similar zoom · scroll to zoom in" />
           </div>
         </section>
 

@@ -1506,6 +1506,35 @@ function timesTableScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[N.id]:N,[M.id]:M,[g.id]:g},camId:cam.id,animated:false};
 }
 
+// CAMERA-FOLLOW DOMAIN: y = s·x·sin(2π·log_b|x|) is discretely self-similar —
+// scaling x by b shifts the log-sine by exactly one period, so f(b·x)=b·f(x) and
+// the curve maps onto itself under a zoom by b. The transformer's domain FOLLOWS
+// THE 2-D CAMERA: it re-samples the visible x-range (camRes points) every time you
+// pan or zoom, so the curve stays at full resolution at any magnification. Zoom in
+// and the same structure repeats forever — the point of the feature. b sets the
+// self-similarity ratio; s scales the ±|x| envelope.
+function selfSimilarZoomScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:837,y:317}));cam.label="x·sin(2π·log_b|x|)";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="10";
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;
+  const b=makeNode("slider",{x:-263,y:267});b.name="b";b.label="b · log base";b.value=6.95;
+  b.props.min="1.2";b.props.max="20";b.props.step="0.05";
+  const s=makeNode("slider",{x:-263,y:387});s.name="s";s.label="s · vertical scale";s.value=0.73;
+  s.props.min="0.05";s.props.max="8";s.props.step="0.01";
+  const fn=makeNode("fnMap",{x:97,y:317});fn.label="x·sin(2π·log_b|x|)";fn.color="#7ec8ff";
+  fn.props.inDim="1";fn.props.outDim="1";
+  fn.props.out0="s*x*sin(2*pi*log(abs(x))/log(b))";
+  fn.attachments=[b.id,s.id];
+  const tr=makeNode("transformer",{x:477,y:317});tr.label="graph";tr.color="#7ec8ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.outAxis0="y";
+  tr.props.domainSrc="camera";tr.props.camRes="2000";
+  tr.attachments=[fn.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[b.id]:b,[s.id]:s,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
+
 // Winding number as a lift of the circle. Send t once around with (cos(w t),
 // sin(w t)) and raise the curve by its own t, so it climbs while looping w times
 // around the central axis. That loop count is the winding number, the same integer
@@ -1771,6 +1800,7 @@ Object.assign(SCENES, {
   "curve-rgb": curveRgbScene,
   "teapot": teapotScene,
   "metamorph": metamorphScene,
+  "self-similar-zoom": selfSimilarZoomScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────
