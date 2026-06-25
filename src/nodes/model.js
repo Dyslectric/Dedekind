@@ -243,6 +243,9 @@ function makeNode(type,pos){
     //     spatial axis (the classic y=f(x) / z=f(x,y) graph).
     //   mode "field" — draw the output vector as an arrow at each sample point
     //     (the quiver generalization, 2d→2d / 2d→3d / 3d→3d).
+    //   domainSrc "camera" — (default) a 1->1 graph follows the 2-D camera: it
+    //     samples the visible x-range at camRes points, re-fitting on pan/zoom.
+    //     Higher-dim modes ignore this and use the inline min/max grid.
     //   domainSrc "inline" — min/max per input dim + resolution.
     //   domainSrc "param"  — sample points come from a wired paramSpace.
     transformer:{label:"Transformer",color:"__AUTO__",props:{
@@ -255,7 +258,8 @@ function makeNode(type,pos){
       // field styling
       normalize:true, arrowLen:"0.5",
       // domain
-      domainSrc:"inline",
+      domainSrc:"camera",
+      camRes:"2000",          // sample count across the visible x-range (camera-follow)
       aMin:"-5",aMax:"5",bMin:"-5",bMax:"5",cMin:"-3",cMax:"3",dMin:"-3",dMax:"3",
       res:"60",
       // gradient coloring: when colorMode==="gradient" each vertex gets a scalar

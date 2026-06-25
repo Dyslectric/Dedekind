@@ -195,11 +195,36 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
       <PR label="normalize"><Toggle v={node.props.normalize!==false} onChange={v=>set("normalize",v)}/></PR>
     </Sec>}
     <Sec title="Domain">
-      {[["x0","aMin"],["x1","aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      {inDim>=2&&[["y0","bMin"],["y1","bMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      {inDim>=3&&[["z0","cMin"],["z1","cMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      {inDim>=4&&[["w0","dMin"],["w1","dMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
-      <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
+      {/* A 1→1 graph follows the 2-D camera by default — it samples the visible
+          x-range, so pan/zoom give resolution on demand. Offer a fixed-domain
+          opt-out. (Only meaningful in the 2-D viewport; in 3-D it falls back to
+          the fixed range.) */}
+      {mode==="graph" && inDim===1 ? <>
+        <PR label="x domain">
+          <select value={node.props.domainSrc==="inline"?"inline":"camera"}
+                  onChange={e=>set("domainSrc", e.target.value)} style={{...S.inp,width:"100%"}}>
+            <option value="camera">follow camera (2-D)</option>
+            <option value="inline">fixed range</option>
+          </select>
+        </PR>
+        {node.props.domainSrc==="inline"
+          ? <>
+              {[["x0","aMin"],["x1","aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+              <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
+            </>
+          : <>
+              <PR label="samples"><EI v={node.props.camRes??"2000"} sc={scope} onChange={v=>set("camRes",v)}/></PR>
+              <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
+                The curve samples the visible x-range in the 2-D view, re-fitting as you pan and zoom — so it stays sharp at any magnification. <em>samples</em> is the point count across the window.
+              </div>
+            </>}
+      </> : <>
+        {[["x0","aMin"],["x1","aMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+        {inDim>=2&&[["y0","bMin"],["y1","bMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+        {inDim>=3&&[["z0","cMin"],["z1","cMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+        {inDim>=4&&[["w0","dMin"],["w1","dMax"]].map(([l,k])=><PR key={k} label={l}><EI v={node.props[k]} sc={scope} onChange={v=>set(k,v)}/></PR>)}
+        <PR label="res"><EI v={node.props.res} sc={scope} onChange={v=>set("res",v)}/></PR>
+      </>}
     </Sec>
     {((mode==="graph"&&inDim===2)||mode==="spherical")&&<Sec title="Display">
       <PR label="wireframe"><Toggle v={node.props.showWire!==false} onChange={v=>set("showWire",v)}/></PR>

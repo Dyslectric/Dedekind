@@ -772,10 +772,35 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   }
 
   // ── GRAPH mode ──
-  // 1-input → a projected curve.
+  // 1-input → a projected curve. By default this FOLLOWS THE CAMERA: it samples
+  // over the visible x-range (wxMin..wxMax) so the curve re-fits and re-samples to
+  // whatever's framed — pan/zoom give resolution on demand. domainSrc:"inline"
+  // pins a fixed aMin/aMax instead.
   if(inDim===1){
-    const samples=transformerSamples(tp,paramNode,pscope,1);
-    const pts2d=samples.map(inVec=>{const w=place(inVec,evalOut(inVec)); return isFinite(w[0])&&isFinite(w[1])?w:null;});
+    const samples=transformerSamples(tp,paramNode,pscope,1,{xMin:wxMin,xMax:wxMax});
+    // Robust placement for the "just wire it in" case. A y=f(x) graph wants the
+    // input along screen-horizontal and the output along screen-vertical. The
+    // transformer's default outAxis0 is "z" (correct for a 3-D graph that rises
+    // along world-Z), but in a 2-D view whose plane normal is ~Z that output would
+    // project onto the plane normal and collapse to a flat line. Detect that: if
+    // the output axis direction is nearly parallel to the camera-plane normal,
+    // place the curve directly in plane coordinates (input->U, output->V) so it
+    // reads as a proper graph regardless of the z-vs-y default. An explicit,
+    // non-degenerate outAxis0 (e.g. "y") still flows through the normal path.
+    const outAxisVec=[[1,0,0],[0,1,0],[0,0,1]][outAx[0]] || [0,0,1];
+    const N=fr.N||[0,0,1];
+    const parallelToNormal=Math.abs(outAxisVec[0]*N[0]+outAxisVec[1]*N[1]+outAxisVec[2]*N[2])>0.9;
+    let pts2d;
+    if(parallelToNormal){
+      pts2d=samples.map(inVec=>{
+        const xv=inVec[0]??0, yv=evalOut(inVec)[0]??0;
+        const w=[fr.O[0]+fr.U[0]*xv+fr.V[0]*yv, fr.O[1]+fr.U[1]*xv+fr.V[1]*yv, fr.O[2]+fr.U[2]*xv+fr.V[2]*yv];
+        const p=projectPt(fr,w[0],w[1],w[2]);
+        return isFinite(p[0])&&isFinite(p[1])?p:null;
+      });
+    } else {
+      pts2d=samples.map(inVec=>{const w=place(inVec,evalOut(inVec)); return isFinite(w[0])&&isFinite(w[1])?w:null;});
+    }
     return buildThickLine2D(pts2d, color, px(LINE_PX)/2);
   }
 
@@ -805,7 +830,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
 
 // Sample-point generator shared by the transformer field/graph paths. Mirrors
 // the 3-D sampler but stays modest in 2-D (caps resolution) for performance.
-function transformerSamples(tp,paramNode,pscope,inDim){
+function transformerSamples(tp,paramNode,pscope,inDim,view){
   const samples=[];
   if(tp.domainSrc==="param"&&paramNode){
     const pp=paramNode.props||{};
@@ -820,6 +845,16 @@ function transformerSamples(tp,paramNode,pscope,inDim){
       for(const t of linspace(resolveNum(pp.tMin,pscope,0),resolveNum(pp.tMax,pscope,Math.PI*2),res))
         samples.push([safeEval(pp.exprX,{...pscope,t})??0,safeEval(pp.exprY,{...pscope,t})??0,safeEval(pp.exprZ,{...pscope,t})??0]);
     }
+  } else if(inDim===1 && _followsCamera(tp) && view){
+    // CAMERA-FOLLOW (default for 1→1 graphs): sample over the visible x-range at a
+    // fixed high count, so the curve re-fits and re-samples to whatever the 2-D
+    // camera frames. Panning shifts the interval; zooming shrinks it and packs the
+    // same sample budget into a smaller window — effectively unlimited resolution
+    // on demand. A small margin past each edge keeps the line meeting the viewport
+    // border cleanly while panning. Opt out with domainSrc:"inline".
+    const res=Math.max(2,Math.min(8000,Math.round(resolveNum(tp.camRes,pscope,2000))));
+    const span=view.xMax-view.xMin, m=span*0.02;
+    for(const x of linspace(view.xMin-m,view.xMax+m,res)) samples.push([x,0,0]);
   } else {
     const res=Math.max(2,Math.min(inDim===1?8000:(inDim===2?300:16), Math.round(resolveNum(tp.res,pscope,inDim===1?300:16))));
     const aMin=resolveNum(tp.aMin,pscope,-5),aMax=resolveNum(tp.aMax,pscope,5);
@@ -832,6 +867,13 @@ function transformerSamples(tp,paramNode,pscope,inDim){
     }
   }
   return samples;
+}
+// A 1→1 graph transformer follows the camera by DEFAULT. It only uses a fixed
+// inline domain when explicitly opted out (domainSrc:"inline") or when driven by
+// a wired paramSpace (domainSrc:"param"). Empty/absent domainSrc → follow.
+function _followsCamera(tp){
+  const s=tp.domainSrc;
+  return s!=="inline" && s!=="param";
 }
 
 function build2DGlyphField(np, pscope, color, px, fr){
@@ -986,7 +1028,16 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     // fine scroll step. Other zoom-sized line plots use the fine bucket.
     const COARSE_ZOOM=new Set(["pointSeq","points","point","flow","rawGeom"]);
     const zPart=ZOOM_SIZED.has(t)?`|z${COARSE_ZOOM.has(t)?zoomBucketCoarse:zoomBucket}`:"";
-    const vPart=VIEW_FILLING.has(t)?`|v${viewSig}`:"";
+    // A transformer in graph mode wired to a 1→1 map follows the camera by default
+    // (samples the visible x-range), so it must re-fit on pan/zoom just like fn1d.
+    // Detect that case and fold the view signature in.
+    let camFollowGraph=false;
+    if(rawNode.type==="transformer" && (np.mode==="graph"||!np.mode) && _followsCamera(np)){
+      const fnDep=(rawNode.attachments||[]).map(id=>nodes[id]).find(d=>d&&d.type==="fnMap");
+      const inD=fnDep?Math.round(Number(fnDep.props.inDim||"1")):1;
+      camFollowGraph = inD===1;
+    }
+    const vPart=(VIEW_FILLING.has(t)||camFollowGraph)?`|v${viewSig}`:"";
     const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;
 
     live.add(childId);
