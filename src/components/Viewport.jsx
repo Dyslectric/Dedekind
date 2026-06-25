@@ -4,7 +4,7 @@ import { catOf, isCameraType } from "../core/taxonomy.js";
 import { collectScalarDeps } from "../core/scope.js";
 import { rebuildScene } from "../geometry/rebuild.js";
 import { build2DScene, drawGrid2D, drawLabels2D } from "../render2d/render2d-gpu.js";
-import { disposeObjs, hexToThree, _configureShadowLight } from "../geometry/three-helpers.js";
+import { disposeObjs, hexToThree } from "../geometry/three-helpers.js";
 import { useUI } from "../theme/tokens.jsx";
 import { buildTheme, DEFAULT_THEME } from "../theme/presets.js";
 import { ScalarOverlay } from "./ScalarOverlay.jsx";
@@ -34,13 +34,6 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
   useEffect(() => {
     const el = mountRef.current; if(!el) return;
     const renderer = new THREE.WebGLRenderer({antialias:true});
-    // Hard shadow maps (sharp, cheapest). Objects cast onto each other; no ground
-    // catcher. BasicShadowMap = unfiltered, one sample → crisp edges and the
-    // lowest cost. Only shadow-casting lights (set up in syncThreeLights) and
-    // objects with castShadow/receiveShadow participate, so scenes that don't opt
-    // in pay nothing.
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.BasicShadowMap;
     // Cap the device pixel ratio when a ceiling is supplied (mobile previews pass
     // a low cap). A full-DPR drawing buffer on a phone is the single biggest cost
     // in these GPU previews; clamping it renders fewer fragments per frame for a
@@ -58,13 +51,7 @@ function Viewport3D({ camNode, nodes, scope, projectNode, onCameraChange, animVa
     const scene = new THREE.Scene();
     scene.add(new THREE.AmbientLight(0xffffff,0.55));
     const dl=new THREE.DirectionalLight(0xffffff,0.85);dl.position.set(5,10,7);dl.name="__defaultKey";
-    // The default key light casts shadows so an imported mesh in a scene with no
-    // explicit light nodes still self-shadows. Shadow-camera frustum + bias are
-    // configured by _configureShadowLight (shared with node lights). Its target
-    // must be in the scene graph so its world matrix updates and the shadow camera
-    // aims at the scene origin.
-    _configureShadowLight(dl);
-    scene.add(dl); scene.add(dl.target);
+    scene.add(dl);
     // Orientation. Per-builder code maps math (x,y,z) → three (x, z, y). We want
     // the on-screen frame: math X → RIGHT, math Z → UP, math Y → AWAY from the
     // viewer, i.e. world (x, z, −y) — the standard right-handed math frame

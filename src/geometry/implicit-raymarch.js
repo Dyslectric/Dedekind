@@ -96,12 +96,6 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
       (tp.colorMode==="texture" && tex) ? 5.0 : 0.0 },
     uColorShift:{value: resolveNum(tp.colorShift, scope, 0)},
     uGradScale:{value: 0.5},
-    // analytic self-shadow (off by default → no cost/regression). Enabled via the
-    // surface's shadow toggle, which sets uShadow to 1.
-    uShadow:{value: tp.selfShadow ? 1.0 : 0.0},
-    uShadowBias:{value: resolveNum(tp.shadowBias, scope, 0.03)},   // ray start offset (acne guard)
-    uShadowDark:{value: resolveNum(tp.shadowDark, scope, 0.25)},   // shadowed diffuse multiplier
-    uShadowReach:{value: resolveNum(tp.shadowReach, scope, 6.0)},  // directional ray max distance
   };
   const hasTex = !!tex, hasNorm = !!ntex, uvAny = hasTex || hasNorm;
   // one tile scale for all three projection planes; reuse the UV-tile control
@@ -164,10 +158,6 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
     uniform float uColorMode;  // 0 flat|1 depth|2 gradient|3 normal|4 iridescent
     uniform float uColorShift; // hue offset (animated over time in iridescent mode)
     uniform float uGradScale;  // gradient-mode: log-compression scale
-    uniform float uShadow;      // 0 off | 1 on — analytic self-shadow
-    uniform float uShadowBias;  // start offset of the shadow ray (acne guard)
-    uniform float uShadowDark;  // shadowed diffuse multiplier (0 = black, 1 = none)
-    uniform float uShadowReach;  // directional shadow ray max distance (math units)
     ${uniDecls}
     ${uvAny ? "uniform float uTriScale;" : ""}
     ${hasTex ? "uniform sampler2D uTex;" : ""}
@@ -259,51 +249,6 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
     vec3 iridescence(float h){
       vec3 a = vec3(0.5), b = vec3(0.5), c = vec3(1.0), d = vec3(0.00,0.33,0.67);
       return a + b*cos(6.28318*(c*h + d));
-    }
-    // ── Analytic self-shadow ──────────────────────────────────────────────────
-    // Implicit surfaces have no shadow map; instead we march a secondary ray from
-    // the (offset) hit point toward the light through the SAME field. The field F
-    // isn't a true signed distance, so instead of looking only for a sign flip we
-    // use the first-order distance estimate d ≈ |F| / |∇F| (how far the surface is
-    // along the field's steepest direction) to both (a) take adaptive steps and
-    // (b) build a SOFT shadow: the closer the ray passes to the surface, the more
-    // it's occluded (penumbra), in the style of Quilez soft shadows. This avoids
-    // the harsh aliased edges and missed thin features of fixed-step sign testing.
-    // Returns 1.0 fully lit → uShadowDark fully occluded. Gated by uShadow.
-    // dirW is the normalized WORLD direction toward the light; maxT caps the march
-    // (distance to a point light; uShadowReach for directional).
-    float shadowFactor(vec3 pW, vec3 nW, vec3 dirW, float maxT){
-      if(uShadow < 0.5) return 1.0;
-      // start off the surface along the normal + light dir (acne guard)
-      vec3  p0 = pW + nW*uShadowBias;
-      float t  = uShadowBias;
-      float occ = 1.0;                 // 1 = lit; driven toward 0 as the ray grazes
-      float k   = 12.0;                // penumbra hardness (higher = sharper)
-      float hMax = max(maxT, 1e-3);
-      const int SH_STEPS = 40;
-      float fPrev = sampleF(p0);
-      for(int i=0;i<SH_STEPS;i++){
-        vec3 sp = p0 + dirW*t;
-        float f = sampleF(sp);
-        // a sign flip means the ray is crossing the solid → hard occlusion
-        if(f*fPrev < 0.0) return uShadowDark;
-        fPrev = f;
-        // distance estimate to the surface at this sample (|F|/|∇F|), with the
-        // gradient from the same central-difference helper used for shading.
-        vec3 g = gradM(sp, vec3(0.5*hMax/float(SH_STEPS)));
-        float gl = max(length(g), 1e-4);
-        float d = abs(f) / gl;
-        // soft penumbra: closeness scaled by distance along the ray (Quilez)
-        occ = min(occ, k*d/max(t,1e-3));
-        // adaptive step — at least a small floor so we always progress
-        float stepLen = clamp(d, hMax/float(SH_STEPS), hMax*0.25);
-        t += stepLen;
-        if(t > maxT) break;
-      }
-      occ = clamp(occ, 0.0, 1.0);
-      // map [0..1] lit-fraction onto [uShadowDark..1] so the control reads as
-      // "shadowed brightness": occ=1 → 1 (lit), occ=0 → uShadowDark (deep shadow).
-      return mix(uShadowDark, 1.0, occ);
     }
     void main(){
       vec3 ro = cameraPosition;
@@ -478,15 +423,12 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
       ${sceneLights.map((lt,i)=> lt.kind==="point"
         ? `{ vec3 _d=uL${i}Pos-pHit; float _r2=dot(_d,_d); vec3 L=_d*inversesqrt(max(_r2,1e-12));
           float _att=1.0/(1.0+uL${i}Fall*_r2);
-          float _sh=shadowFactor(pHit, nrm, L, sqrt(max(_r2,1e-12)));
-          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_att*_sh; }`
-        : `{ vec3 L=normalize(uL${i}Dir); float _sh=shadowFactor(pHit, nrm, L, uShadowReach);
-          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_sh; }`).join("\n      ")}
+          col += base*uL${i}Col*(0.85*abs(dot(nrm,L)))*_att; }`
+        : `{ vec3 L=normalize(uL${i}Dir); col += base*uL${i}Col*(0.85*abs(dot(nrm,L))); }`).join("\n      ")}
       ` : `
       vec3 L = normalize(vec3(0.4,0.9,0.5));
       float diff = 0.5 + 0.5*abs(dot(nrm, L));
-      float _sh = shadowFactor(pHit, nrm, L, uShadowReach);
-      vec3 col = base*diff*_sh;
+      vec3 col = base*diff;
       `}
       col = mix(col, col*0.35, seam);            // seam darkening
       gl_FragColor = vec4(col, 1.0);
@@ -503,14 +445,6 @@ function buildImplicitRaymarch(tp, eqNode, scope, color, resolveNum, tex=null, n
   mat.extensions = { fragDepth:true };
   const mesh=new THREE.Mesh(geo, mat);
   mesh.frustumCulled=false;
-  // The raymarch mesh's GEOMETRY is just the bounding box; the real surface only
-  // exists in the fragment shader (which the shadow depth pass doesn't run). So
-  // letting it cast would throw a box-shaped shadow — the "bugged" implicit
-  // shadow. Disable casting here. (Self-shadowing of the implicit is handled
-  // analytically by shadowFactor() in the shader; casting the true implicit shape
-  // ONTO other objects would need a raymarching custom depth material — deferred.)
-  mesh._castShadow = false;
-  mesh._receiveShadow = false;   // a screen-space raymarch can't receive a shadow map either
   mesh._gpuSurface = { uNames: freeUniforms, uPrefix: GLSL_UNIFORM_PREFIX, lights: sceneLights };  // updateGpuUniforms animates sliders + lights live
   mesh._raymarch = true;
   // The fragment shader needs the live projection matrix (which three doesn't pass

@@ -166,15 +166,6 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
       u.value.getNormalMatrix(_normMV);
     };
   }
-  // Shadow casting: the fill material builds a matching custom depth material for
-  // any non-wireframe surface (lit or not — see makeSurfaceShader), so the shadow
-  // map renders the surface's REAL displaced shape. Attach it and opt the mesh
-  // into casting. _applyShadowDefaults reads _castShadow when the object is added.
-  if(matFill._depthMat){
-    mesh.customDepthMaterial = matFill._depthMat;
-    mesh._castShadow = true;
-    mesh._receiveShadow = false;   // receive on custom GPU shaders deferred
-  }
   // The grid is a unit [0,1]² plane displaced to the real domain in the vertex
   // shader, so three.js's CPU-side bounding volume (a tiny 1×1 patch) does NOT
   // reflect where the surface actually is. Without disabling frustum culling the
@@ -194,7 +185,6 @@ function assembleSurfGPU(bodyP, uNames, scope, color, ures, vres, showWire, colo
   const wire = new THREE.Mesh(geo, matWire);
   wire.frustumCulled = false;
   wire._sharedGeometry = true;
-  wire._castShadow = false;   // the wireframe overlay is just edges; never casts
   wire._gpuSurface = { uNames, domain: domain||null, uPrefix: GLSL_UNIFORM_PREFIX };
   return [mesh, wire];
 }
@@ -1048,13 +1038,6 @@ function buildMesh3d(p, scope, color){
         shininess:resolveNum(p.shininess,scope,36), flatShading:p.flatShading===true})
     : new THREE.MeshBasicMaterial({color:c3, side, transparent, opacity});
   const mesh=new THREE.Mesh(geo,mat);
-  // Hard shadows (per-object toggles, default on). A mesh casts unless turned
-  // off. Receiving needs a lit material (MeshBasic has no lighting to darken),
-  // and a fully-transparent/low-opacity mesh shadows poorly, so only an opaque
-  // lit mesh receives. Casting works for both lit and unlit opaque meshes. These
-  // are read by _applyShadowDefaults when the object is added to the scene.
-  mesh._castShadow = (p.castShadow!==false) && !transparent;
-  mesh._receiveShadow = (p.receiveShadow!==false) && lit && !transparent;
   if(p.showWire!==true) return [mesh];
   const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geo),
     new THREE.LineBasicMaterial({color:c3,transparent:true,opacity:0.3}));

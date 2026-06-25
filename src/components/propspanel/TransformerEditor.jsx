@@ -68,15 +68,6 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
           })()}
           {" Applies to GPU-rendered implicit surfaces."}
         </div>
-        <PR label="self-shadow"><Toggle v={node.props.selfShadow===true} onChange={v=>set("selfShadow",v)}/></PR>
-        {node.props.selfShadow===true && <>
-          <PR label="darkness"><EI v={node.props.shadowDark??"0.25"} sc={scope} onChange={v=>set("shadowDark",v)} placeholder="0.25"/></PR>
-          <PR label="reach"><EI v={node.props.shadowReach??"6"} sc={scope} onChange={v=>set("shadowReach",v)} placeholder="6"/></PR>
-          <PR label="bias"><EI v={node.props.shadowBias??"0.03"} sc={scope} onChange={v=>set("shadowBias",v)} placeholder="0.03"/></PR>
-          <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-            Marches a ray toward each light through the field — the surface shadows itself. <em>darkness</em> 0 = black, 1 = none; <em>reach</em> caps the ray length (math units); <em>bias</em> offsets the ray start to avoid speckling.
-          </div>
-        </>}
       </Sec>}
     </>;
   }

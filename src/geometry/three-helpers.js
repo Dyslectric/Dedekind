@@ -9,41 +9,7 @@ function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(
 // Screen-space fat-line curves (tagged `_unmirroredWorld`) break under that
 // negative-determinant matrix, so they go to an unmirrored sibling group
 // (world._unmirrored) and carry their own baked-in world coords.
-// Apply sensible default shadow flags to a plot object as it's added, by
-// material type. Built-in lit materials (Phong/Lambert/Standard) cast and
-// receive automatically once flagged; an opaque-enough surface does both, a
-// very translucent one neither (translucent shadows look wrong). Custom
-// ShaderMaterial surfaces opt in separately (they carry _castShadow/_receiveShadow
-// set by their builder, since three.js can't shadow them without a custom depth
-// material + injected receive code). Lines/points/wireframes never receive; thin
-// wireframes don't cast. A builder that already set the flags (e.g. mesh with
-// per-object toggles) is respected — we only fill in unset defaults.
-function _applyShadowDefaults(o){
-  if(!o || o._shadowFlagged) return;
-  o._shadowFlagged = true;
-  const mat = Array.isArray(o.material) ? o.material[0] : o.material;
-  if(!mat) return;
-  const before = o.receiveShadow;
-  // explicit opt-in/out from a builder wins
-  if(o._castShadow!==undefined) o.castShadow = !!o._castShadow;
-  if(o._receiveShadow!==undefined){ o.receiveShadow = !!o._receiveShadow; if(o.receiveShadow!==before) mat.needsUpdate=true; return; }
-  const lit = mat.isMeshPhongMaterial || mat.isMeshStandardMaterial || mat.isMeshLambertMaterial;
-  const isLine = o.isLine || o.isLineSegments || o.isLine2;
-  const opaqueEnough = !(mat.transparent && (mat.opacity!==undefined && mat.opacity<0.5));
-  if(isLine){ if(o._castShadow===undefined) o.castShadow=false; o.receiveShadow=false; return; }
-  if(lit){
-    if(o._castShadow===undefined) o.castShadow = opaqueEnough;
-    o.receiveShadow = opaqueEnough;
-  } else {
-    // unlit (MeshBasic) or wireframe: can cast if opaque, never receives
-    if(o._castShadow===undefined) o.castShadow = opaqueEnough && !mat.wireframe;
-    o.receiveShadow = false;
-  }
-  // A material only gains shadow-map sampling code when it's (re)compiled; if we
-  // just turned receiveShadow on for an already-built material, force that.
-  if(o.receiveShadow!==before) mat.needsUpdate = true;
-}
-function addPlotObj(world,o){ _applyShadowDefaults(o); (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
+function addPlotObj(world,o){ (o._unmirroredWorld && world._unmirrored ? world._unmirrored : world).add(o); }
 function hexToThree(hex){return parseInt((hex||"#4f8ef7").replace("#",""),16);}
 // Light positions/directions are authored in MATH coords (z up); the rest of the
 // scene maps math (x,y,z) → three (x,z,y). Swap when sending a light to the GPU.
@@ -339,51 +305,6 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   mat._uniformNames = uniformNames;
   mat._uPrefix = uPrefix;
   mat._lit = lit;   // assembleSurfGPU keys the per-frame normal-matrix update on this
-
-  // ── Shadow CASTING (custom depth material) ────────────────────────────────
-  // three.js renders the shadow map with a depth material that, by default, uses
-  // the UNDISPLACED grid positions — so a surface that's displaced in its vertex
-  // shader would cast a flat-square shadow instead of its real shape. We give it
-  // a matching depth material that runs the SAME mathPos() displacement, so the
-  // shadow silhouette matches the rendered surface.
-  //
-  // Casting is independent of LIT shading: writing depth only needs the
-  // displacement (body), which every surface has. So a parametric surface that
-  // isn't lit-shaded still casts (the earlier gate on `lit` was the reason param
-  // surfaces didn't cast). The wireframe pass never casts (it's just edges), and
-  // a fully see-through surface shouldn't throw a hard shadow — but the default
-  // unlit surface (alpha ~0.82) is solid enough to read as an occluder, so we
-  // cast for everything except the wireframe overlay. The mesh's _castShadow is
-  // still a per-object toggle upstream.
-  if(!wireframe){
-    // RGBA-packed depth (three's standard for non-VSM shadow maps). Reuses the
-    // surface's displacement uniforms so an animated/displaced surface's shadow
-    // tracks it. vOk guards NaN/blown-up regions out of the shadow too.
-    const depthFrag = `
-      precision highp float;
-      varying float vOkD;
-      #include <packing>
-      void main(){
-        if(vOkD < 0.5) discard;
-        gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
-      }`;
-    const depthVert = `
-      ${decls}
-      varying float vOkD;
-      vec3 mathPosD(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return vec3(P.x, P.z, P.y); }
-      void main(){
-        vec3 p = mathPosD(position.xy);
-        vOkD = (abs(p.x)<1e6 && abs(p.y)<1e6 && abs(p.z)<1e6) ? 1.0 : 0.0;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0);
-      }`;
-    const depthMat = new THREE.ShaderMaterial({
-      uniforms,                       // SHARED uniforms → displacement stays in sync
-      vertexShader: depthVert,
-      fragmentShader: depthFrag,
-      side: THREE.DoubleSide,
-    });
-    mat._depthMat = depthMat;         // assembleSurfGPU attaches it to the mesh + opts the mesh into casting
-  }
   return mat;
 }
 
@@ -433,45 +354,6 @@ function updateGpuUniforms(objs, scope){
 // the same mapping the surface shader's light uniforms use. The scene's default
 // key light (tagged "__defaultKey") is hidden whenever node lights are present, so
 // node lighting fully takes over (matching the surface shader's behaviour).
-// Configure a light to cast hard shadows. Shared by the viewport's default key
-// light and the node-driven lights (syncThreeLights). The scene lives roughly
-// within the axis triad (±4) plus typical plot extents, so a directional
-// light's orthographic shadow frustum is sized to comfortably cover that; a
-// point light uses a perspective shadow camera with a wide range.
-//
-// The world group has scale.z = -1 (the math→screen mirror). A negative-
-// determinant transform flips face winding, which makes front/back faces swap
-// for the shadow depth pass and is the classic cause of shadow acne / peter-
-// panning here. We lean on a modest normalBias (offsets the shadow lookup along
-// the surface normal, robust under the flip) plus a small constant bias, and a
-// reasonably high-res map so hard-edged shadows stay crisp rather than blocky.
-// How far back a directional light is placed along its direction so its
-// orthographic shadow camera frames the whole scene (the light only needs a
-// direction, but three derives that from position→target, and a light sitting at
-// the scene centre can't cast a useful shadow map).
-const SHADOW_LIGHT_DIST = 30;
-function _configureShadowLight(L){
-  if(!L) return;
-  L.castShadow = true;
-  const s = L.shadow;
-  if(!s) return;
-  s.mapSize.set(2048, 2048);
-  s.bias = -0.0005;
-  s.normalBias = 0.02;
-  const cam = s.camera;
-  if(cam){
-    if(cam.isOrthographicCamera){
-      const R = 8;                        // half-extent of the shadow frustum
-      cam.left=-R; cam.right=R; cam.top=R; cam.bottom=-R;
-      cam.near=0.1; cam.far=60;
-    } else {
-      // point-light perspective shadow camera
-      cam.near=0.1; cam.far=60;
-    }
-    cam.updateProjectionMatrix();
-  }
-}
-
 function syncThreeLights(root, lights){
   if(!root) return;
   const want = lights || [];
@@ -487,7 +369,6 @@ function syncThreeLights(root, lights){
       let L;
       if(d.kind==="point"){ L=new THREE.PointLight(0xffffff,1,0,0); }   // decay 0 → predictable, distance-independent
       else { L=new THREE.DirectionalLight(0xffffff,1); rig.add(L.target); }
-      _configureShadowLight(L);            // hard shadow casting + frustum/bias
       L.__kind=d.kind; rig.add(L); return L;
     });
   }
@@ -496,22 +377,10 @@ function syncThreeLights(root, lights){
     L.color.setHex(hexToThree(d.colorHex||"#ffffff"));
     L.intensity = Math.max(0, d.intensity ?? 1);
     if(d.kind==="point") L.position.set(d.posX, d.posZ, d.posY);          // math (x,y,z) → (x,z,y)
-    else {
-      // A directional light's DIRECTION is (dirX,dirY,dirZ); three derives the
-      // light direction from position→target. Placing the light AT the unit
-      // direction vector (≈1 unit from origin) puts the shadow camera right at the
-      // scene centre, so its near/far range clips most of the scene and shadows
-      // vanish. Push the light far back along its direction (target stays at the
-      // origin) so the orthographic shadow frustum looks across the whole scene.
-      const dir=_lightVec(d.dirX, d.dirY, d.dirZ);   // math→three (x,z,y)
-      if(dir.lengthSq()<1e-9) dir.set(0.4,0.9,0.5);
-      dir.normalize().multiplyScalar(SHADOW_LIGHT_DIST);
-      L.position.copy(dir);
-      if(L.target){ L.target.position.set(0,0,0); L.target.updateMatrixWorld(); }
-    }
+    else { L.position.set(d.dirX, d.dirZ, d.dirY); if(L.target) L.target.position.set(0,0,0); }  // direction toward the light
   }
 }
 
 export {
-  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights, setLightUniforms, _configureShadowLight
+  disposeObjs, addPlotObj, hexToThree, makeSurfaceShader, updateGpuUniforms, syncThreeLights, setLightUniforms
 };

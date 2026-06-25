@@ -118,8 +118,6 @@ export function MeshEditor({ node, scope, onChange }){
       <PR label="opacity"><EI v={node.props.opacity??"1"} sc={scope} onChange={v=>set("opacity",v)} placeholder="1"/></PR>
       <PR label="2-sided"><Toggle v={node.props.doubleSide!==false} onChange={v=>set("doubleSide",v)}/></PR>
       <PR label="wire"><Toggle v={node.props.showWire===true} onChange={v=>set("showWire",v)}/></PR>
-      <PR label="cast shadow"><Toggle v={node.props.castShadow!==false} onChange={v=>set("castShadow",v)}/></PR>
-      {node.props.lit!==false && <PR label="receive shadow"><Toggle v={node.props.receiveShadow!==false} onChange={v=>set("receiveShadow",v)}/></PR>}
       <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:4,lineHeight:1.5}}>
         Set <em>lit</em> and wire <strong>lights</strong> into the camera to shade the mesh; otherwise it draws flat in the node colour. Coordinates are math space (z up) — external files (y up) are converted on import.
       </div>
