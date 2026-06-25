@@ -678,7 +678,8 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   // shield safeEval would otherwise run per call).
   const _evalScope = {};
   for(const k in pscope){ if(k!=="pi"&&k!=="e"&&k!=="i") _evalScope[k]=pscope[k]; }
-  const _compiledOuts = outs.map(e=>makeFastEval(e, {..._evalScope, x:0, y:0, z:0, w:0}));
+  const _field = fnNode.props.field || "real";
+  const _compiledOuts = outs.map(e=>makeFastEval(e, {..._evalScope, x:0, y:0, z:0, w:0}, false, _field));
   const evalOut=(inVec)=>{
     _evalScope.x=inVec[0]??0; _evalScope.y=inVec[1]??0; _evalScope.z=inVec[2]??0; _evalScope.w=inVec[3]??0;
     const r=new Array(outDim);

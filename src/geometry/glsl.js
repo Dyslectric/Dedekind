@@ -195,7 +195,12 @@ function _glslPow(a, b, bNode){
 // argument ASTs) so composed surfaces (built from helper functions) can ride the
 // GPU path instead of falling back to CPU. Recursion is depth/cycle guarded.
 // Returns GLSL string or null.
-function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
+function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null, field=undefined){
+  // When the expression's field treats `i` as the imaginary unit, it can't go to
+  // GLSL (no complex on the GPU) and any use of `i` rejects → CPU fallback. When
+  // the field frees `i` (real), `i` is an ordinary symbol the transpiler handles
+  // like any other variable/uniform. Default (no field) is real.
+  const iImaginary = field === "complex";
   // Normalize Greek glyphs to ASCII so π/τ/φ transpile as the constants, matching
   // the CPU path (core/math.js normalizeGreek). Kept inline to avoid importing
   // math.js into the shader layer.
@@ -227,11 +232,12 @@ function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null){
       case "ParenthesisNode": { const c=walk(node.content, depth); return c==null?null:"("+c+")"; }
       case "SymbolNode": {
         if(vars.has(node.name)) return node.name;
-        // `i` is the imaginary unit — GLSL has no complex numbers, so any
-        // expression that actually references it cannot transpile. Returning
-        // null makes the caller fall back to the (complex-correct) CPU path
-        // instead of silently emitting a wrong real-valued uniform named "i".
-        if(node.name==="i") return null;
+        // `i` is the imaginary unit (complex field only) — GLSL has no complex
+        // numbers, so any expression that references it cannot transpile.
+        // Returning null makes the caller fall back to the (complex-correct) CPU
+        // path. In a real field `i` is an ordinary symbol and falls through to the
+        // uniform/builtin handling below.
+        if(node.name==="i" && iImaginary) return null;
         if(_GLSL_CONST[node.name]) return _GLSL_CONST[node.name];
         // a free scalar (slider/animator/constant) → uniform. Collect the original
         // name (scope is keyed on it) but EMIT a prefixed identifier so it can't

@@ -26,15 +26,17 @@ function fnSpec(fnNode){
   const inDim=Math.max(1,Math.min(3,Math.round(Number(p.inDim))||1));
   const outDim=Math.max(1,Math.min(4,Math.round(Number(p.outDim))||1));
   const outs=[p.out0,p.out1,p.out2,p.out3].slice(0,outDim).map(e=>e||"0");
-  return { inDim, outDim, outs };
+  const field=p.field||"real";
+  return { inDim, outDim, outs, field };
 }
 function clampDim(v,d){ const n=Math.round(Number(v)); return isFinite(n)?Math.max(1,Math.min(4,n)):d; }
 
 // Evaluate the map at an input vector [x,y,z,w] (only first inDim used). The
-// canonical input symbols are x,y,z,w; outputs may be up to four scalars.
-function evalMap(outs, scope, inVec){
+// canonical input symbols are x,y,z,w; outputs may be up to four scalars. The
+// map's field (real/complex) controls how `i` reads and how results coerce.
+function evalMap(outs, scope, inVec, field){
   const sc={...scope, x:inVec[0]??0, y:inVec[1]??0, z:inVec[2]??0, w:inVec[3]??0};
-  const r=[]; for(const e of outs){ const v=safeEval(e,sc); r.push(v==null||!isFinite(v)?0:v); }
+  const r=[]; for(const e of outs){ const v=safeEval(e,sc,false,field); r.push(v==null||!isFinite(v)?0:v); }
   return r;
 }
 
@@ -227,7 +229,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
   }
 
   if(!fnNode) return [];
-  const { inDim, outDim, outs } = fnSpec(fnNode);
+  const { inDim, outDim, outs, field } = fnSpec(fnNode);
   const dom = sampleDomain(tp, scope, inDim, paramNode);
   if(!dom.pts.length) return [];
 
@@ -251,7 +253,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     const pairs=[]; const cvals=useColor?[]:null;
     for(let s=0;s<dom.pts.length;s++){
       const inVec=dom.pts[s];
-      const outVec=evalMap(outs,scope,inVec);
+      const outVec=evalMap(outs,scope,inVec,field);
       const posM=[0,0,0], vecM=[0,0,0];
       for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) posM[ax]=inVec[k]??0; }
       for(let k=0;k<outDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
@@ -272,7 +274,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     const pts=new Array(n); const vals=gradientP?new Array(n):null;
     for(let i=0;i<n;i++){
       const inVec=dom.pts[i];
-      const outVec=evalMap(outs,scope,inVec);
+      const outVec=evalMap(outs,scope,inVec,field);
       const th=inVec[0]??0, r=outVec[0]??0;
       // math order [X,Y,Z]; buildCurve3d applies the world swap itself
       pts[i]=[r*Math.cos(th), r*Math.sin(th), 0];
@@ -300,7 +302,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       const row=[], crow=gradientS?[]:null;
       for(let i=0;i<nu;i++){
         const inVec=dom.pts[idx++];
-        const outVec=evalMap(outs,scope,inVec);
+        const outVec=evalMap(outs,scope,inVec,field);
         const th=inVec[0]??0, ph=inVec[1]??0, r=outVec[0]??0;
         const sp=Math.sin(ph);
         row.push([r*sp*Math.cos(th), r*sp*Math.sin(th), r*Math.cos(ph)]);
@@ -325,7 +327,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     const pts=new Array(n); const vals=gradient?new Array(n):null;
     for(let i=0;i<n;i++){
       const inVec=dom.pts[i];
-      const outVec=evalMap(outs,scope,inVec);
+      const outVec=evalMap(outs,scope,inVec,field);
       pts[i]=placeGraph(tp,inVec,outVec,inDim,outDim);
       if(gradient) vals[i]=colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i);
     }
@@ -363,7 +365,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       const row=[], crow=surfGradient?[]:null;
       for(let i=0;i<nu;i++){
         const inVec=dom.pts[idx++];
-        const outVec=evalMap(outs,scope,inVec);
+        const outVec=evalMap(outs,scope,inVec,field);
         row.push(placeGraph(tp,inVec,outVec,inDim,outDim));
         if(surfGradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
       }
@@ -380,7 +382,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
   const positions=[]; const svals=gradient?[]:null;
   for(let i=0;i<dom.pts.length;i++){
     const inVec=dom.pts[i];
-    const outVec=evalMap(outs,scope,inVec);
+    const outVec=evalMap(outs,scope,inVec,field);
     positions.push(toWorld(placeGraph(tp,inVec,outVec,inDim,outDim)));
     if(gradient) svals.push(colorScalar(tp,scope,inVec,outVec,0,i));
   }

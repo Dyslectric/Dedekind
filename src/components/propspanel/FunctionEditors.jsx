@@ -2,6 +2,7 @@ import { useUI } from "../../theme/tokens.jsx";
 import { TYPE_META } from "../../nodes/model.js";
 import { EI, XF, NameField } from "../MathInput.jsx";
 import { Sec, PR, Toggle, ColorRow } from "../primitives.jsx";
+import { exprTypeList } from "../../core/math.js";
 
 // fnMap — a pure map real^m → real^n. Does not plot on its own; it is wired
 // into a Transformer.
@@ -28,8 +29,13 @@ export function FnMapEditor({ node, scope, onChange }){
           <option value="4">4 — four components</option>
         </select>
       </PR>
+      <PR label="field">
+        <select value={node.props.field||"real"} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
+          {exprTypeList().map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+        </select>
+      </PR>
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        A pure map from {inDim} input{inDim>1?"s":""} to {outDim} output{outDim>1?"s":""}, in the variables <em>{inVars}</em>. It does not plot on its own — wire it into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong> to render it as a function plot or a vector field, where each output can be bound to a spatial axis or to color.
+        A pure map from {inDim} input{inDim>1?"s":""} to {outDim} output{outDim>1?"s":""}, in the variables <em>{inVars}</em>. The <strong>field</strong> sets the scalar domain of the outputs: in <em>ℝ</em>, <code style={{fontFamily:"monospace"}}>i</code> is a free variable; in <em>ℂ</em>, <code style={{fontFamily:"monospace"}}>i</code> is the imaginary unit and a result is plotted by its real part when it&rsquo;s (near-)real. It does not plot on its own — wire it into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong> to render it as a function plot or a vector field, where each output can be bound to a spatial axis or to color.
       </div>
     </Sec>
     <Sec title={`Components ( in ${inVars} )`}>

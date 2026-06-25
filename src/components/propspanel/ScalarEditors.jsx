@@ -1,5 +1,5 @@
 import { useUI } from "../../theme/tokens.jsx";
-import { resolveNum, evalArray } from "../../core/math.js";
+import { resolveNum, evalArray, exprTypeList } from "../../core/math.js";
 import { resolveScope } from "../../core/scope.js";
 import { EI, XF } from "../MathInput.jsx";
 import { Sec, PR } from "../primitives.jsx";
@@ -105,13 +105,37 @@ export function AnimatorEditor({ node, scope, onChange, meta, metaTc, liveAnimVa
 }
 
 export function FnDefEditor({ node, scope, onChange }){
-  const{ui}=useUI();
+  const{ui,S}=useUI();
+  const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
+  const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
+  const paramFields=(node.props.paramFields||"").split(",").map(s=>s.trim());
+  const types=exprTypeList();
+  // set the field for parameter index k, keeping the comma-list aligned to params
+  const setParamField=(k,v)=>{
+    const arr=params.map((_,j)=> j===k ? v : (paramFields[j]||"real"));
+    set("paramFields", arr.join(","));
+  };
   return <Sec title="Definition">
     <PR label="params"><EI v={node.props.params||"x"} sc={scope} onChange={v=>onChange({props:{...node.props,params:v}})}/></PR>
+    {/* Per-parameter field type. Each parameter is an element of a field (ℝ/ℂ,
+        vectors later); this declares the domain a caller should supply. */}
+    {params.map((p,k)=>(
+      <PR key={"pf"+k} label={`${p} : field`}>
+        <select value={paramFields[k]||"real"} onChange={e=>setParamField(k,e.target.value)} style={{...S.inp,width:"100%"}}>
+          {types.map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+        </select>
+      </PR>
+    ))}
     <PR label={`${node.name||"f"}(…) =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
+    {/* Output scalar field — drives how `i` reads in the body and how the result
+        is coerced when the function is used. */}
+    <PR label="output : field">
+      <select value={node.props.outField||"real"} onChange={e=>set("outField",e.target.value)} style={{...S.inp,width:"100%"}}>
+        {types.map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+      </select>
+    </PR>
     <div style={{marginTop:8,padding:"7px 9px",background:ui.uiInputBg,borderRadius:4,border:`1px solid ${ui.uiInputBorder}`,fontSize:14,color:ui.uiGood,fontFamily:"monospace",lineHeight:1.9}}>
       {(()=>{
-        const params=(node.props.params||"x").split(",").map(s=>s.trim()).filter(Boolean);
         const fn=scope[node.name];
         if(!fn||typeof fn!=="function")return<span style={{color:ui.uiMuted}}>set a variable name above</span>;
         const samples=params.length<=1?[[0],[1],[2],[5],[10]]:[[0,0],[1,1],[2,3],[3,4]];

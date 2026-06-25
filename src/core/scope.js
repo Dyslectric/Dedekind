@@ -157,7 +157,7 @@ function resolveNodeValue(node, nodes, animVals, building){
       // time via makeFn's captured scope object). We pass a snapshot built now;
       // makeFn keeps a reference, and the values are frame-stable within a build.
       const fnScope=ownScope(node.id,nodes,animVals,building);
-      return makeFn(node.name, params, node.props.expr, fnScope);
+      return makeFn(node.name, params, node.props.expr, fnScope, node.props.outField||"real");
     }
     default: return undefined;
   }
@@ -337,7 +337,7 @@ function plotSignature(node, p, scope, nodes, animVals){
     for(const depId of (node.attachments||[])){
       const dep=nodes[depId]; if(!dep) continue;
       if(dep.type==="texture"||dep.type==="video"){ texSig+=`${dep.type}|${dep.props?.role||"color"}|${dep.props?.src||""}|${dep.props?.filter||""}|${dep.props?.wrap||""};`; }
-      else if(dep.type==="fnMap"){ fnMapNode=dep; fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
+      else if(dep.type==="fnMap"){ fnMapNode=dep; fnSig=`${dep.props.inDim}|${dep.props.outDim}|${dep.props.field||"real"}|${dep.props.out0}|${dep.props.out1}|${dep.props.out2}|${dep.props.out3}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="equation"){ eqDeps.push(dep); structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="paramSpace"){ hasParam=true; const q=dep.props; paramSig=`${q.degree}|${q.exprX}|${q.exprY}|${q.exprZ}|${q.exprXu}|${q.exprYu}|${q.exprZu}|${q.tMin}|${q.tMax}|${q.res}|${q.uMin}|${q.uMax}|${q.vMin}|${q.vMax}|${q.uRes}|${q.vRes}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
       else if(dep.type==="points"){ hasPoints=true; const q=dep.props; paramSig=`pts|${q.kind}|${q.mode}|${q.listPoints}|${q.idxPoint}|${q.idxCount}|${q.recInit}|${q.recStep}|${q.recCount}|${q.listGlyphs}|${q.idxGlyph}|${q.idxGlyphCount}|${q.recGlyphInit}|${q.recGlyphStep}|${q.recGlyphCount}`; structScopes.push(resolveScope(dep.id,nodes,animV)); }
@@ -363,8 +363,12 @@ function plotSignature(node, p, scope, nodes, animVals){
     // colouring pattern) renders via the GPU graph path when its expressions
     // transpile; then its position/colour scalars are live uniforms. Gated to this
     // pattern so the CPU-sampled 2-D graph transformers (curves) are untouched.
+    // A complex (or any non-real) fnMap can't ride the GPU graph path — GLSL has
+    // no complex numbers — so it stays on the CPU evaluator, which handles the
+    // field correctly. Only real maps are eligible for transpilation.
+    const fnFieldReal = !fnMapNode || (fnMapNode.props.field||"real")==="real";
     const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
-      && p.shading==="lit" && p.matColorMode==="rgb"
+      && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal
       && graphTranspiles(p, fnMapNode, sigScope);
     pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU,__fnDefSig:fnTableSig(fnTableFromScope(sigScope))};
   }
@@ -425,7 +429,7 @@ function scopeSig(node, scope){
         if(seenFns.has(fnKey)) continue;
         seenFns.add(fnKey);
         // Definition signature: body change ⇒ different signature ⇒ rebuild.
-        parts.push(k+"@="+(v._fnParams||[]).join(",")+"=>"+v._fnExpr);
+        parts.push(k+"@="+(v._fnParams||[]).join(",")+"=>"+v._fnExpr+":"+(v._fnOutField||"real"));
         // Recurse into the function body using the scope it closed over, so the
         // scalars/functions IT depends on also enter the caller's signature.
         // A parameter shadows any same-named outer scalar inside the body, so
@@ -472,7 +476,7 @@ function scopeSigFns(node, scope){
         const fnKey=k+":"+(v._fnName||"");
         if(seenFns.has(fnKey)) continue;
         seenFns.add(fnKey);
-        parts.push(k+"@="+(v._fnParams||[]).join(",")+"=>"+v._fnExpr);
+        parts.push(k+"@="+(v._fnParams||[]).join(",")+"=>"+v._fnExpr+":"+(v._fnOutField||"real"));
         const fnScope=v._fnScope||sc;
         const paramSet=new Set(v._fnParams||[]);
         const reduced={};

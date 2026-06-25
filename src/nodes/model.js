@@ -62,7 +62,15 @@ function makeNode(type,pos){
     expr:    {label:"Expr", name:"e",props:{expr:"0"},   attachments:[]},
     slider:  {label:"Slider",name:"a",value:0,props:{min:"-5",max:"5",step:"0.01"},attachments:[]},
     animator:{label:"Anim",name:"t",value:0,props:{min:"0",max:"1",period:"4",loop:"bounce",step:""},playing:false,attachments:[]},
-    fnDef:   {label:"f(x)",name:"f",props:{params:"x",expr:"x^2"},attachments:[]},
+    fnDef:   {label:"f(x)",name:"f",props:{
+      params:"x", expr:"x^2",
+      // Per-variable and output field types (extensible registry: real/complex,
+      // vectors later). paramFields is a comma-separated list aligned to params
+      // (e.g. "real,complex"); a missing/empty entry defaults to real. outField is
+      // the function's output scalar field. These drive how `i` is read in the
+      // body and how the result is coerced.
+      paramFields:"real", outField:"real",
+    },attachments:[]},
     // list: a named array value. The expr is any mathjs expression yielding an
     // array — a literal, a range (1:n), or a built list (e.g. a vertex table).
     list:    {label:"List",name:"L",props:{expr:"[1, 2, 3, 5, 8]"},attachments:[]},
@@ -223,11 +231,15 @@ function makeNode(type,pos){
     },attachments:[]},
 
     // ── Function / transformer model ───────────────────────────────────────
-    // fnMap: a pure map ℝ^inDim → ℝ^outDim. Inputs are the canonical symbols
-    // x,y,z,w (first `inDim` of them). Outputs are out0..out3. inDim and outDim
-    // each range 1–4. It does not plot on its own — it feeds a transformer.
+    // fnMap: a pure map over a FIELD (ℝ by default). Inputs are the canonical
+    // symbols x,y,z,w (first `inDim` of them). Outputs are out0..out3. inDim and
+    // outDim each range 1–4. `field` selects the scalar field the outputs live in:
+    // "real" (i is a free variable / index) or "complex" (i is the imaginary unit,
+    // results coerced to their real part when plotted). It does not plot on its
+    // own — it feeds a transformer.
     fnMap:{label:"map",color:"__AUTO__",props:{
       inDim:"1", outDim:"1",
+      field:"real",
       out0:"sin(x)", out1:"x", out2:"0", out3:"0",
     },attachments:[]},
     // equation: an implicit relation lhs = rhs.

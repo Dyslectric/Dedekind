@@ -1,4 +1,5 @@
 import { create, all } from "mathjs";
+import { exprType, exprTypeList, IMAGINARY_UNIT } from "./exprtypes.js";
 
 // A single configured mathjs instance shared across the app. We extend the
 // stock instance with bounded reduction/integration operators the app's
@@ -382,21 +383,38 @@ function _allScopeNames(scope) {
 // user binding. In an index context, `i` is the loop index and is NOT stripped.
 // Returns the same object when nothing needs removing (the common case), else a
 // shallow copy with the offending keys deleted (never mutates the caller's scope).
-function _shieldConstants(scope, idxContext) {
+// Bind reserved constants for a given field type, and strip any scope key that
+// would shadow them. For a COMPLEX field, `i` is the imaginary unit (provided via
+// the _IMAG_SENTINEL the parser rewrites `\i`/bare-`i` to). For a REAL field (the
+// default), `i` is NOT reserved — it's an ordinary free variable / loop index —
+// so we don't inject the imaginary sentinel and don't strip a user `i`. pi and e
+// are reserved for every field. `idxContext` additionally frees `i` regardless of
+// field (the loop index in index/recursive parsers), matching the old behavior.
+function _shieldConstants(scope, idxContext, field) {
   if (!scope) scope = {};
-  const reserved = idxContext ? ["pi", "e"] : ["pi", "e", "i"];
+  const t = exprType(field);
+  const iImaginary = !t.freesI && !idxContext;   // i is the imaginary unit here
+  const reserved = iImaginary ? ["pi", "e", "i"] : ["pi", "e"];
   let hit = false;
   for (const k of reserved) { if (_scopeHas(scope, k)) { hit = true; break; } }
-  // Always provide the imaginary sentinel (cheap) so `\i` resolves; copy only
-  // when we must remove a shadowing reserved key or add the sentinel.
-  const needSentinel = !_scopeHas(scope, _IMAG_SENTINEL);
-  if (!hit && !needSentinel) return scope;
+  // When `i` is a FREE variable (real field or index context) and the user hasn't
+  // bound it, mathjs would otherwise resolve bare `i` to its BUILT-IN imaginary
+  // unit — wrong for a real expression. Bind `i:NaN` so an unbound `i` evaluates
+  // to NaN (→ null after coerce), i.e. behaves like any other undefined symbol,
+  // while a user-provided `i` (e.g. a loop index) is left untouched.
+  const shadowFreeI = !iImaginary && !_scopeHas(scope, "i");
+  const needSentinel = iImaginary && !_scopeHas(scope, _IMAG_SENTINEL);
+  if (!hit && !needSentinel && !shadowFreeI) return scope;
   const copy = (scope instanceof Map) ? new Map(scope) : { ...scope };
   for (const k of reserved) {
     if (copy instanceof Map) copy.delete(k); else delete copy[k];
   }
-  const imag = math.complex(0, 1);
-  if (copy instanceof Map) copy.set(_IMAG_SENTINEL, imag); else copy[_IMAG_SENTINEL] = imag;
+  if (iImaginary) {
+    const imag = math.complex(0, 1);
+    if (copy instanceof Map) copy.set(_IMAG_SENTINEL, imag); else copy[_IMAG_SENTINEL] = imag;
+  } else if (shadowFreeI) {
+    if (copy instanceof Map) copy.set("i", NaN); else copy.i = NaN;
+  }
   return copy;
 }
 
@@ -414,20 +432,26 @@ function _shieldConstants(scope, idxContext) {
 // is normalized to the imaginary unit. Elsewhere bare `i` is already imaginary.
 const _scopedCache = new Map();
 const _SCOPED_CACHE_MAX = 4000;
-function compileExprScoped(expr, scope, idxContext = false) {
+function compileExprScoped(expr, scope, idxContext = false, field = undefined) {
   if (expr == null) return null;
+  const t = exprType(field);
+  const iImaginary = !t.freesI && !idxContext;   // `i` is the imaginary unit here
   let text = _normalizeGreek(String(expr));
-  // `\i` → imaginary unit. In index contexts bare `i` is the loop index, so `\i`
-  // is how the user writes the imaginary unit; mapping it to a reserved sentinel
-  // symbol (bound to complex(0,1) at eval time by _shieldConstants) keeps it
-  // imaginary even though `i` itself resolves to the index. Outside index
-  // contexts it resolves to the same imaginary unit.
-  if (text.indexOf("\\i") >= 0) text = text.split("\\i").join(_IMAG_SENTINEL);
+  // `\i` → imaginary unit, but only meaningful for a complex field (where `i`
+  // itself might be the loop index or, in real mode, a variable). For a real
+  // field `\i` has no imaginary meaning; we still map it to the sentinel so the
+  // text is stable, but the sentinel is simply never bound to a value (evaluating
+  // it would error and the result is dropped) — real expressions shouldn't use
+  // `\i`. For a complex field bare `i` is already imaginary; `\i` is the explicit
+  // form used in index contexts where bare `i` is the loop index.
+  if (iImaginary && text.indexOf("\\i") >= 0) text = text.split("\\i").join(_IMAG_SENTINEL);
   let root;
   try { root = math.parse(text); } catch { try { return math.compile(text); } catch { return null; } }
   const known = _singleLetterKnownInScope(scope);
   for (const b of _harvestBoundLetters(root)) known.add(b);
-  if (idxContext) known.add("i");   // loop index, not imaginary, in this context
+  // When `i` isn't the imaginary unit (real field, or an index context) it's a
+  // free single-letter symbol the juxtaposition splitter must not break apart.
+  if (!iImaginary) known.add("i");
   // Full scope names (any length) let the splitter recognize a deliberately
   // named multi-letter scalar (rt, kT, …) as a whole token instead of splitting
   // it. For the cache key we only need the multi-char scope names that ACTUALLY
@@ -439,7 +463,7 @@ function compileExprScoped(expr, scope, idxContext = false) {
     root.traverse(function (nn) { if (nn.isSymbolNode && nn.name.length > 1 && fullNames.has(nn.name)) appearing.add(nn.name); });
     relevantMulti = [...appearing].sort().join(",");
   } catch {}
-  const sig = (idxContext ? "@" : "") + [...known].sort().join("") + "\u0002" + relevantMulti;
+  const sig = (idxContext ? "@" : "") + "#" + t.id + [...known].sort().join("") + "\u0002" + relevantMulti;
   const key = text + "\u0001" + sig;
   let entry = _scopedCache.get(key);
   if (entry !== undefined) return entry;
@@ -458,10 +482,8 @@ function compileExprScoped(expr, scope, idxContext = false) {
 }
 
 // Coerce an evaluation result to a plain real number, or null if it isn't one.
-// mathjs returns a Complex object for any expression touching the imaginary unit
-// (even when the result is real, e.g. i^2 = -1+0i), so a near-zero imaginary part
-// is treated as a real number; a genuinely complex value (nonzero imaginary) is
-// not plottable and returns null.
+// Kept for callers that don't carry a field; equivalent to the complex/real
+// collapse (a near-zero imaginary part is real, a genuine complex is null).
 function _toReal(v) {
   if (typeof v === "number") return v;
   if (v && typeof v === "object" && typeof v.re === "number" && typeof v.im === "number") {
@@ -470,18 +492,20 @@ function _toReal(v) {
   return null;
 }
 
-function resolveNum(expr, scope, fallback = 0) {
+function resolveNum(expr, scope, fallback = 0, field = undefined) {
   if (expr === "" || expr == null) return fallback;
   const n = Number(expr); if (!isNaN(n)) return n;
-  const c = compileExprScoped(expr, scope);
+  const c = compileExprScoped(expr, scope, false, field);
   if (!c) return fallback;
-  try { const r = _toReal(c.evaluate(_shieldConstants(scope, false))); return r == null ? fallback : r; }
+  const t = exprType(field);
+  try { const r = t.coerce(c.evaluate(_shieldConstants(scope, false, field))); return r == null ? fallback : r; }
   catch { return fallback; }
 }
-function safeEval(expr, scope, idxContext = false) {
-  const c = compileExprScoped(expr, scope, idxContext);
+function safeEval(expr, scope, idxContext = false, field = undefined) {
+  const c = compileExprScoped(expr, scope, idxContext, field);
   if (!c) return null;
-  try { return _toReal(c.evaluate(_shieldConstants(scope, idxContext))); }
+  const t = exprType(field);
+  try { return t.coerce(c.evaluate(_shieldConstants(scope, idxContext, field))); }
   catch { return null; }
 }
 
@@ -493,16 +517,48 @@ function safeEval(expr, scope, idxContext = false) {
 // (so juxtaposition splitting sees the same known single-letter vars the loop will
 // supply) and returns `(scope) => real|null`. The caller mutates ONE scope object
 // per sample (changing x and leaving the rest) and calls the returned fn — no
-// per-sample compile, no per-sample scope copy. Constants pi/e/i are pre-stripped
-// from the scope keys the caller must not set; callers building their own scope
-// simply never put pi/e/i in it (they resolve to the constants regardless).
-// Returns null if the expression can't compile at all.
-function makeFastEval(expr, sampleScope, idxContext = false) {
-  const c = compileExprScoped(expr, sampleScope || {}, idxContext);
+// per-sample compile, no per-sample scope copy.
+//
+// Field-aware: the returned evaluator coerces results through the field's rule
+// (real/complex collapse today; vectors later). For a COMPLEX field the imaginary
+// unit is bound into a wrapper scope per call (cheap — one key) so callers needn't
+// know about the sentinel; for a REAL field there's no sentinel and `i` in the
+// caller's scope is an ordinary variable. Callers still pre-strip pi/e from their
+// base scope (those always resolve to the constants); for real fields a user `i`
+// is preserved as a variable.
+function makeFastEval(expr, sampleScope, idxContext = false, field = undefined) {
+  const c = compileExprScoped(expr, sampleScope || {}, idxContext, field);
   if (!c) return null;
+  const t = exprType(field);
+  const bindImag = !t.freesI && !idxContext;   // complex field needs the sentinel
+  if (bindImag) {
+    const imag = math.complex(0, 1);
+    return (scope) => {
+      try {
+        // bind the imaginary sentinel without mutating the caller's scope object
+        const s = (scope instanceof Map) ? scope : scope;
+        // fast path: set+restore the sentinel key on the same object
+        const had = _IMAG_SENTINEL in s; const prev = s[_IMAG_SENTINEL];
+        s[_IMAG_SENTINEL] = imag;
+        const r = t.coerce(c.evaluate(s));
+        if (had) s[_IMAG_SENTINEL] = prev; else delete s[_IMAG_SENTINEL];
+        return r;
+      } catch { return null; }
+    };
+  }
   return (scope) => {
-    try { return _toReal(c.evaluate(scope)); }
-    catch { return null; }
+    try {
+      // real field: shadow mathjs's built-in imaginary `i` when the caller hasn't
+      // bound `i`, so an unbound `i` is an undefined free variable (→ null), not π/2's
+      // imaginary cousin. A user-provided `i` (loop index) passes through.
+      if (!("i" in scope)) {
+        scope.i = NaN;
+        const r = t.coerce(c.evaluate(scope));
+        delete scope.i;
+        return r;
+      }
+      return t.coerce(c.evaluate(scope));
+    } catch { return null; }
   };
 }
 function linspace(a, b, n) {
@@ -522,16 +578,23 @@ function evalArray(expr, scope) {
 }
 
 // ── Recursive user-defined functions ────────────────────────────────────────
-function makeFn(name, params, expr, sc) {
+// `outField` is the function's output field (real/complex). It controls how `i`
+// is read in the body and how the result is coerced. (Per-parameter fields are a
+// UI/typing concern for now; the body evaluates in the output field's regime,
+// which is what determines `i`'s meaning inside the expression.)
+function makeFn(name, params, expr, sc, outField = undefined) {
   // Compile the body with juxtaposition split against the names the body can see:
   // its own parameters plus everything in its closed-over scope (sliders, other
   // fnDefs). Params are bound per call, but which single letters are KNOWN is
   // fixed, so we can split once here. A representative scope (params present as
   // placeholders + the closure) drives the known-letter set.
+  const ft = exprType(outField);
   const knownScope = {};
   for (const k in (sc || {})) knownScope[k] = sc[k];
   for (const p of (params || [])) if (!(p in knownScope)) knownScope[p] = 0;
-  const compiled = compileExprScoped(expr, knownScope);
+  const compiled = compileExprScoped(expr, knownScope, false, outField);
+  const iImaginary = !ft.freesI;
+  const imag = iImaginary ? math.complex(0, 1) : null;
   const fn = function(...args) {
     if (fn._d === 0) fn._calls = 0;
     fn._calls = (fn._calls||0) + 1;
@@ -540,8 +603,10 @@ function makeFn(name, params, expr, sc) {
     const ls = {...sc};
     params.forEach((p,i) => { ls[p] = args[i]??0; });
     ls[name] = fn;
+    if (iImaginary) ls[_IMAG_SENTINEL] = imag;       // complex body: bind i
+    else if (!("i" in ls)) ls.i = NaN;               // real body: i is a free var
     let r = null;
-    if (compiled) { try { const v = compiled.evaluate(ls); r = typeof v === "number" ? v : null; } catch { r = null; } }
+    if (compiled) { try { const v = compiled.evaluate(ls); r = ft.coerce(v); } catch { r = null; } }
     fn._d--;
     return r??NaN;
   };
@@ -556,6 +621,7 @@ function makeFn(name, params, expr, sc) {
   fn._fnParams = params;
   fn._fnExpr = expr;
   fn._fnScope = sc;
+  fn._fnOutField = outField || "real";
   return fn;
 }
 
@@ -605,5 +671,6 @@ function derivativeExpr(bodyText, varName) {
 export {
   math, parse,
   uid, PAL, nextColor, compileExpr, compileExprScoped, resolveNum, safeEval, makeFastEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr,
-  RESERVED_CONSTANTS, _normalizeGreek as normalizeGreek
+  RESERVED_CONSTANTS, _normalizeGreek as normalizeGreek,
+  exprType, exprTypeList,
 };
