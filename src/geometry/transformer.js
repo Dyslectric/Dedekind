@@ -40,13 +40,31 @@ function evalMap(outs, scope, inVec, field){
   return r;
 }
 
-// Is gradient coloring active? True when some output is bound to the color
-// channel (outAxisK === "color"). Returns the bound output index, or -1.
+// Is gradient coloring active? Driven by colorSource (the new model): any value
+// other than "none"/"" turns colouring on. For LEGACY projects with no
+// colorSource set, fall back to the old outAxisK==="color" binding.
 function colorOutIndex(tp, outDim){
   for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color") return k; }
   return -1;
 }
-function colorOn(tp, outDim){ return colorOutIndex(tp, outDim) >= 0; }
+// Resolve the effective colour source for a transformer, honouring the new
+// colorSource and falling back to the legacy color-axis binding. Returns one of:
+//   {kind:"none"} | {kind:"out", idx} | {kind:"magnitude"} | {kind:"expr"}
+function colorSourceOf(tp, outDim){
+  const cs=tp.colorSource;
+  if(cs==null || cs===""){
+    // legacy: an output bound to the color axis
+    const ci=colorOutIndex(tp, outDim);
+    return ci>=0 ? {kind:"out", idx:ci} : {kind:"none"};
+  }
+  if(cs==="none") return {kind:"none"};
+  if(cs==="magnitude") return {kind:"magnitude"};
+  if(cs==="expr") return {kind:"expr"};
+  const m=/^out(\d+)$/.exec(cs);
+  if(m){ const idx=Math.min(outDim-1, Math.max(0, +m[1])); return {kind:"out", idx}; }
+  return {kind:"none"};
+}
+function colorOn(tp, outDim){ return colorSourceOf(tp, outDim).kind !== "none"; }
 // True only when BOTH ends of the color range are pinned by the user. An
 // explicitly-defined surface (2-input graph with an output bound to color) must
 // not auto-fit its ramp across the sampling domain — that "auto coloring domain"
@@ -57,15 +75,30 @@ function colorOn(tp, outDim){ return colorOutIndex(tp, outDim) >= 0; }
 function hasExplicitColorRange(tp){
   return tp.colorMin!=="" && tp.colorMin!=null && tp.colorMax!=="" && tp.colorMax!=null;
 }
-// Per-sample color scalar: the value of the output bound to the color channel.
-// (Color is a binding target like X/Y/Z; whichever output holds "color" drives
-// the gradient.) Falls back to defaultVal when no output is colorbound.
+// Per-sample color scalar from the resolved color source. For "expr" the caller
+// supplies a precomputed value (we can't compile here); otherwise it's an output
+// value or the output-vector magnitude. Falls back to defaultVal when off.
 function colorScalar(tp, scope, inVec, outVec, param, i, defaultVal){
   const outDim=outVec.length;
-  const ci=colorOutIndex(tp, outDim);
-  if(ci<0) return isFinite(defaultVal)?(defaultVal||0):0;
-  const v=outVec[ci];
-  return (v==null||!isFinite(v))?0:v;
+  const src=colorSourceOf(tp, outDim);
+  if(src.kind==="none") return isFinite(defaultVal)?(defaultVal||0):0;
+  if(src.kind==="magnitude"){
+    let s=0; for(const v of outVec){ if(isFinite(v)) s+=v*v; } return Math.sqrt(s);
+  }
+  if(src.kind==="out"){
+    const v=outVec[src.idx];
+    return (v==null||!isFinite(v))?0:v;
+  }
+  if(src.kind==="expr"){
+    // custom scalar over inputs (x,y,z,w), outputs (out0..), domain param, index n
+    const sc={...scope};
+    const inN=["x","y","z","w"]; for(let k=0;k<inVec.length;k++) sc[inN[k]]=inVec[k];
+    for(let k=0;k<outVec.length;k++) sc[`out${k}`]=outVec[k];
+    sc.t=param; sc.u=param; sc.v=param; sc.n=i;
+    const v=safeEval(tp.colorExpr||"0", sc, true);
+    return (v==null||!isFinite(v))?0:v;
+  }
+  return isFinite(defaultVal)?(defaultVal||0):0;
 }
 // Map an array of scalars onto the lo→hi ramp across [min,max] (auto when blank).
 function rampColors(vals, tp, scope){
@@ -243,11 +276,9 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     // colored by out3; a 2-output map becomes a 1D vector field colored by out1.
     // When off, all outputs form the vector with a single static color (valid for
     // 2- or 3-output maps; a 4-output map always colors, since there's no 4th axis).
-    // Color comes from whichever output is bound to the color channel (if any).
-    // Outputs bound to a spatial axis form the vector; the colorbound output (and
-    // any unbound ones) don't contribute to the arrow direction.
-    const ci=colorOutIndex(tp, outDim);
-    const useColor = ci>=0;
+    // Color comes from the resolved colour source (colorSource, with legacy
+    // color-axis fallback). Outputs bound to a spatial axis form the vector.
+    const useColor = colorOn(tp, outDim);
     const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
     const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3];
     const pairs=[]; const cvals=useColor?[]:null;
@@ -258,7 +289,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) posM[ax]=inVec[k]??0; }
       for(let k=0;k<outDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
       pairs.push({ pos:posM, vec:vecM });   // glyph builder applies its own axis swap
-      if(useColor) cvals.push(outVec[ci]??0);
+      if(useColor) cvals.push(colorScalar(tp,scope,inVec,outVec,s/Math.max(1,dom.pts.length-1),s));
     }
     const opts={ arrowLen:resolveNum(tp.arrowLen,scope,0.5), normalize:tp.normalize!==false, anim:"none", speed:1 };
     if(useColor) opts.cols=rampColors(cvals,tp,scope);

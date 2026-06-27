@@ -282,10 +282,19 @@ function makeNode(type,pos){
       camRes:"2000",          // sample count across the visible x-range (camera-follow)
       aMin:"-5",aMax:"5",bMin:"-5",bMax:"5",cMin:"-3",cMax:"3",dMin:"-3",dMax:"3",
       res:"60",
-      // gradient coloring: when colorMode==="gradient" each vertex gets a scalar
-      // from colorExpr (vars: x,y,z,w inputs, out0..out3 outputs, t/u/v domain
-      // params, n index, plus wired scalars), mapped across [colorMin,colorMax]
-      // (auto when blank) onto the colorLo→colorHi ramp.
+      // Coloring (always available, independent of axis bindings). colorSource
+      // selects WHAT scalar drives the colour:
+      //   "none"      — flat node colour (off)
+      //   "out0".."out3" — the value of that output
+      //   "magnitude" — the Euclidean norm of the output vector |(out0..)|
+      //   "expr"      — a custom scalar expression (colorExpr; vars: x,y,z,w
+      //                 inputs, out0..out3 outputs, t/u/v domain params, n index,
+      //                 plus wired scalars)
+      // The chosen scalar is mapped across [colorMin,colorMax] (auto when blank)
+      // onto the colorLo→colorHi ramp. Legacy projects that bound an output via
+      // outAxisK="color" still colour correctly (the evaluator falls back to that
+      // when colorSource is unset); the UI only exposes colorSource.
+      colorSource:"none",
       colorMode:"off", colorExpr:"out0", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
     },attachments:[]},
   };

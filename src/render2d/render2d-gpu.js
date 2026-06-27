@@ -686,8 +686,25 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
     for(let k=0;k<outDim;k++){ const fn=_compiledOuts[k]; const v=fn?fn(_evalScope):null; r[k]=(v==null||!isFinite(v))?0:v; }
     return r;
   };
-  let colorIdx=-1; for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color"){ colorIdx=k; break; } }
-  const useColor=colorIdx>=0;
+  // Resolve the colour source (new colorSource model, legacy outAxis="color"
+  // fallback). colorVal(outVec) → scalar | null when colouring is off.
+  const _cs=(()=>{
+    const cs=tp.colorSource;
+    if(cs==null||cs===""){ for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color") return {kind:"out",idx:k}; } return {kind:"none"}; }
+    if(cs==="none") return {kind:"none"};
+    if(cs==="magnitude") return {kind:"magnitude"};
+    if(cs==="expr") return {kind:"expr"};
+    const m=/^out(\d+)$/.exec(cs); if(m) return {kind:"out",idx:Math.min(outDim-1,Math.max(0,+m[1]))};
+    return {kind:"none"};
+  })();
+  const useColor=_cs.kind!=="none";
+  const _colorExprFn = _cs.kind==="expr" ? makeFastEval(tp.colorExpr||"0", {..._evalScope,x:0,y:0,z:0,w:0,out0:0,out1:0,out2:0,out3:0,n:0}, true) : null;
+  const colorVal=(inVec,outVec,n)=>{
+    if(_cs.kind==="out"){ const v=outVec[_cs.idx]; return (v==null||!isFinite(v))?0:v; }
+    if(_cs.kind==="magnitude"){ let s=0; for(const v of outVec){ if(isFinite(v)) s+=v*v; } return Math.sqrt(s); }
+    if(_cs.kind==="expr" && _colorExprFn){ const sc={..._evalScope}; const inN=["x","y","z","w"]; for(let k=0;k<inVec.length;k++) sc[inN[k]]=inVec[k]; for(let k=0;k<outVec.length;k++) sc[`out${k}`]=outVec[k]; sc.n=n; const v=_colorExprFn(sc); return (v==null||!isFinite(v))?0:v; }
+    return 0;
+  };
   const loC=hexRGB(tp.colorLo||"#3a6aff"), hiC=hexRGB(tp.colorHi||"#ff5ea8");
   const ramp=(t)=>{t=t<0?0:t>1?1:t;const h=(v)=>{const x=Math.round(v*255);return(x<16?"0":"")+x.toString(16);};return`#${h(loC[0]+(hiC[0]-loC[0])*t)}${h(loC[1]+(hiC[1]-loC[1])*t)}${h(loC[2]+(hiC[2]-loC[2])*t)}`;}
 
@@ -725,7 +742,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
       for(let k=0;k<outDim;k++){const a=outAx[k]; if(a>=0)v3[a]=outVec[k]??0;}
       const m3=Math.hypot(v3[0],v3[1],v3[2]); if(m3>maxMag)maxMag=m3;
       let cval=0;
-      if(useColor){ cval=outVec[colorIdx]??0; if(!isFinite(cval))cval=0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
+      if(useColor){ cval=colorVal(inVec,outVec,raw.length); if(!isFinite(cval))cval=0; if(cval<cMin)cMin=cval; if(cval>cMax)cMax=cval; }
       raw.push({base3,v3,m3,cval});
     }
     maxMag=maxMag||1;

@@ -129,7 +129,7 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
       // Per-output binding targets with STEAL semantics: choosing a target
       // already held by another output moves it (old holder → none). X/Y/Z
       // and Color are each unique across outputs; "—" is unbounded.
-      const outTargets=[["x","X"],["y","Y"],["z","Z"],["color","Color"],["none","—"]];
+      const outTargets=[["x","X"],["y","Y"],["z","Z"],["none","—"]];
       const inTargets=[["x","X"],["y","Y"],["z","Z"],["none","—"]];
       const setOutBind=(k,v)=>{
         const patch={};
@@ -166,7 +166,7 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
           <PR key={"o"+k} label={`out${k}`}><OutSel k={k}/></PR>
         ))}
         <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
-          Each of X, Y, Z and Color can hold one output; choosing a taken target moves it off the previous output. Bind an output to <em>Color</em> to drive the gradient (set its range below).
+          Each of X, Y, Z can hold one output; choosing a taken target moves it off the previous output. <em>—</em> leaves an output unbound (free to drive colour). Colour is set independently in the <strong>Colour</strong> section below.
         </div>
       </Sec>;
     })()}
@@ -180,6 +180,34 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
         <PR key={"o"+k} label={`out${k}`}><AxisSel k={k} kind="out"/></PR>
       ))}
     </Sec>}
+    {fnNode&&mode!=="polar"&&mode!=="spherical"&&(()=>{
+      // Colour is always available and independent of the axis bindings. The
+      // source can be any output, the output-vector magnitude, or a custom scalar
+      // expression. More outputs simply mean more "outK" choices appear — the
+      // dimension drives the menu rather than colour being a wired axis.
+      const cs=node.props.colorSource||"none";
+      const srcOpts=[["none","off (flat node colour)"]];
+      for(let k=0;k<outDim;k++) srcOpts.push([`out${k}`,`out${k}`]);
+      if(outDim>1) srcOpts.push(["magnitude","|output| (vector magnitude)"]);
+      srcOpts.push(["expr","custom expression"]);
+      return <Sec title="Colour">
+        <PR label="source">
+          <select value={cs} onChange={e=>set("colorSource",e.target.value)} style={{...S.inp,width:"100%"}}>
+            {srcOpts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        </PR>
+        {cs==="expr" && <PR label="expr"><EI v={node.props.colorExpr||""} sc={scope} onChange={v=>set("colorExpr",v)} placeholder="scalar, e.g. out0, hypot(out0,out1), arg"/></PR>}
+        {cs!=="none" && <>
+          <PR label="low"><ColorRow v={node.props.colorLo||"#3a6aff"} onChange={v=>set("colorLo",v)}/></PR>
+          <PR label="high"><ColorRow v={node.props.colorHi||"#ff5ea8"} onChange={v=>set("colorHi",v)}/></PR>
+          <PR label="min"><EI v={node.props.colorMin??""} sc={scope} onChange={v=>set("colorMin",v)} placeholder="auto"/></PR>
+          <PR label="max"><EI v={node.props.colorMax??""} sc={scope} onChange={v=>set("colorMax",v)} placeholder="auto"/></PR>
+        </>}
+        <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
+          The chosen scalar is mapped across [min, max] (auto-fit when blank) onto the low→high ramp. {outDim>1?<>With {outDim} outputs you can colour by any one of them or by their magnitude.</>:<>Add more outputs to the map to colour by additional channels.</>}
+        </div>
+      </Sec>;
+    })()}
     {mode==="field"&&<Sec title="Field style">
       <PR label="arrow len">
           <EI v={node.props.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/>
