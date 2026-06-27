@@ -228,7 +228,7 @@ function buildTransformerSphericalGPU(tp, outs, scope, color){
 //   colorInfo (optional): { lo, hi, cmin, cmax } for a gradient fill driven by
 //     whichever output is bound to "color". Returns null (→ CPU) if an output
 //     expression isn't GLSL-translatable or the config isn't a 2-in graph.
-function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr, lights){
+function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr, lights, directSpec){
   if(inDim!==2) return null;                      // only 2-input → surface here
   const AX={x:0,y:1,z:2};                          // color/none/undefined → not spatial
   const aMin=resolveNum(tp.aMin,scope,-5),aMax=resolveNum(tp.aMax,scope,5);
@@ -305,15 +305,50 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
   const bodyP = `x = ${_glslNum(aMin)} + _gd.x*${_glslNum(aMax-aMin)};
                  y = ${_glslNum(bMin)} + _gd.y*${_glslNum(bMax-bMin)};
                  vec3 P = vec3(${world[0]}, ${world[1]}, ${world[2]});`;
+  // ── Direct colour styles (rgb / hsl / huemag / cyclic) → per-fragment albedo.
+  // Each colour sub-expression may reference out0..outN; we transpile it with
+  // those names known, then substitute each outK with its already-transpiled
+  // output GLSL so the shader recomputes the output inline. If anything can't
+  // transpile, return null → CPU per-vertex fallback (still correct, just slower).
+  let albedoBody=null;
+  if(directSpec){
+    const knownC=new Set(["x","y"]); for(let k=0;k<outDim;k++) knownC.add(`out${k}`);
+    const subOut=(g)=>{ if(g==null) return null; let s=g; for(let k=0;k<outDim;k++){ s=s.replace(new RegExp(`\\b${GLSL_UNIFORM_PREFIX}out${k}\\b|\\bout${k}\\b`,"g"), `(${outGLSL[k]})`); } return s; };
+    const tr=(e,d)=>{ if(e==null||e==="") return d; const g=exprToGLSL(e,knownC,uniforms,GLSL_UNIFORM_PREFIX,fnTable); return g==null?null:subOut(g); };
+    const st=directSpec.style;
+    if(st==="rgb"){
+      const r=tr(directSpec.colorR,"0.0"), g=tr(directSpec.colorG,"0.0"), b=tr(directSpec.colorB,"0.0");
+      if(r!=null&&g!=null&&b!=null) albedoBody=`vec3(${r}, ${g}, ${b})`;
+    } else if(st==="hsl"){
+      const h=tr(directSpec.colorH,"0.0"), s=tr(directSpec.colorS,"0.9"), l=tr(directSpec.colorL,"0.5");
+      if(h!=null&&s!=null&&l!=null) albedoBody=`_hsl2rgb(${h}, clamp(${s},0.0,1.0), clamp(${l},0.0,1.0))`;
+    } else if(st==="cyclic"){
+      // angle-like scalar source → hue wheel
+      const src=directSpec.source;
+      let ae=null;
+      const m=/^out(\d+)$/.exec(src);
+      if(m) ae=`(${outGLSL[Math.min(outDim-1,+m[1])]})`;
+      else if(src==="expr") ae=tr(directSpec.colorExpr,"0.0");
+      if(ae!=null) albedoBody=`_hsl2rgb((${ae})/6.28318530718, 0.9, 0.5)`;
+    } else if(st==="huemag"){
+      // a 2-D source → (re,im) → domain colour. outPair = (out0,out1).
+      const re=outGLSL[0]!=null?`(${outGLSL[0]})`:null;
+      const im=outDim>1&&outGLSL[1]!=null?`(${outGLSL[1]})`:"0.0";
+      if(re!=null) albedoBody=`_cplxcol(${re}, ${im})`;
+    }
+    if(albedoBody==null) return null;   // couldn't transpile → CPU path
+  }
   let colorOpts=null;
   if(colorInfo){
-    // The color value is the output bound to "color"; its GLSL is just that
-    // output's expression (which references the domain x,y mathColor provides).
     let ci=-1; for(let k=0;k<outDim;k++){ if((outAx[k]||"")==="color"){ ci=k; break; } }
     if(ci>=0 && outGLSL[ci]!=null){
       colorOpts={ colorBody:outGLSL[ci], colorLo:colorInfo.lo, colorHi:colorInfo.hi, cmin:colorInfo.cmin, cmax:colorInfo.cmax };
     }
-    // if color expr can't transpile, fall back to flat-colored GPU surface
+  }
+  // Fold the direct albedo into the active opts (lit material, or non-lit fill).
+  if(albedoBody){
+    if(tp.shading==="lit"){ matOpts = matOpts || { shade:{} }; matOpts.albedoBody=albedoBody; }
+    else { colorOpts = { albedoBody }; }
   }
   return assembleSurfGPU(bodyP, [...uniforms], ascope, color, res, res, tp.showWire!==false,
     tp.shading==="lit" ? matOpts : colorOpts, null, tp.wireOnly===true);

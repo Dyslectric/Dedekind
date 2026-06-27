@@ -1591,6 +1591,26 @@ function complexEqScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// Test/demo for the GPU direct-colour path: a height surface z = sin(x)·cos(y)
+// coloured by an HSL style (hue from the height) computed per fragment in the
+// shader rather than per vertex on the CPU.
+function gpuHslSurfaceScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera3d",{x:1000,y:120}));cam.label="HSL surface (GPU)";
+  cam.props.projection="orthographic";cam.props.orthoSize="7";cam.props.orbRadius="14";
+  cam.props.orbTheta="0.7";cam.props.orbPhi="0.5";cam.props.showGrid=false;cam.props.showAxes=true;
+  const fn=makeNode("fnMap",{x:360,y:160});fn.label="sin x · cos y";fn.color="#7ec8ff";
+  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="sin(x)*cos(y)";
+  const tr=makeNode("transformer",{x:720,y:160});tr.label="HSL by height";tr.color="#7ec8ff";
+  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
+  tr.props.aMin="-3.14";tr.props.aMax="3.14";tr.props.bMin="-3.14";tr.props.bMax="3.14";tr.props.res="120";
+  tr.props.colorSource="hsl";tr.props.colorStyle="hsl";
+  tr.props.colorH="0.6+0.4*out0";tr.props.colorS="0.9";tr.props.colorL="0.5";
+  tr.attachments=[fn.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
 
 // sin(w t)) and raise the curve by its own t, so it climbs while looping w times
 // around the central axis. That loop count is the winding number, the same integer
@@ -1860,6 +1880,7 @@ Object.assign(SCENES, {
   "self-similar-zoom": selfSimilarZoomScene,
   "complex-domain": complexDomainScene,
   "complex-eq": complexEqScene,
+  "gpu-hsl": gpuHslSurfaceScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────

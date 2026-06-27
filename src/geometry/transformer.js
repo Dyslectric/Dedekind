@@ -546,15 +546,18 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     // A color-bound output with no range no longer auto-fits across the domain;
     // it renders in the flat single color instead (see hasExplicitColorRange).
     const surfGradient = !direct && gradient && hasExplicitColorRange(tp);
-    // GPU fast path only handles flat + ramp; the direct styles (rgb/hsl/huemag/
-    // cyclic) are CPU per-vertex, so skip the GPU path when a direct style is on.
-    if(!paramNode && !direct){
+    // GPU fast path handles flat, ramp, AND the direct styles (rgb/hsl/huemag/
+    // cyclic) — the colour is emitted as a per-fragment albedo in the shader.
+    // Falls back to CPU per-vertex only when an expression can't transpile.
+    if(!paramNode){
       let colorInfo=null;
       if(surfGradient){
         colorInfo={ lo:new THREE.Color(tp.colorLo||"#3a6aff"), hi:new THREE.Color(tp.colorHi||"#ff5ea8"),
                     cmin:resolveNum(tp.colorMin,scope,0), cmax:resolveNum(tp.colorMax,scope,1) };
       }
-      const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr, lights);
+      const directSpec = direct ? { style:colorStyleOf(tp), source:tp.colorSource||"",
+        colorR:tp.colorR, colorG:tp.colorG, colorB:tp.colorB, colorH:tp.colorH, colorS:tp.colorS, colorL:tp.colorL, colorExpr:tp.colorExpr } : null;
+      const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr, lights, directSpec);
       if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
     }
     const useCol = surfGradient || direct;

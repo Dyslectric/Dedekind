@@ -100,14 +100,32 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     }
   }
   const domainDecls = hasDomain ? "uniform vec2 uDomU; uniform vec2 uDomV;" : "";
-  const decls = domainDecls + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
+  // Direct per-fragment colour (rgb/hsl/huemag/cyclic styles): a GLSL expression
+  // that evaluates to a vec3 albedo, given x,y in scope. Takes priority over the
+  // ramp/flat albedo. A small HSL→RGB helper is injected when it's referenced.
+  const albedoBody = (opts && opts.albedoBody) ? opts.albedoBody : null;
+  const glslHelpers = `
+    vec3 _hsl2rgb(float h, float s, float l){
+      h = fract(h);
+      vec3 k = mod(vec3(0.0,8.0,4.0) + h*12.0, 12.0);
+      float a = s*min(l, 1.0-l);
+      return l - a*clamp(min(min(k-3.0, 9.0-k), 1.0), -1.0, 1.0);
+    }
+    // domain-colouring of a complex value: hue=arg, brightness rises with |w|
+    vec3 _cplxcol(float re, float im){
+      float m = sqrt(re*re+im*im);
+      float hue = atan(im, re)/6.28318530718;
+      float L = 1.0 - 1.0/(1.0 + m*0.5);
+      return _hsl2rgb(hue, 0.95, 0.12 + 0.76*L);
+    }`;
+  const decls = domainDecls + "\n" + glslHelpers + "\n" + uniformNames.map(u=>`uniform float ${uPrefix}${u};`).join("\n");
   // Map math (x,y,z) → three (x,z,y) to match the rest of the app's convention.
   // The wireframe overlay is flat-shaded (no lighting), so it skips the two extra
   // mathPos() evaluations the fill pass needs for finite-difference normals —
   // cutting the wireframe vertex cost to ~1/3. Only the fill pass shades.
   // When colored, the fill vertex shader also computes a per-vertex scalar (vCval)
   // from the same grid coords, varied to the fragment shader for the ramp.
-  const colorVaryV = colored ? "varying float vCval;" : "";
+  const colorVaryV = colored ? "varying float vCval;" : (albedoBody ? "varying vec3 vAlb;" : "");
   // The color value expression references the DOMAIN x,y (and substituted output
   // expressions), not the raw [0,1] grid coords — so we run the same coordinate
   // mapping (`body` sets x,y) before evaluating it. mathColor mirrors mathPos's
@@ -123,8 +141,8 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   // with any user symbol.
   const colorFn = colored
     ? `float mathColor(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return (${opts.colorBody}); }`
-    : "";
-  const colorCompute = colored ? "vCval = mathColor(_gd);" : "";
+    : (albedoBody ? `vec3 mathAlbedo(vec2 _gd){ float x=_gd.x; float y=_gd.y; ${body} return (${albedoBody}); }` : "");
+  const colorCompute = colored ? "vCval = mathColor(_gd);" : (albedoBody ? "vAlb = mathAlbedo(_gd);" : "");
   const vert = wireframe ? `
     ${decls}
     varying float vOk;
@@ -171,6 +189,14 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       float t = (abs(span) < 1e-12) ? 0.0 : clamp((vCval - uCMin)/span, 0.0, 1.0);
       vec3 cc = mix(uColorLo, uColorHi, t);
       gl_FragColor = vec4(cc*diff, 0.82);
+    }` : (albedoBody ? `
+    precision highp float;
+    uniform vec3 uColor; varying vec3 vNormalW; varying float vOk; varying vec3 vAlb;
+    void main(){
+      if(vOk<0.5) discard;
+      vec3 L = normalize(vec3(0.4,0.9,0.5));
+      float diff = 0.55 + 0.45*abs(dot(normalize(vNormalW), L));
+      gl_FragColor = vec4(clamp(vAlb,0.0,1.0)*diff, 0.85);
     }` : `
     precision highp float;
     uniform vec3 uColor; varying vec3 vNormalW; varying float vOk;
@@ -179,7 +205,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
       vec3 L = normalize(vec3(0.4,0.9,0.5));
       float diff = 0.55 + 0.45*abs(dot(normalize(vNormalW), L));
       gl_FragColor = vec4(uColor*diff, 0.82);
-    }`);
+    }`));
   // ── Opt-in lit path: per-fragment Blinn-Phong with analytic-or-screen-space
   // normal, computed in VIEW space (so three's matrices handle the mirror group).
   // Stage 3 material channels (all per fragment, all optional): a color
@@ -197,7 +223,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
     const texAlb = !!shade.texture;                                       // sample uTex at vUv → albedo
     const normalMap = !!shade.normalTex;                                  // perturb N from a normal texture
     const uvAny = texAlb || normalMap;
-    const needXY = analytic || colored || !!rgb || !!specExpr || !!emitExpr;
+    const needXY = analytic || colored || !!rgb || !!albedoBody || !!specExpr || !!emitExpr;
     // Per-light Blinn-Phong accumulation (view space). Light vectors arrive in
     // world space and are taken into view with the built-in viewMatrix, so no CPU
     // normal-matrix refresh is needed for lights. Each light's colour already folds
@@ -274,7 +300,9 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
         vec3 V = normalize(-vViewPos);
         if(dot(N,V) < 0.0) N = -N;                 // face the camera (DoubleSide)
         float specMul = ${specExpr ? `max(0.0, ${specExpr})` : "1.0"};
-        ${texAlb
+        ${albedoBody
+          ? `vec3 albedo = clamp(${albedoBody}, 0.0, 1.0);`
+          : texAlb
           ? `vec3 albedo = texture2D(uTex, _uv).rgb;`
           : rgb
           ? `vec3 albedo = clamp(vec3((${rgb[0]}),(${rgb[1]}),(${rgb[2]})), 0.0, 1.0);`
