@@ -567,13 +567,19 @@ function linspace(a, b, n) {
 // Evaluate an expression expected to yield an ARRAY (a list value). Normalizes a
 // mathjs Matrix to a plain nested JS array; returns null if it isn't array-like.
 // Used by the list node — the one place scope keeps a value that isn't a number.
-function evalArray(expr, scope) {
-  const c = compileExprScoped(expr, scope);
+function evalArray(expr, scope, field = undefined) {
+  const c = compileExprScoped(expr, scope, false, field);
   if (!c) return null;
   try {
-    let v = c.evaluate(scope);
+    let v = c.evaluate(_shieldConstants(scope, false, field));
     if (v && typeof v.toArray === "function") v = v.toArray();
-    return Array.isArray(v) ? v : null;
+    if (!Array.isArray(v)) return null;
+    // Coerce each element through the field so a complex list collapses its
+    // (near-)real entries to reals and drops genuinely-complex ones to null —
+    // matching scalar behavior. Rows (e.g. [x,y,z] points) recurse one level.
+    const t = exprType(field);
+    const coerceEl = (e) => Array.isArray(e) ? e.map(coerceEl) : t.coerce(e);
+    return v.map(coerceEl);
   } catch { return null; }
 }
 

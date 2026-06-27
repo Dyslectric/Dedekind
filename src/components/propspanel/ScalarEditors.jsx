@@ -23,13 +23,28 @@ function fmtList(v){
 // parent (they depend on panel lightness / the animation tick) and passed down.
 
 export function ConstantEditor({ node, scope, onChange }){
-  return <Sec title="Value"><PR label="val"><EI v={node.props.value} sc={scope} onChange={v=>onChange({props:{...node.props,value:v}})}/></PR></Sec>;
+  const{S}=useUI();
+  const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
+  return <Sec title="Value">
+    <PR label="val"><EI v={node.props.value} sc={scope} onChange={v=>set("value",v)}/></PR>
+    <PR label="field">
+      <select value={node.props.field||"real"} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
+        {exprTypeList().map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+      </select>
+    </PR>
+  </Sec>;
 }
 
 export function ExprEditor({ node, scope, onChange }){
-  const{ui}=useUI();
+  const{ui,S}=useUI();
+  const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
   return <Sec title="Expression">
     <PR label={`${node.name||"e"} =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
+    <PR label="field">
+      <select value={node.props.field||"real"} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
+        {exprTypeList().map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+      </select>
+    </PR>
     <div style={{marginTop:6,padding:"6px 9px",background:ui.uiInputBg,borderRadius:4,border:`1px solid ${ui.uiInputBorder}`,fontSize:14,color:ui.uiAccent,fontFamily:"monospace",lineHeight:1.9}}>
       {(()=>{
         if(!node.name)return<span style={{color:ui.uiMuted}}>set a variable name above</span>;
@@ -37,14 +52,14 @@ export function ExprEditor({ node, scope, onChange }){
         // node's full transitive deps, same path the plot output uses); fall
         // back to re-evaluating the raw expression if it's not present.
         let val=typeof scope[node.name]==="number"?scope[node.name]:NaN;
-        if(!isFinite(val)) val=resolveNum(node.props.expr,scope,NaN);
+        if(!isFinite(val)) val=resolveNum(node.props.expr,scope,NaN,node.props.field||"real");
         if(!isFinite(val))return<span style={{color:ui.uiMuted}}>…</span>;
         const fmtd=Math.abs(val)>=1000||(Math.abs(val)<0.001&&val!==0)?val.toExponential(4):Number(val.toPrecision(6)).toString();
         return<span><span style={{color:ui.uiMuted}}>{node.name} =</span> <span style={{color:ui.uiAccent,fontWeight:"bold"}}>{fmtd}</span></span>;
       })()}
     </div>
     <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
-      A named scalar computed from an expression — can reference attached sliders, animators, constants, other expressions, and functions. Wire scalar/function nodes in via the Inputs section.
+      A named scalar computed from an expression — can reference attached sliders, animators, constants, other expressions, and functions. The <strong>field</strong> sets its domain: in <em>ℝ</em>, <code style={{fontFamily:"monospace"}}>i</code> is a free variable; in <em>ℂ</em>, <code style={{fontFamily:"monospace"}}>i</code> is the imaginary unit (the value is its real part when (near-)real). Wire scalar/function nodes in via the Inputs section.
     </div>
   </Sec>;
 }
@@ -52,13 +67,19 @@ export function ExprEditor({ node, scope, onChange }){
 // list — a named array value. The expression yields an array: a literal, a range
 // (1:n), or a built table. Vector lists ([x,y,z] rows) feed points/edges by index.
 export function ListEditor({ node, nodes, scope, onChange }){
-  const{ui}=useUI();
+  const{ui,S}=useUI();
+  const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
   // Resolve against the list's OWN direct deps so the preview matches what
   // consumers see (it may reference attached sliders/animators).
   const own=nodes?resolveScope(node.id,nodes,{}):scope;
-  const val=evalArray(node.props.expr, {...scope,...own});
+  const val=evalArray(node.props.expr, {...scope,...own}, node.props.field||"real");
   return <Sec title="List">
     <PR label={`${node.name||"L"} =`}><XF v={node.props.expr||""} sc={scope} onChange={v=>onChange({props:{...node.props,expr:v}})}/></PR>
+    <PR label="field">
+      <select value={node.props.field||"real"} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
+        {exprTypeList().map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+      </select>
+    </PR>
     <div style={{marginTop:6,padding:"6px 9px",background:ui.uiInputBg,borderRadius:4,border:`1px solid ${ui.uiInputBorder}`,fontSize:13.5,color:ui.uiAccent,fontFamily:"monospace",lineHeight:1.7,wordBreak:"break-word"}}>
       {val ? fmtList(val) : <span style={{color:ui.uiMuted}}>not an array — use [a, b, …], a range 1:n, or a list-valued expression</span>}
     </div>

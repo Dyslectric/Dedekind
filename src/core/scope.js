@@ -130,8 +130,8 @@ function resolveNodeValue(node, nodes, animVals, building){
   switch(node.type){
     case "slider":   return typeof node.value==="number"?node.value:0;
     case "animator": return animVals?.[node.id] ?? (typeof node.value==="number"?node.value:0);
-    case "constant": return resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building), 0);
-    case "expr":     return resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building), 0);
+    case "constant": return resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building), 0, node.props?.field||"real");
+    case "expr":     return resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building), 0, node.props?.field||"real");
     // A list binds its name to an ARRAY value (numbers, or rows like [x,y,z] for a
     // vector/point list). It's the one scope value that isn't a number; downstream
     // expressions index it (L[k]) or fold it (sum(L)). Empty/invalid → [].
@@ -143,10 +143,11 @@ function resolveNodeValue(node, nodes, animVals, building){
       // small fingerprint of its own-scope scalars. Invalidates when either changes.
       const expr=node.props?.expr;
       if(expr==null) return [];
+      const field=node.props?.field||"real";
       const sc=ownScope(node.id,nodes,animVals,building);
-      let sk=""; for(const key in sc){ const val=sc[key]; if(typeof val==="number") sk+=key+":"+val+";"; }
+      let sk=field+"|"; for(const key in sc){ const val=sc[key]; if(typeof val==="number") sk+=key+":"+val+";"; }
       if(node._lcExpr===expr && node._lcKey===sk) return node._lcVal;
-      const v=evalArray(expr, sc) || [];
+      const v=evalArray(expr, sc, field) || [];
       node._lcExpr=expr; node._lcKey=sk; node._lcVal=v;
       return v;
     }
