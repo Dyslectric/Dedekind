@@ -221,30 +221,54 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
       ))}
     </Sec>}
     {fnNode&&mode!=="polar"&&mode!=="spherical"&&(()=>{
-      // Colour is always available and independent of the axis bindings. The
-      // source can be any output, the output-vector magnitude, or a custom scalar
-      // expression. More outputs simply mean more "outK" choices appear — the
-      // dimension drives the menu rather than colour being a wired axis.
-      const cs=node.props.colorSource||"none";
-      const srcOpts=[["none","off (flat node colour)"]];
-      for(let k=0;k<outDim;k++) srcOpts.push([`out${k}`,`out${k}`]);
-      if(outDim>1) srcOpts.push(["magnitude","|output| (vector magnitude)"]);
-      srcOpts.push(["expr","custom expression"]);
+      // Colour is independent of the axis bindings. One combined menu encodes the
+      // (source × style) choice and writes the two props colorSource + colorStyle.
+      // Styles: ramp (scalar→gradient), cyclic (angle→hue wheel), rgb/hsl (three
+      // expressions ARE the channels), huemag (a 2-D source → hue=angle,value=mag).
+      const cs=node.props.colorSource||"none", st=node.props.colorStyle||"ramp";
+      // build the combined option list. value = "source|style"; some styles ignore
+      // the source (rgb/hsl carry their own expressions).
+      const opts=[["none|ramp","off (flat node colour)"]];
+      for(let k=0;k<outDim;k++){ opts.push([`out${k}|ramp`,`out${k} → ramp`]); opts.push([`out${k}|cyclic`,`out${k} → cyclic hue`]); }
+      if(outDim>1){ opts.push(["magnitude|ramp","|output| → ramp"]); opts.push(["outPair|huemag","(out0,out1) → hue/value"]); }
+      opts.push(["expr|ramp","custom scalar → ramp"]);
+      opts.push(["expr|cyclic","custom scalar → cyclic hue"]);
+      opts.push(["rgb|rgb","RGB — three expressions"]);
+      opts.push(["hsl|hsl","HSL — three expressions"]);
+      const curVal=`${cs}|${st}`;
+      const pick=(v)=>{ const [s,style]=v.split("|"); set2({colorSource:s, colorStyle:style}); };
+      const showRamp = cs!=="none" && (st==="ramp");
+      const showCyclicSrc = st==="cyclic" && cs==="expr";
+      const showExprSrc = (cs==="expr");
       return <Sec title="Colour">
-        <PR label="source">
-          <select value={cs} onChange={e=>set("colorSource",e.target.value)} style={{...S.inp,width:"100%"}}>
-            {srcOpts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+        <PR label="colour by">
+          <select value={curVal} onChange={e=>pick(e.target.value)} style={{...S.inp,width:"100%"}}>
+            {opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
           </select>
         </PR>
-        {cs==="expr" && <PR label="expr"><EI v={node.props.colorExpr||""} sc={scope} onChange={v=>set("colorExpr",v)} placeholder="scalar, e.g. out0, hypot(out0,out1), arg"/></PR>}
-        {cs!=="none" && <>
+        {showExprSrc && <PR label="expr"><EI v={node.props.colorExpr||""} sc={scope} onChange={v=>set("colorExpr",v)} placeholder={st==="cyclic"?"angle, e.g. atan2(out1,out0)":"scalar, e.g. out0, hypot(out0,out1)"}/></PR>}
+        {st==="rgb" && <>
+          <PR label="R"><EI v={node.props.colorR||""} sc={scope} onChange={v=>set("colorR",v)} placeholder="0..1, e.g. 0.5+0.5·sin(out0)"/></PR>
+          <PR label="G"><EI v={node.props.colorG||""} sc={scope} onChange={v=>set("colorG",v)} placeholder="0..1"/></PR>
+          <PR label="B"><EI v={node.props.colorB||""} sc={scope} onChange={v=>set("colorB",v)} placeholder="0..1"/></PR>
+        </>}
+        {st==="hsl" && <>
+          <PR label="H"><EI v={node.props.colorH||""} sc={scope} onChange={v=>set("colorH",v)} placeholder="hue (turns), e.g. out0/(2pi)"/></PR>
+          <PR label="S"><EI v={node.props.colorS||""} sc={scope} onChange={v=>set("colorS",v)} placeholder="0..1"/></PR>
+          <PR label="L"><EI v={node.props.colorL||""} sc={scope} onChange={v=>set("colorL",v)} placeholder="0..1"/></PR>
+        </>}
+        {showRamp && <>
           <PR label="low"><ColorRow v={node.props.colorLo||"#3a6aff"} onChange={v=>set("colorLo",v)}/></PR>
           <PR label="high"><ColorRow v={node.props.colorHi||"#ff5ea8"} onChange={v=>set("colorHi",v)}/></PR>
           <PR label="min"><EI v={node.props.colorMin??""} sc={scope} onChange={v=>set("colorMin",v)} placeholder="auto"/></PR>
           <PR label="max"><EI v={node.props.colorMax??""} sc={scope} onChange={v=>set("colorMax",v)} placeholder="auto"/></PR>
         </>}
         <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
-          The chosen scalar is mapped across [min, max] (auto-fit when blank) onto the low→high ramp. {outDim>1?<>With {outDim} outputs you can colour by any one of them or by their magnitude.</>:<>Add more outputs to the map to colour by additional channels.</>}
+          {st==="ramp"? <>A scalar mapped across [min, max] (auto-fit when blank) onto the low→high ramp.</>
+            : st==="cyclic"? <>An angle-like value wrapped onto a cyclic hue wheel — good for phases and arguments (no endpoints).</>
+            : st==="rgb"? <>Three expressions set the red, green, blue channels directly (each clamped 0..1). Variables: out0…, the inputs, t/n, and wired scalars.</>
+            : st==="hsl"? <>Three expressions set hue (in turns), saturation, and lightness directly. Full control over the colour.</>
+            : <>A 2-D source painted by domain colouring: hue is the angle, brightness rises with the magnitude.</>}
         </div>
       </Sec>;
     })()}

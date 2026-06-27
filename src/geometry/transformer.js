@@ -74,7 +74,16 @@ function colorSourceOf(tp, outDim){
   if(m){ const idx=Math.min(outDim-1, Math.max(0, +m[1])); return {kind:"out", idx}; }
   return {kind:"none"};
 }
-function colorOn(tp, outDim){ return colorSourceOf(tp, outDim).kind !== "none"; }
+function colorOn(tp, outDim){
+  // direct styles always colour (rgb/hsl carry their own expressions); otherwise
+  // colour is on when the resolved scalar/2-D source isn't "none".
+  if(styleIsDirect(tp)){
+    // huemag still needs a real 2-D source; rgb/hsl/cyclic are self-sufficient
+    if((tp.colorStyle)==="huemag"){ const cs=tp.colorSource||""; return cs==="outPair"||cs==="complexOut"||/^out\d+$/.test(cs); }
+    return true;
+  }
+  return colorSourceOf(tp, outDim).kind !== "none";
+}
 // True only when BOTH ends of the color range are pinned by the user. An
 // explicitly-defined surface (2-input graph with an output bound to color) must
 // not auto-fit its ramp across the sampling domain — that "auto coloring domain"
@@ -120,7 +129,55 @@ function rampColors(vals, tp, scope){
   return vals.map(v=>{let t=(v-mn)/span;t=t<0?0:t>1?1:t;c.copy(lo).lerp(hi,t);return [c.r,c.g,c.b];});
 }
 
-// Build the list of input sample vectors for the domain.
+// The colour STYLE (how data → colour). Defaults to "ramp". Styles that produce
+// colour DIRECTLY (per-sample RGB, no ramp pass) are rgb / hsl / huemag / cyclic;
+// "ramp" produces a scalar that rampColors maps afterwards.
+function colorStyleOf(tp){
+  const s=tp.colorStyle;
+  if(s==="cyclic"||s==="rgb"||s==="hsl"||s==="huemag") return s;
+  return "ramp";
+}
+// Does the active style produce RGB directly (bypassing the scalar→ramp pass)?
+function styleIsDirect(tp){ const s=colorStyleOf(tp); return s==="rgb"||s==="hsl"||s==="huemag"||s==="cyclic"; }
+
+// Build a scope with the sample's inputs/outputs bound for a colour expression.
+function _colorScope(scope, inVec, outVec, param, i){
+  const sc={...scope};
+  const inN=["x","y","z","w"]; for(let k=0;k<inVec.length;k++) sc[inN[k]]=inVec[k];
+  for(let k=0;k<outVec.length;k++) sc[`out${k}`]=outVec[k];
+  sc.t=param; sc.u=param; sc.v=param; sc.n=i;
+  return sc;
+}
+// Direct per-sample RGB for the rgb / hsl / huemag / cyclic styles. Returns
+// [r,g,b] in 0..1. (ramp is handled by colorScalar + rampColors instead.)
+function directColorRGB(tp, scope, inVec, outVec, param, i){
+  const style=colorStyleOf(tp);
+  const sc=_colorScope(scope, inVec, outVec, param, i);
+  const ev=(e,d)=>{ const v=safeEval(e,sc,true); return (v==null||!isFinite(v))?d:v; };
+  if(style==="rgb"){
+    const cl=(v)=>v<0?0:v>1?1:v;
+    return [cl(ev(tp.colorR,0)), cl(ev(tp.colorG,0)), cl(ev(tp.colorB,0))];
+  }
+  if(style==="hsl"){
+    return hsl2rgb(ev(tp.colorH,0), Math.max(0,Math.min(1,ev(tp.colorS,0.9))), Math.max(0,Math.min(1,ev(tp.colorL,0.5))));
+  }
+  if(style==="cyclic"){
+    // an angle-like scalar (the source) → hue wheel; full sat, mid lightness
+    const a=colorScalar(tp, scope, inVec, outVec, param, i, 0);
+    return hsl2rgb(a/(2*Math.PI), 0.9, 0.5);
+  }
+  if(style==="huemag"){
+    // a 2-D source → (angle, magnitude): hue=angle, brightness rises with |·|
+    const src=tp.colorSource||"";
+    let re, im;
+    if(src==="complexOut"){ const w=outVec.__cplx; if(w){re=w.re;im=w.im;} else {re=outVec[0]||0;im=0;} }
+    else { re=outVec[0]||0; im=outVec[1]||0; }     // outPair / default: out0,out1
+    return complexColorRGB(re, im);
+  }
+  return [1,1,1];
+}
+
+
 //   inline 1D → [[a],[a..],...]  (res points)
 //   inline 2D → res×res grid (row-major, returns {pts, nu, nv})
 //   inline 3D → res×res×res
@@ -398,6 +455,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     // Color comes from the resolved colour source (colorSource, with legacy
     // color-axis fallback). Outputs bound to a spatial axis form the vector.
     const useColor = colorOn(tp, outDim);
+    const directF = useColor && styleIsDirect(tp);
     const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
     const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3];
     const pairs=[]; const cvals=useColor?[]:null;
@@ -408,10 +466,10 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) posM[ax]=inVec[k]??0; }
       for(let k=0;k<outDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
       pairs.push({ pos:posM, vec:vecM });   // glyph builder applies its own axis swap
-      if(useColor) cvals.push(colorScalar(tp,scope,inVec,outVec,s/Math.max(1,dom.pts.length-1),s));
+      if(useColor){ const p=s/Math.max(1,dom.pts.length-1); cvals.push(directF ? directColorRGB(tp,scope,inVec,outVec,p,s) : colorScalar(tp,scope,inVec,outVec,p,s)); }
     }
     const opts={ arrowLen:resolveNum(tp.arrowLen,scope,0.5), normalize:tp.normalize!==false, anim:"none", speed:1 };
-    if(useColor) opts.cols=rampColors(cvals,tp,scope);
+    if(useColor) opts.cols = directF ? cvals : rampColors(cvals,tp,scope);
     return buildGlyphFieldGPU(pairs, color, opts);
   }
 
@@ -469,63 +527,55 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
 
   // graph mode
   const gradient=colorOn(tp, outDim);
+  const direct1=gradient && styleIsDirect(tp);
   if(inDim===1){
-    // buildCurve3d / buildSurf apply the world (x,z,y) swap themselves, so we
-    // hand them math-order [X,Y,Z] from placeGraph (NOT toWorld) — otherwise the
-    // swap happens twice and the output lands on the wrong axis.
     const n=dom.pts.length;
     const pts=new Array(n); const vals=gradient?new Array(n):null;
     for(let i=0;i<n;i++){
       const inVec=dom.pts[i];
       const outVec=evalMap(outs,scope,inVec,field);
       pts[i]=placeGraph(tp,inVec,outVec,inDim,outDim);
-      if(gradient) vals[i]=colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i);
+      if(gradient){ vals[i]= direct1 ? directColorRGB(tp,scope,inVec,outVec,n>1?i/(n-1):0,i) : colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i); }
     }
-    return buildCurve3d(pts, color, gradient?rampColors(vals,tp,scope):null);
+    return buildCurve3d(pts, color, gradient?(direct1?vals:rampColors(vals,tp,scope)):null);
   }
   if(inDim===2 && dom.grid){
+    const direct = colorOn(tp, outDim) && styleIsDirect(tp);
     // An explicitly-defined surface (z = out bound to an axis) only gradient-
     // colors when an output is bound to color AND the user pinned the range.
     // A color-bound output with no range no longer auto-fits across the domain;
     // it renders in the flat single color instead (see hasExplicitColorRange).
-    const surfGradient = gradient && hasExplicitColorRange(tp);
-    // GPU fast path: an inline-grid graph surface is analytic in (a,b) — evaluate
-    // the output expressions in a vertex shader instead of CPU-sampling nu×nv
-    // points. Only when the domain is the inline grid (a wired paramSpace supplies
-    // arbitrary input points the shader can't reproduce). Gradient coloring is
-    // supported on the GPU only when the color range [min,max] is given explicitly
-    // (the shader can't auto-range without a CPU pre-pass), so an auto-range
-    // gradient still falls to CPU.
-    if(!paramNode){
+    const surfGradient = !direct && gradient && hasExplicitColorRange(tp);
+    // GPU fast path only handles flat + ramp; the direct styles (rgb/hsl/huemag/
+    // cyclic) are CPU per-vertex, so skip the GPU path when a direct style is on.
+    if(!paramNode && !direct){
       let colorInfo=null;
       if(surfGradient){
-        // surfGradient already implies an explicit [min,max] range, so the shader
-        // can ramp directly — no CPU pre-pass / auto-range needed.
         colorInfo={ lo:new THREE.Color(tp.colorLo||"#3a6aff"), hi:new THREE.Color(tp.colorHi||"#ff5ea8"),
                     cmin:resolveNum(tp.colorMin,scope,0), cmax:resolveNum(tp.colorMax,scope,1) };
       }
-      // Either a flat surface (no color binding, or color binding without a
-      // range → flat) or a fully-ranged gradient: both render straight on the GPU.
       const gpu=buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorInfo, tex, ntex, nstr, lights);
       if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
     }
-    const nu=dom.nu, nv=dom.nv, rows=[], colRows=surfGradient?[]:null, flatVals=surfGradient?[]:null;
+    const useCol = surfGradient || direct;
+    const nu=dom.nu, nv=dom.nv, rows=[], colRows=useCol?[]:null, flatVals=surfGradient?[]:null;
     let idx=0;
     for(let j=0;j<nv;j++){
-      const row=[], crow=surfGradient?[]:null;
+      const row=[], crow=useCol?[]:null;
       for(let i=0;i<nu;i++){
         const inVec=dom.pts[idx++];
         const outVec=evalMap(outs,scope,inVec,field);
         row.push(placeGraph(tp,inVec,outVec,inDim,outDim));
-        if(surfGradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
+        if(direct){ crow.push(directColorRGB(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1)); }
+        else if(surfGradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
       }
-      rows.push(row); if(surfGradient) colRows.push(crow);
+      rows.push(row); if(useCol) colRows.push(crow);
     }
     if(surfGradient){
       const flat=rampColors(flatVals,tp,scope);
       let k=0; for(let j=0;j<nv;j++) for(let i=0;i<nu;i++) colRows[j][i]=flat[k++];
     }
-    return buildSurf(rows, color, surfGradient?colRows:null, tp.showWire!==false);
+    return buildSurf(rows, color, useCol?colRows:null, tp.showWire!==false);
   }
   // 3 inputs in graph mode: render as a value-coloured point cloud at the
   // graphed positions (no single surface to draw).

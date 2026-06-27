@@ -288,20 +288,26 @@ function makeNode(type,pos){
       camRes:"2000",          // sample count across the visible x-range (camera-follow)
       aMin:"-5",aMax:"5",bMin:"-5",bMax:"5",cMin:"-3",cMax:"3",dMin:"-3",dMax:"3",
       res:"60",
-      // Coloring (always available, independent of axis bindings). colorSource
-      // selects WHAT scalar drives the colour:
-      //   "none"      — flat node colour (off)
-      //   "out0".."out3" — the value of that output
-      //   "magnitude" — the Euclidean norm of the output vector |(out0..)|
-      //   "expr"      — a custom scalar expression (colorExpr; vars: x,y,z,w
-      //                 inputs, out0..out3 outputs, t/u/v domain params, n index,
-      //                 plus wired scalars)
-      // The chosen scalar is mapped across [colorMin,colorMax] (auto when blank)
-      // onto the colorLo→colorHi ramp. Legacy projects that bound an output via
-      // outAxisK="color" still colour correctly (the evaluator falls back to that
-      // when colorSource is unset); the UI only exposes colorSource.
-      colorSource:"none",
-      colorMode:"off", colorExpr:"out0", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
+      // Coloring (always available, independent of axis bindings). Two props:
+      //   colorSource — WHAT data drives the colour:
+      //     "none" | "out0".."out3" | "magnitude" (|output vector|) | "expr"
+      //     (custom scalar/complex colorExpr) | "outPair" (out0,out1 as a 2-vector)
+      //     | "complexOut" (the complex value of out0 in a complex map)
+      //   colorStyle  — HOW the data becomes colour:
+      //     "ramp"   — a scalar mapped across [colorMin,colorMax] onto colorLo→Hi
+      //     "cyclic" — an angle-like scalar mapped onto a cyclic hue wheel (wraps)
+      //     "rgb"    — three expressions colorR/G/B ARE the channels (0..1)
+      //     "hsl"    — three expressions colorH/S/L ARE hue/sat/lightness
+      //     "huemag" — a 2-D source (a pair, or a complex value): hue = angle,
+      //                brightness = magnitude (domain-colouring style)
+      // Some (source × style) pairs don't make sense and the UI hides them (e.g.
+      // huemag needs a 2-D source; rgb/hsl carry their own expressions and ignore
+      // the source). Legacy: colorMode="gradient" and outAxis="color" still colour.
+      colorSource:"none", colorStyle:"ramp",
+      colorMode:"off", colorExpr:"out0",
+      colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
+      colorR:"0.5+0.5*sin(out0)", colorG:"0.5+0.5*cos(out0)", colorB:"0.5",
+      colorH:"out0", colorS:"0.9", colorL:"0.5",
       // ℂ→ℂ visualization: when the wired map is a complex 1→1 map, the transformer
       // auto-switches to complex mode and `cplxMode` picks the picture:
       //   "domain" — flat (re,im) plane, hue = arg f, brightness = |f| (domain colouring)
