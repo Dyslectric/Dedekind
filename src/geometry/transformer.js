@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { resolveNum, safeEval, makeFastComplexEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
 import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU } from "./builders.js";
-import { marchingSquares, marchingCubes, intersectionCurve3d } from "./implicit.js";
+import { marchingSquares, complexEquationCurves, marchingCubes, intersectionCurve3d } from "./implicit.js";
 import { buildImplicitRaymarch } from "./implicit-raymarch.js";
 
 // ── Transformer: render a pure map (fnMap) over a domain ─────────────────────
@@ -219,6 +219,35 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     const eq2is3d = eqNode2 && (eqNode2.props.dims||"2d")==="3d";
     const aMin=resolveNum(tp.aMin,scope,-5), aMax=resolveNum(tp.aMax,scope,5);
     const bMin=resolveNum(tp.bMin,scope,-5), bMax=resolveNum(tp.bMax,scope,5);
+
+    // ── Complex equation F(z)=0, done properly ──
+    // F is complex over the plane (varA=Re z, varB=Im z, i imaginary). The solution
+    // is {Re F=0} ∩ {Im F=0}: draw both zero-contours as curves (Re in one hue, Im
+    // in another) and mark their intersections — the actual roots — as points.
+    // Always planar (a complex equation has no 3-D form), regardless of `dims`.
+    if((eqNode.props.field||"real")==="complex"){
+      const res=Math.max(2,Math.min(600,Math.round(resolveNum(tp.res,scope,200))));
+      const { reSegs, imSegs, roots } = complexEquationCurves(eqNode, scopeF||scope, aMin,aMax, bMin,bMax, res);
+      const out=[];
+      // contours live in the ground plane at (a,0,b); buildSegments3d bakes math
+      // (x,y,z)→world(x,z,−y), so feed math (a,−b,0) like the real 2-D curve does.
+      const toWorld=(segs)=>segs.map(([p0,p1])=>[[p0[0],-p0[1],0],[p1[0],-p1[1],0]]);
+      const reColor="#5ec8ff", imColor="#ff7eb6", rootColor="#ffe066";
+      if(reSegs.length) out.push(...buildSegments3d(toWorld(reSegs), reColor));
+      if(imSegs.length) out.push(...buildSegments3d(toWorld(imSegs), imColor));
+      // root markers: small spheres at each intersection
+      if(roots.length){
+        const g=new THREE.SphereGeometry(1,12,12);
+        const m=new THREE.MeshBasicMaterial({color:hexToThree(rootColor),depthTest:false});
+        const inst=new THREE.InstancedMesh(g,m,roots.length);
+        const span=Math.max(aMax-aMin,bMax-bMin); const r=span*0.012;
+        const mtx=new THREE.Matrix4();
+        roots.forEach(([a,b],k)=>{ mtx.makeScale(r,r,r); mtx.setPosition(a,0,-b); inst.setMatrixAt(k,mtx); });
+        inst.instanceMatrix.needsUpdate=true;
+        out.push(inst);
+      }
+      return out;
+    }
 
     if(is3d){
       const cMin=resolveNum(tp.cMin,scope,-3), cMax=resolveNum(tp.cMax,scope,3);

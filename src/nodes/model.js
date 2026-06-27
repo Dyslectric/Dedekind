@@ -257,6 +257,12 @@ function makeNode(type,pos){
     // to render; the transformer's domain box sets the sampling region.
     equation:{label:"equation",color:"__AUTO__",props:{
       dims:"2d", lhs:"x^2 + y^2", rhs:"4", varA:"x", varB:"y", varC:"z",
+      // field: "real" — F = lhs−rhs is real, draw its zero curve (marching squares).
+      //        "complex" — lhs,rhs are complex in the plane variables (varA=Re z,
+      //        varB=Im z, with i the imaginary unit). F(z)=0 is then the SYSTEM
+      //        {Re F=0} ∧ {Im F=0}: we trace both zero-contours as curves and mark
+      //        their intersection points (the actual complex roots).
+      field:"real",
     },attachments:[]},
     // transformer: renders a wired fnMap over a domain.
     //   mode "graph" — assign each input to a spatial axis and each output to a

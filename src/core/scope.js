@@ -360,7 +360,7 @@ function plotSignature(node, p, scope, nodes, animVals){
       eqRaymarch = eqDeps.length===1 && eqTranspiles(eqDeps[0], resolveScope(eqDeps[0].id,nodes,animV));
       for(const dep of eqDeps){
         const q=dep.props;
-        eqSig += `eq|${q.dims||"2d"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC};`;
+        eqSig += `eq|${q.dims||"2d"}|${q.field||"real"}|${q.lhs}|${q.rhs}|${q.varA}|${q.varB}|${q.varC};`;
         if(!eqRaymarch){
           const eqScope=resolveScope(dep.id,nodes,animV);
           const eqNodeForSig={ props:{ expr:`${q.lhs} ${q.rhs}` }, type:"__eqvals" };

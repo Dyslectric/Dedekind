@@ -1574,6 +1574,23 @@ function complexDomainScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// A complex equation, done properly: z³ = 1. As a system this is {Re(z³−1)=0} ∩
+// {Im(z³−1)=0}; the two zero-contours are drawn in two hues and their three
+// intersections — the cube roots of unity — are marked. varA=Re z, varB=Im z.
+function complexEqScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:837,y:317}));cam.label="z³ = 1";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2";
+  cam.props.showGrid=true;cam.props.showAxes=true;cam.props.showScalarOverlay=false;
+  const eq=makeNode("equation",{x:97,y:317});eq.label="z³ = 1";eq.color="#ffd479";
+  eq.props.field="complex";eq.props.lhs="(x+i*y)^3";eq.props.rhs="1";eq.props.varA="x";eq.props.varB="y";
+  const tr=makeNode("transformer",{x:477,y:317});tr.label="roots of z³=1";tr.color="#ffd479";
+  tr.props.res="220";tr.props.aMin="-2";tr.props.aMax="2";tr.props.bMin="-2";tr.props.bMax="2";
+  tr.attachments=[eq.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
+}
+
 
 // sin(w t)) and raise the curve by its own t, so it climbs while looping w times
 // around the central axis. That loop count is the winding number, the same integer
@@ -1842,6 +1859,7 @@ Object.assign(SCENES, {
   "metamorph": metamorphScene,
   "self-similar-zoom": selfSimilarZoomScene,
   "complex-domain": complexDomainScene,
+  "complex-eq": complexEqScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────

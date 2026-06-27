@@ -50,20 +50,29 @@ export function FnMapEditor({ node, scope, onChange }){
 export function EquationEditor({ node, scope, onChange }){
   const{ui,S}=useUI();
   const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
-  const is3d=(node.props.dims||"2d")==="3d";
+  const isCplx=(node.props.field||"real")==="complex";
+  const is3d=!isCplx && (node.props.dims||"2d")==="3d";
   const varA=(node.props.varA||"x").trim()||"x";
   const varB=(node.props.varB||"y").trim()||"y";
   const varC=(node.props.varC||"z").trim()||"z";
   return <>
     <Sec title="Type">
-      <PR label="dims">
+      <PR label="field">
+        <select value={node.props.field||"real"} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="real">ℝ — real relation lhs = rhs</option>
+          <option value="complex">ℂ — complex equation F(z) = 0</option>
+        </select>
+      </PR>
+      {!isCplx && <PR label="dims">
         <select value={node.props.dims||"2d"} onChange={e=>set("dims",e.target.value)} style={{...S.inp,width:"100%"}}>
           <option value="2d">2D — curve in {varA},{varB} (marching squares)</option>
           <option value="3d">3D — surface in {varA},{varB},{varC} (marching cubes)</option>
         </select>
-      </PR>
+      </PR>}
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        {is3d
+        {isCplx
+          ? <>A <strong>complex</strong> equation in the plane: <em>{varA}</em> is the real part of z and <em>{varB}</em> the imaginary part, with <code>i</code> the imaginary unit. A single complex equation is really two real ones, so its solutions are isolated points: Dedekind draws both zero-contours — <span style={{color:"#5ec8ff"}}>Re&nbsp;F&nbsp;=&nbsp;0</span> and <span style={{color:"#ff7eb6"}}>Im&nbsp;F&nbsp;=&nbsp;0</span> — and marks their <span style={{color:"#ffe066"}}>intersections</span>, the roots. Write e.g. <code>({varA}+i·{varB})^2 = -1</code>.</>
+          : is3d
           ? <>The surface where <em>lhs = rhs</em> in three variables, extracted as a triangle mesh. Wire into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong>; its three domain ranges set the sampling box.</>
           : <>The curve where <em>lhs = rhs</em> in two variables. Wire into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong>; its first two domain ranges set the sampling box.</>}
       </div>
@@ -74,11 +83,13 @@ export function EquationEditor({ node, scope, onChange }){
       <PR label="rhs"><XF v={node.props.rhs||""} sc={scope} onChange={v=>set("rhs",v)}/></PR>
     </Sec>
     <Sec title="Variables">
-      <PR label="a (→X)"><NameField v={node.props.varA||"x"} onChange={val=>set("varA",val)}/></PR>
-      <PR label="b (→Y)"><NameField v={node.props.varB||"y"} onChange={val=>set("varB",val)}/></PR>
+      <PR label={isCplx?"Re z":"a (→X)"}><NameField v={node.props.varA||"x"} onChange={val=>set("varA",val)}/></PR>
+      <PR label={isCplx?"Im z":"b (→Y)"}><NameField v={node.props.varB||"y"} onChange={val=>set("varB",val)}/></PR>
       {is3d&&<PR label="c (→Z)"><NameField v={node.props.varC||"z"} onChange={val=>set("varC",val)}/></PR>}
       <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        Plotting <em>{node.props.lhs||"lhs"} = {node.props.rhs||"rhs"}</em> over the {is3d?<><em>{varA}</em>,<em>{varB}</em>,<em>{varC}</em> space</>:<><em>{varA}</em>–<em>{varB}</em> plane</>}.
+        {isCplx
+          ? <>Solving <em>{node.props.lhs||"lhs"} = {node.props.rhs||"rhs"}</em> for z = <em>{varA}</em> + i·<em>{varB}</em> over the plane.</>
+          : <>Plotting <em>{node.props.lhs||"lhs"} = {node.props.rhs||"rhs"}</em> over the {is3d?<><em>{varA}</em>,<em>{varB}</em>,<em>{varC}</em> space</>:<><em>{varA}</em>–<em>{varB}</em> plane</>}.</>}
       </div>
     </Sec>
   </>;

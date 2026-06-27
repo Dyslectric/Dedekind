@@ -1,4 +1,4 @@
-import { compileExpr } from "../core/math.js";
+import { compileExpr, makeFastComplexEval } from "../core/math.js";
 import { EDGE_TABLE, TRI_TABLE } from "./mcTables.js";
 import { evalFieldGPU2D, evalFieldGPU3D, getSharedGL, gpu3DAvailable } from "./implicit-gpu.js";
 
@@ -130,7 +130,102 @@ function marchingSquares(eqNode, scope, aMin, aMax, bMin, bMax, res){
   return segs;
 }
 
-export { marchingSquares, marchingCubes, intersectionCurve3d };
+export { marchingSquares, marchGrid, complexEquationCurves, marchingCubes, intersectionCurve3d };
+
+// ── Marching squares over a PRECOMPUTED scalar grid ──────────────────────────
+// Walks an (nA+1)×(nB+1) row-major grid and emits zero-crossing segments in the
+// (varA→x, varB→y) plane. Factored out of marchingSquares so the complex solver
+// can march the Re and Im grids with the same case table.
+function marchGrid(grid, nA, nB, aMin, bMin, da, db){
+  const at=(i,j)=>grid[j*(nA+1)+i];
+  const segs=[];
+  const lerp=(v0,v1)=>(Math.abs(v1-v0)<1e-12?0.5:v0/(v0-v1));
+  for(let j=0;j<nB;j++)for(let i=0;i<nA;i++){
+    const f00=at(i,j),f10=at(i+1,j),f11=at(i+1,j+1),f01=at(i,j+1);
+    if(!(isFinite(f00)&&isFinite(f10)&&isFinite(f11)&&isFinite(f01))) continue;
+    let code=0; if(f00>0)code|=1; if(f10>0)code|=2; if(f11>0)code|=4; if(f01>0)code|=8;
+    if(code===0||code===15) continue;
+    const x0=aMin+i*da,x1=x0+da,y0=bMin+j*db,y1=y0+db;
+    const eB=()=>[x0+lerp(f00,f10)*da,y0], eR=()=>[x1,y0+lerp(f10,f11)*db],
+          eT=()=>[x0+lerp(f01,f11)*da,y1], eL=()=>[x0,y0+lerp(f00,f01)*db];
+    switch(code){
+      case 1: case 14: segs.push([eL(),eB()]); break;
+      case 2: case 13: segs.push([eB(),eR()]); break;
+      case 3: case 12: segs.push([eL(),eR()]); break;
+      case 4: case 11: segs.push([eR(),eT()]); break;
+      case 6: case 9:  segs.push([eB(),eT()]); break;
+      case 7: case 8:  segs.push([eL(),eT()]); break;
+      case 5: { const c=(f00+f10+f11+f01)/4; if(c>0){segs.push([eL(),eT()]);segs.push([eB(),eR()]);}else{segs.push([eL(),eB()]);segs.push([eR(),eT()]);} break; }
+      case 10:{ const c=(f00+f10+f11+f01)/4; if(c>0){segs.push([eL(),eB()]);segs.push([eR(),eT()]);}else{segs.push([eL(),eT()]);segs.push([eB(),eR()]);} break; }
+    }
+  }
+  return segs;
+}
+
+// ── Complex equation F(z) = 0, done properly ─────────────────────────────────
+// F = lhs − rhs is a COMPLEX function of z over the plane (varA = Re z, varB =
+// Im z, with `i` the imaginary unit). A single complex equation is really two
+// real equations, so its solution set is generically isolated POINTS:
+//   {Re F = 0} ∩ {Im F = 0}.
+// We sample F complex on the grid, march Re F=0 and Im F=0 separately into two
+// curve families, and locate the roots as cells where BOTH Re and Im change sign
+// (refined to the cell centre). Returns { reSegs, imSegs, roots } in plane coords.
+function complexEquationCurves(eqNode, scope, aMin, aMax, bMin, bMax, res){
+  const p=eqNode.props||{};
+  const varA=(p.varA||"x").trim()||"x";
+  const varB=(p.varB||"y").trim()||"y";
+  const fExpr=`(${p.lhs ?? "0"}) - (${p.rhs ?? "0"})`;
+  const N=Math.max(2,Math.min(600,Math.round(res)));
+  const nA=N,nB=N, da=(aMax-aMin)/nA, db=(bMax-bMin)/nB;
+  const sc={}; for(const k in scope){ if(k!=="pi"&&k!=="e"&&k!=="i") sc[k]=scope[k]; }
+  const fn=makeFastComplexEval(fExpr, {...sc, [varA]:0, [varB]:0});
+  if(!fn) return { reSegs:[], imSegs:[], roots:[] };
+  // evaluate F over the grid, storing Re and Im parts
+  const reG=new Float64Array((nA+1)*(nB+1));
+  const imG=new Float64Array((nA+1)*(nB+1));
+  let idx=0;
+  for(let j=0;j<=nB;j++){
+    sc[varB]=bMin+j*db;
+    for(let i=0;i<=nA;i++){
+      sc[varA]=aMin+i*da;
+      const w=fn(sc);
+      if(w){ reG[idx]=w.re; imG[idx]=w.im; } else { reG[idx]=NaN; imG[idx]=NaN; }
+      idx++;
+    }
+  }
+  const reSegs=marchGrid(reG,nA,nB,aMin,bMin,da,db);
+  const imSegs=marchGrid(imG,nA,nB,aMin,bMin,da,db);
+  // roots: cells where both Re and Im change sign across the cell (a crossing of
+  // both contours). A single true root straddles several adjacent cells at high
+  // resolution, so we collect candidate cell-centres then CLUSTER them: points
+  // within a few cell-widths merge to their centroid, giving one marker per root.
+  const atR=(i,j)=>reG[j*(nA+1)+i], atI=(i,j)=>imG[j*(nA+1)+i];
+  const changes=(a,b,c,d)=>{ const mn=Math.min(a,b,c,d), mx=Math.max(a,b,c,d); return isFinite(mn)&&isFinite(mx)&&mn<=0&&mx>=0; };
+  const cand=[];
+  for(let j=0;j<nB;j++)for(let i=0;i<nA;i++){
+    const r00=atR(i,j),r10=atR(i+1,j),r11=atR(i+1,j+1),r01=atR(i,j+1);
+    const i00=atI(i,j),i10=atI(i+1,j),i11=atI(i+1,j+1),i01=atI(i,j+1);
+    if(changes(r00,r10,r11,r01) && changes(i00,i10,i11,i01)){
+      cand.push([aMin+(i+0.5)*da, bMin+(j+0.5)*db]);
+    }
+  }
+  // single-link clustering by a merge radius of ~3 cell diagonals
+  const mergeR=3*Math.hypot(da,db);
+  const roots=[];
+  const used=new Array(cand.length).fill(false);
+  for(let k=0;k<cand.length;k++){
+    if(used[k]) continue;
+    let sx=cand[k][0], sy=cand[k][1], cnt=1; used[k]=true;
+    // greedily absorb any later candidate near the running centroid
+    for(let m=k+1;m<cand.length;m++){
+      if(used[m]) continue;
+      if(Math.hypot(cand[m][0]-sx/cnt, cand[m][1]-sy/cnt)<=mergeR){ sx+=cand[m][0]; sy+=cand[m][1]; cnt++; used[m]=true; }
+    }
+    roots.push([sx/cnt, sy/cnt]);
+  }
+  return { reSegs, imSegs, roots };
+}
+
 
 // ── Intersection curve of two implicit surfaces ──────────────────────────────
 // Given two equation nodes F (lhs=rhs) and G (lhs=rhs), both in 3D, extract the
