@@ -561,6 +561,44 @@ function makeFastEval(expr, sampleScope, idxContext = false, field = undefined) 
     } catch { return null; }
   };
 }
+// Evaluate an expression and return the raw COMPLEX result as {re, im} (or null).
+// Unlike safeEval (which coerces to a plottable real and drops genuine complex
+// values), this preserves both parts — needed for ℂ→ℂ visualizations that read
+// |w|, arg(w), Re(w), Im(w). `i` is always the imaginary unit here (these are
+// complex expressions by construction). The scope supplies the input parts
+// (e.g. re, im) as plain numbers.
+function evalComplex(expr, scope) {
+  const c = compileExprScoped(expr, scope, false, "complex");
+  if (!c) return null;
+  try {
+    const v = c.evaluate(_shieldConstants(scope, false, "complex"));
+    if (typeof v === "number") return Number.isFinite(v) ? { re: v, im: 0 } : null;
+    if (v && typeof v === "object" && typeof v.re === "number" && typeof v.im === "number") {
+      return (Number.isFinite(v.re) && Number.isFinite(v.im)) ? { re: v.re, im: v.im } : null;
+    }
+    return null;
+  } catch { return null; }
+}
+// Compile-once complex evaluator for hot loops (the ℂ→ℂ samplers run thousands
+// of points). Returns (scope) => {re,im}|null, reusing one compiled form. The
+// caller mutates the input-part keys (re, im) on one scope object per sample.
+function makeFastComplexEval(expr, sampleScope) {
+  const c = compileExprScoped(expr, sampleScope || {}, false, "complex");
+  if (!c) return null;
+  const imag = math.complex(0, 1);
+  return (scope) => {
+    try {
+      const had = _IMAG_SENTINEL in scope; const prev = scope[_IMAG_SENTINEL];
+      scope[_IMAG_SENTINEL] = imag;
+      const v = c.evaluate(scope);
+      if (had) scope[_IMAG_SENTINEL] = prev; else delete scope[_IMAG_SENTINEL];
+      if (typeof v === "number") return Number.isFinite(v) ? { re: v, im: 0 } : null;
+      if (v && typeof v === "object" && typeof v.re === "number" && typeof v.im === "number")
+        return (Number.isFinite(v.re) && Number.isFinite(v.im)) ? { re: v.re, im: v.im } : null;
+      return null;
+    } catch { return null; }
+  };
+}
 function linspace(a, b, n) {
   const r = []; for (let i = 0; i < n; i++) r.push(a + (b-a)*i/(n-1)); return r;
 }
@@ -676,7 +714,7 @@ function derivativeExpr(bodyText, varName) {
 
 export {
   math, parse,
-  uid, PAL, nextColor, compileExpr, compileExprScoped, resolveNum, safeEval, makeFastEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr,
+  uid, PAL, nextColor, compileExpr, compileExprScoped, resolveNum, safeEval, makeFastEval, evalComplex, makeFastComplexEval, evalArray, linspace, makeFn, splitTopLevel, derivativeExpr,
   RESERVED_CONSTANTS, _normalizeGreek as normalizeGreek,
   exprType, exprTypeList,
 };

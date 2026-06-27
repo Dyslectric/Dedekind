@@ -1553,8 +1553,28 @@ function selfSimilarZoomScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[b.id]:b,[s.id]:s,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
+// A ℂ→ℂ map shown by domain colouring in the 2-D plane: f(z) = (z²−1)/(z²+1),
+// written with re,im as the real/imag parts of z. Hue = arg f (which way f
+// points), brightness = |f| — zeros dark, poles bright. Two zeros at z=±1 and two
+// poles at z=±i, each circled once by the colour wheel.
+function complexDomainScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:837,y:317}));cam.label="(z²−1)/(z²+1)";
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;
+  const fn=makeNode("fnMap",{x:97,y:317});fn.label="(z²−1)/(z²+1)";fn.color="#c4b5fd";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
+  // z = re + i·im
+  fn.props.out0="((re+i*im)^2 - 1)/((re+i*im)^2 + 1)";
+  const tr=makeNode("transformer",{x:477,y:317});tr.label="domain colouring";tr.color="#c4b5fd";
+  tr.props.cplxMode="domain";tr.props.res="140";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
+  tr.attachments=[fn.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
+}
 
-// Winding number as a lift of the circle. Send t once around with (cos(w t),
+
 // sin(w t)) and raise the curve by its own t, so it climbs while looping w times
 // around the central axis. That loop count is the winding number, the same integer
 // the domain-colouring hue wound around each zero and the degree of z → z^w on the
@@ -1821,6 +1841,7 @@ Object.assign(SCENES, {
   "teapot": teapotScene,
   "metamorph": metamorphScene,
   "self-similar-zoom": selfSimilarZoomScene,
+  "complex-domain": complexDomainScene,
 });
 
 // ── Tutorial teaching scenes ────────────────────────────────────────────────

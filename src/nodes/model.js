@@ -296,6 +296,13 @@ function makeNode(type,pos){
       // when colorSource is unset); the UI only exposes colorSource.
       colorSource:"none",
       colorMode:"off", colorExpr:"out0", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
+      // ℂ→ℂ visualization: when the wired map is a complex 1→1 map, the transformer
+      // auto-switches to complex mode and `cplxMode` picks the picture:
+      //   "domain" — flat (re,im) plane, hue = arg f, brightness = |f| (domain colouring)
+      //   "modulus"— surface height = |f|, hue = arg f
+      //   "re"     — surface height = Re f
+      //   "im"     — surface height = Im f
+      cplxMode:"domain",
     },attachments:[]},
   };
   // Build only the selected type's entry into a node. The defs literal assigns a

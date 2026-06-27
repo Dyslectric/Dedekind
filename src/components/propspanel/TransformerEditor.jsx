@@ -69,6 +69,46 @@ export function TransformerEditor({ node, nodes, scope, onChange, meta }){
   }
   const inDim=fnNode?Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1")))):1;
   const outDim=fnNode?Math.max(1,Math.min(4,Math.round(Number(fnNode.props.outDim||"1")))):1;
+  const isCplx = fnNode && (fnNode.props.field||"real")==="complex" && inDim===1 && outDim===1;
+  // ℂ→ℂ map: the transformer auto-switches to complex visualizations; the usual
+  // real graph/field/axis machinery doesn't apply, so show a focused panel.
+  if(isCplx){
+    const cm=node.props.cplxMode||"domain";
+    const modes=[
+      ["domain","Domain colouring — hue = arg f, brightness = |f|"],
+      ["modulus","Modulus surface — height = |f|, hue = arg f"],
+      ["re","Real-part surface — height = Re f"],
+      ["im","Imaginary-part surface — height = Im f"],
+    ];
+    return <>
+      <Sec title="Complex map ℂ→ℂ">
+        <div style={{fontSize:12.5,color:ui.uiFaint,marginBottom:6,lineHeight:1.5}}>
+          The wired map is complex (one complex input → one complex output). Write the output using <code>re</code> and <code>im</code> — the real and imaginary parts of the input z — together with <code>i</code>. For example z² is <code>(re + i·im)^2</code>, 1/z is <code>1/(re + i·im)</code>. (Inside such a map, <code>re</code>/<code>im</code> are these input parts, shadowing the re()/im() functions.)
+        </div>
+        <PR label="picture">
+          <select value={cm} onChange={e=>set("cplxMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+            {modes.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        </PR>
+        <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:4,lineHeight:1.5}}>
+          {cm==="domain"
+            ? <>The input plane is painted: each point z is coloured by f(z) — hue is the argument (which way f points) and brightness grows with the modulus (how big f is). Zeros are dark, poles blow out bright.</>
+            : cm==="modulus"
+            ? <>A surface over the input plane whose height is |f(z)|, tinted by arg f. Zeros sit in valleys, poles spike up.</>
+            : cm==="re"
+            ? <>A surface over the input plane whose height is the real part of f(z), tinted by arg f.</>
+            : <>A surface over the input plane whose height is the imaginary part of f(z), tinted by arg f.</>}
+        </div>
+      </Sec>
+      <Sec title="Domain">
+        <PR label="Re range"><EI v={node.props.aMin??"-3"} sc={scope} onChange={v=>set("aMin",v)} placeholder="-3"/></PR>
+        <PR label="…to"><EI v={node.props.aMax??"3"} sc={scope} onChange={v=>set("aMax",v)} placeholder="3"/></PR>
+        <PR label="Im range"><EI v={node.props.bMin??"-3"} sc={scope} onChange={v=>set("bMin",v)} placeholder="-3"/></PR>
+        <PR label="…to"><EI v={node.props.bMax??"3"} sc={scope} onChange={v=>set("bMax",v)} placeholder="3"/></PR>
+        <PR label="resolution"><EI v={node.props.res??"90"} sc={scope} onChange={v=>set("res",v)} placeholder="90"/></PR>
+      </Sec>
+    </>;
+  }
   const axisOpts=[["x","X"],["y","Y"],["z","Z"],["none","—"]];
   const AxisSel=({k,kind})=>(
     <select value={node.props[`${kind}Axis${k}`]||"none"} onChange={e=>set(`${kind}Axis${k}`,e.target.value)} style={{...S.inp,width:"100%"}}>

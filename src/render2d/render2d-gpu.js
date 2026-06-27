@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { resolveNum, safeEval, makeFastEval, linspace } from "../core/math.js";
+import { resolveNum, safeEval, makeFastEval, makeFastComplexEval, linspace } from "../core/math.js";
 import { catOf } from "../core/taxonomy.js";
 import { resolveScope, plotDomain, plotSignature } from "../core/scope.js";
 import { applyDomain, pointGradientColors, rampColors } from "../geometry/rebuild.js";
@@ -16,6 +16,8 @@ import { advectSeeds } from "../geometry/flow.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function nicestep(r){ if(!r||!isFinite(r))return 1; const m=Math.pow(10,Math.floor(Math.log10(Math.abs(r)))); const f=r/m; return m*(f<2?1:f<5?2:5); }
+// HSL→RGB (h in [0,1)); used for complex domain colouring in the 2-D viewport.
+function hsl2rgb2d(h,s,l){ h=((h%1)+1)%1; const a=s*Math.min(l,1-l); const f=(n)=>{const k=(n+h*12)%12; return l-a*Math.max(-1,Math.min(k-3,9-k,1));}; return [f(0),f(8),f(4)]; }
 function fmt(v){ if(Math.abs(v)<1e-9)return"0"; if(Math.abs(v)>=1000||Math.abs(v)<0.01)return v.toExponential(1); return parseFloat(v.toPrecision(3)).toString(); }
 
 function hexRGB(hex){
@@ -666,6 +668,39 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   const inDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.inDim||"1"))));
   const outDim=Math.max(1,Math.min(4,Math.round(Number(fnNode.props.outDim||"1"))));
   const outs=[fnNode.props.out0,fnNode.props.out1,fnNode.props.out2,fnNode.props.out3].slice(0,outDim).map(e=>e||"0");
+
+  // ── ℂ→ℂ map in the 2-D viewport → domain colouring over the VISIBLE plane.
+  // The 2-D plane is exactly the complex input plane, so we paint the window
+  // (camera-follow): hue = arg f, brightness = |f|. Other complex sub-modes are
+  // surfaces (3-D) and fall through to the flat domain picture here.
+  if((fnNode.props.field||"real")==="complex" && inDim===1 && outDim===1){
+    const sc={}; for(const k in pscope){ if(k!=="pi"&&k!=="e"&&k!=="i") sc[k]=pscope[k]; }
+    const fn=makeFastComplexEval(outs[0], {...sc, re:0, im:0});
+    if(!fn) return [];
+    // resolution across the visible window; keep affordable
+    const N=Math.max(16, Math.min(180, Math.round(resolveNum(tp.res,pscope,120))));
+    const reVals=linspace(wxMin,wxMax,N), imVals=linspace(wyMin,wyMax,N);
+    const pos=[], col=[], idx=[];
+    for(let j=0;j<N;j++){
+      sc.im=imVals[j];
+      for(let i=0;i<N;i++){
+        sc.re=reVals[i];
+        const w=fn(sc);
+        const p=projectPt(fr, reVals[i], 0, imVals[j]);   // plane point → screen
+        pos.push(p[0], p[1], 0);
+        if(w){ const mod=Math.hypot(w.re,w.im); const hue=Math.atan2(w.im,w.re)/(2*Math.PI); const l=1-1/(1+mod*0.5); const c=hsl2rgb2d(hue,0.95,0.12+0.76*l); col.push(c[0],c[1],c[2]); }
+        else col.push(0.12,0.12,0.15);
+      }
+    }
+    for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){ const a=j*N+i,b=j*N+i+1,c=(j+1)*N+i,d=(j+1)*N+i+1; idx.push(a,b,c,b,d,c); }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
+    g.setIndex(idx);
+    const mat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,depthTest:false,depthWrite:false});
+    return [new THREE.Mesh(g,mat)];
+  }
+
   const AX={x:0,y:1,z:2,none:-1};
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2].map(a=>AX[a??"none"]);
   const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3].map(a=>AX[a??"none"]);
@@ -1070,6 +1105,13 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
       const fnDep=(rawNode.attachments||[]).map(id=>nodes[id]).find(d=>d&&d.type==="fnMap");
       const inD=fnDep?Math.round(Number(fnDep.props.inDim||"1")):1;
       camFollowGraph = inD===1;
+    }
+    // A ℂ→ℂ map domain-colours the VISIBLE plane, so it re-samples on pan/zoom too.
+    if(rawNode.type==="transformer"){
+      const fnDep=(rawNode.attachments||[]).map(id=>nodes[id]).find(d=>d&&d.type==="fnMap");
+      if(fnDep && (fnDep.props.field||"real")==="complex"
+         && Math.round(Number(fnDep.props.inDim||"1"))===1
+         && Math.round(Number(fnDep.props.outDim||"1"))===1) camFollowGraph=true;
     }
     const vPart=(VIEW_FILLING.has(t)||camFollowGraph)?`|v${viewSig}`:"";
     const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;

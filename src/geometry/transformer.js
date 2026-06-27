@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { resolveNum, safeEval, linspace } from "../core/math.js";
+import { resolveNum, safeEval, makeFastComplexEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
 import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU } from "./builders.js";
 import { marchingSquares, marchingCubes, intersectionCurve3d } from "./implicit.js";
@@ -185,6 +185,28 @@ function placeGraph(tp, inVec, outVec, inDim, outDim){
 // Map a math triple [X,Y,Z] → three.js position (x, z, y).
 function toWorld(m){ return [m[0], m[2], m[1]]; }
 
+// HSL→RGB (h in [0,1)). Used for complex domain colouring: hue encodes argument.
+function hsl2rgb(h, s, l){
+  h=((h%1)+1)%1;
+  const a=s*Math.min(l,1-l);
+  const f=(n)=>{const k=(n+h*12)%12; return l-a*Math.max(-1,Math.min(k-3,9-k,1));};
+  return [f(0), f(8), f(4)];
+}
+// Colour for a complex value w: hue = arg(w)/2π, brightness rises with |w| (soft
+// knee so zeros are dark and growth compresses, the standard domain-colouring
+// lightness ramp), saturation near 1. Returns [r,g,b] in 0..1.
+function complexColorRGB(re, im){
+  const mod=Math.hypot(re,im);
+  const hue=Math.atan2(im,re)/(2*Math.PI);
+  const l=1 - 1/(1 + mod*0.5);
+  return hsl2rgb(hue, 0.95, 0.12 + 0.76*l);
+}
+// A complex 1→1 map (one complex input, one complex output) — gets the dedicated
+// ℂ→ℂ visualizations instead of the usual real graph/field modes.
+function isComplexMap(field, inDim, outDim){
+  return field==="complex" && inDim===1 && outDim===1;
+}
+
 function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode2=null, scopeF=null, scopeG=null, tex=null, ntex=null, nstr=1, lights=null){
   const tp=tNode.props||{};
 
@@ -263,6 +285,64 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
 
   if(!fnNode) return [];
   const { inDim, outDim, outs, field } = fnSpec(fnNode);
+
+  // ── ℂ→ℂ map visualizations ──
+  // A complex 1→1 map samples the complex INPUT plane (re, im) over the domain
+  // box and evaluates w = f(re + i·im), keeping the complex result. The output is
+  // shown one of four ways (cplxMode): a flat domain-coloured plane, or a surface
+  // whose height is |f|, Re f, or Im f — with hue = arg f on the modulus surface.
+  if(isComplexMap(field, inDim, outDim)){
+    const cm = tp.cplxMode || "domain";
+    const reMin=resolveNum(tp.aMin,scope,-3), reMax=resolveNum(tp.aMax,scope,3);
+    const imMin=resolveNum(tp.bMin,scope,-3), imMax=resolveNum(tp.bMax,scope,3);
+    // square-ish resolution; clamp so a dense plane stays affordable on CPU
+    const res=Math.max(8, Math.min(220, Math.round(resolveNum(tp.res,scope,90))));
+    const reN=res, imN=res;
+    const reVals=linspace(reMin,reMax,reN), imVals=linspace(imMin,imMax,imN);
+    // compile once; mutate {re,im} per sample
+    const sc={}; for(const k in scope){ if(k!=="pi"&&k!=="e"&&k!=="i") sc[k]=scope[k]; }
+    const fn=makeFastComplexEval(outs[0], {...sc, re:0, im:0});
+    if(!fn) return [];
+    // height scale for surfaces: keep the surface in a comfortable world range by
+    // normalizing the height channel to the plane's extent.
+    const planeSpan=Math.max(1e-6, Math.max(reMax-reMin, imMax-imMin));
+    const heightOf=(w)=> cm==="modulus" ? Math.hypot(w.re,w.im) : cm==="re" ? w.re : cm==="im" ? w.im : 0;
+    // first pass: sample w over the grid, track height range for normalization
+    const W=new Array(imN);
+    let hMin=Infinity, hMax=-Infinity;
+    for(let j=0;j<imN;j++){
+      const row=new Array(reN);
+      sc.im=imVals[j];
+      for(let i=0;i<reN;i++){
+        sc.re=reVals[i];
+        const w=fn(sc);
+        row[i]=w;
+        if(w && cm!=="domain"){ const h=heightOf(w); if(isFinite(h)){ if(h<hMin)hMin=h; if(h>hMax)hMax=h; } }
+      }
+      W[j]=row;
+    }
+    if(cm!=="domain" && !isFinite(hMin)) return [];
+    const hSpan=Math.max(1e-6, hMax-hMin);
+    // normalize height into ~[0, planeSpan*0.6] so surfaces sit nicely over the plane
+    const hNorm=(h)=> cm==="domain" ? 0 : (h-hMin)/hSpan*planeSpan*0.6 + ((cm==="re"||cm==="im")? -planeSpan*0.3 : 0);
+    // build rows of math-space [x,y,z] = [re, height, im] (buildSurf swaps to world)
+    // and matching colour rows (hue = arg f; brightness = |f| for domain mode,
+    // or constant-ish for the explicit-height surfaces, still hued by arg).
+    const rows=new Array(imN), cols=new Array(imN);
+    for(let j=0;j<imN;j++){
+      const pr=new Array(reN), cr=new Array(reN);
+      for(let i=0;i<reN;i++){
+        const w=W[j][i];
+        if(!w){ pr[i]=null; cr[i]=[0.15,0.15,0.18]; continue; }
+        const h=cm==="domain"?0:hNorm(heightOf(w));
+        pr[i]=[reVals[i], h, imVals[j]];                 // math (x,y,z); y is height
+        cr[i]=complexColorRGB(w.re, w.im);               // hue = arg, value = |w|
+      }
+      rows[j]=pr; cols[j]=cr;
+    }
+    return buildSurf(rows, color, cols, tp.showWire!==false && cm!=="domain");
+  }
+
   const dom = sampleDomain(tp, scope, inDim, paramNode);
   if(!dom.pts.length) return [];
 
