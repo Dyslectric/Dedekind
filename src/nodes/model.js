@@ -60,7 +60,15 @@ function makeNode(type,pos){
     camera2d:{label:"Camera 2D",props:camProps("2d"),attachments:[],enabled:true},
     constant:{label:"Const",name:"c",props:{value:"1", field:"real"},attachments:[]},
     expr:    {label:"Expr", name:"e",props:{expr:"0", field:"real"},   attachments:[]},
-    slider:  {label:"Slider",name:"a",value:0,props:{min:"-5",max:"5",step:"0.01"},attachments:[]},
+    // slider: a live numeric input. In "real" mode (default) `value` is a scalar
+    // dragged on a 1-D track between min/max. In "complex" mode the editor shows a
+    // 2-D control (a joysquare with Re/Im axes, or a joystick editing modulus/arg)
+    // and the value is the complex number re + i·im, stored as the (re, im) pair in
+    // props; `value` mirrors `re` so anything reading a scalar still gets a sane
+    // number. `cmode` picks the control's interaction (square | polar); `range`
+    // bounds both axes (the box half-width / max modulus).
+    slider:  {label:"Slider",name:"a",value:0,props:{min:"-5",max:"5",step:"0.01",
+      mode:"real", re:"0", im:"0", cmode:"square", range:"5"},attachments:[]},
     animator:{label:"Anim",name:"t",value:0,props:{min:"0",max:"1",period:"4",loop:"bounce",step:""},playing:false,attachments:[]},
     fnDef:   {label:"f(x)",name:"f",props:{
       params:"x", expr:"x^2",

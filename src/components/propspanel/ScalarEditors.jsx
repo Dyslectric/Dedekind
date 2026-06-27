@@ -3,6 +3,7 @@ import { resolveNum, evalArray, exprTypeList } from "../../core/math.js";
 import { resolveScope } from "../../core/scope.js";
 import { EI, XF } from "../MathInput.jsx";
 import { Sec, PR } from "../primitives.jsx";
+import { ComplexPad } from "./ComplexPad.jsx";
 
 // Compact preview of a resolved array value: shape + first elements. Vector rows
 // ([x,y,z]) render as tuples; deep/huge arrays are summarised.
@@ -90,12 +91,39 @@ export function ListEditor({ node, nodes, scope, onChange }){
 }
 
 export function SliderEditor({ node, scope, onChange, meta, metaTc }){
+  const{ui,S}=useUI();
+  const set=(k,v)=>onChange({props:{...node.props,[k]:v}});
+  const isComplex=node.props.mode==="complex";
   return <Sec title="Slider">
-    <PR label="min"><EI v={node.props.min} sc={scope} onChange={v=>onChange({props:{...node.props,min:v}})}/></PR>
-    <PR label="max"><EI v={node.props.max} sc={scope} onChange={v=>onChange({props:{...node.props,max:v}})}/></PR>
-    <PR label="step"><EI v={node.props.step} sc={scope} onChange={v=>onChange({props:{...node.props,step:v}})}/></PR>
-    <input type="range" min={resolveNum(node.props.min,scope,-5)} max={resolveNum(node.props.max,scope,5)} step={resolveNum(node.props.step,scope,0.01)} value={node.value||0} onChange={e=>onChange({value:+e.target.value})} style={{width:"100%",accentColor:meta.tc,marginTop:6}}/>
-    <div style={{textAlign:"center",color:metaTc,fontWeight:"bold",fontSize:17,marginTop:2}}>{node.name} = {Number(node.value||0).toFixed(4)}</div>
+    <PR label="value">
+      <select value={node.props.mode||"real"} onChange={e=>set("mode",e.target.value)} style={{...S.inp,width:"100%"}}>
+        <option value="real">Real (1-D slider)</option>
+        <option value="complex">Complex (2-D pad)</option>
+      </select>
+    </PR>
+    {!isComplex ? <>
+      <PR label="min"><EI v={node.props.min} sc={scope} onChange={v=>set("min",v)}/></PR>
+      <PR label="max"><EI v={node.props.max} sc={scope} onChange={v=>set("max",v)}/></PR>
+      <PR label="step"><EI v={node.props.step} sc={scope} onChange={v=>set("step",v)}/></PR>
+      <input type="range" min={resolveNum(node.props.min,scope,-5)} max={resolveNum(node.props.max,scope,5)} step={resolveNum(node.props.step,scope,0.01)} value={node.value||0} onChange={e=>onChange({value:+e.target.value})} style={{width:"100%",accentColor:meta.tc,marginTop:6}}/>
+      <div style={{textAlign:"center",color:metaTc,fontWeight:"bold",fontSize:17,marginTop:2}}>{node.name} = {Number(node.value||0).toFixed(4)}</div>
+    </> : <>
+      <PR label="control">
+        <select value={node.props.cmode||"square"} onChange={e=>set("cmode",e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="square">Joysquare (Re, Im)</option>
+          <option value="polar">Joystick (modulus, arg)</option>
+        </select>
+      </PR>
+      <PR label="range"><EI v={node.props.range??"5"} sc={scope} onChange={v=>set("range",v)} placeholder="5"/></PR>
+      <ComplexPad
+        re={Number(node.props.re)||0} im={Number(node.props.im)||0}
+        range={resolveNum(node.props.range,scope,5)} mode={node.props.cmode||"square"} color={metaTc}
+        onChange={({re,im})=>onChange({value:re, props:{...node.props, re:String(re), im:String(im)}})}
+      />
+      <div style={{fontSize:12.5,color:ui.uiFaint,marginTop:5,lineHeight:1.5}}>
+        Binds <strong>{node.name}</strong> to the complex number re + i·im. Use it in a ℂ-field expression (e.g. <code>z·{node.name}</code> in a complex map). Anything reading it as a real number gets its real part.
+      </div>
+    </>}
   </Sec>;
 }
 

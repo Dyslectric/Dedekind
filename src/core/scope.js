@@ -128,7 +128,16 @@ function collectScalarDeps(nodeId, nodes, acc, guard){
 function resolveNodeValue(node, nodes, animVals, building){
   if(!node) return undefined;
   switch(node.type){
-    case "slider":   return typeof node.value==="number"?node.value:0;
+    case "slider": {
+      // Complex mode binds a Complex(re, im) so consuming expressions get a real
+      // complex number; the 2-D control edits re/im (or modulus/arg → re/im). Real
+      // mode binds the scalar `value` as before.
+      if(node.props?.mode==="complex"){
+        const re=Number(node.props.re)||0, im=Number(node.props.im)||0;
+        return math.complex(re, im);
+      }
+      return typeof node.value==="number"?node.value:0;
+    }
     case "animator": return animVals?.[node.id] ?? (typeof node.value==="number"?node.value:0);
     case "constant": return resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building), 0, node.props?.field||"real");
     case "expr":     return resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building), 0, node.props?.field||"real");
@@ -418,6 +427,10 @@ function scopeSig(node, scope){
       if(!appearsIn(k, hay)) continue;
       if(typeof v==="number"){
         parts.push(k+"="+v);
+      } else if(v && typeof v==="object" && typeof v.re==="number" && typeof v.im==="number"){
+        // A complex scope value (e.g. a complex-mode slider): fold both parts so
+        // dragging the joysquare/joystick invalidates dependent plots.
+        parts.push(k+"="+v.re+"+"+v.im+"i");
       } else if(Array.isArray(v)){
         // A list value: fold a cheap, change-sensitive fingerprint (count + an
         // FNV-1a hash over the raw float bits) rather than JSON — so a plot that
