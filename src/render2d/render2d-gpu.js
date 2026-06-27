@@ -725,7 +725,15 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   // fallback). colorVal(outVec) → scalar | null when colouring is off.
   const _cs=(()=>{
     const cs=tp.colorSource;
-    if(cs==null||cs===""){ for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color") return {kind:"out",idx:k}; } return {kind:"none"}; }
+    if(cs==null||cs===""){
+      for(let k=0;k<outDim;k++){ if((tp[`outAxis${k}`]||"")==="color") return {kind:"out",idx:k}; }
+      // legacy colorMode="gradient": colorExpr scalar, or last output
+      if((tp.colorMode||"")==="gradient"){
+        if(tp.colorExpr!=null && String(tp.colorExpr).trim()!=="") return {kind:"expr"};
+        return {kind:"out",idx:Math.max(0,outDim-1)};
+      }
+      return {kind:"none"};
+    }
     if(cs==="none") return {kind:"none"};
     if(cs==="magnitude") return {kind:"magnitude"};
     if(cs==="expr") return {kind:"expr"};

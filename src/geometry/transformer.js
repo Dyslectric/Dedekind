@@ -53,9 +53,19 @@ function colorOutIndex(tp, outDim){
 function colorSourceOf(tp, outDim){
   const cs=tp.colorSource;
   if(cs==null || cs===""){
-    // legacy: an output bound to the color axis
+    // Legacy fallbacks for projects that predate colorSource:
+    //   1) an output bound to the old color axis (outAxisK="color")
+    //   2) the old gradient mode: colorMode="gradient" coloured by colorExpr (a
+    //      scalar over the outputs/inputs), or — when no expr — by the last output
+    //      (field mode reserved the 4th component for colour). Without this, the
+    //      refactor would silently un-colour every pre-existing gradient plot.
     const ci=colorOutIndex(tp, outDim);
-    return ci>=0 ? {kind:"out", idx:ci} : {kind:"none"};
+    if(ci>=0) return {kind:"out", idx:ci};
+    if((tp.colorMode||"")==="gradient"){
+      if(tp.colorExpr!=null && String(tp.colorExpr).trim()!=="") return {kind:"expr"};
+      return {kind:"out", idx:Math.max(0, outDim-1)};
+    }
+    return {kind:"none"};
   }
   if(cs==="none") return {kind:"none"};
   if(cs==="magnitude") return {kind:"magnitude"};
