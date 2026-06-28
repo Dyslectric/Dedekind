@@ -443,10 +443,29 @@ vec2 _cpowi(vec2 a, int n){ // integer power by repeated multiply (exact, fast)
   vec2 r=vec2(1.0,0.0), base=a;
   for(int k=0;k<32;k++){ if(k>=n) break; r=_cmul(r,base); }
   return inv ? _cdiv(vec2(1.0,0.0), r) : r; }
+// Unrolled small powers: branch-free, base evaluated once (the caller passes the
+// base subexpression as the single argument, so there's no re-evaluation).
+vec2 _cp2(vec2 a){ return _cmul(a,a); }
+vec2 _cp3(vec2 a){ return _cmul(_cmul(a,a),a); }
+vec2 _cp4(vec2 a){ vec2 b=_cmul(a,a); return _cmul(b,b); }
+vec2 _cp5(vec2 a){ vec2 b=_cmul(a,a); return _cmul(_cmul(b,b),a); }
+vec2 _cp6(vec2 a){ vec2 b=_cmul(a,a); return _cmul(_cmul(b,b),b); }
+vec2 _cp7(vec2 a){ vec2 b=_cmul(a,a); return _cmul(_cmul(_cmul(b,b),b),a); }
+vec2 _cp8(vec2 a){ vec2 b=_cmul(a,a); vec2 c=_cmul(b,b); return _cmul(c,c); }
 vec2 _csin(vec2 a){ return vec2(sin(a.x)*cosh(a.y), cos(a.x)*sinh(a.y)); }
 vec2 _ccos(vec2 a){ return vec2(cos(a.x)*cosh(a.y), -sin(a.x)*sinh(a.y)); }
 vec2 _csqrt(vec2 a){ float r=length(a); return vec2(sqrt(max(0.0,(r+a.x)*0.5)), sign(a.y==0.0?1.0:a.y)*sqrt(max(0.0,(r-a.x)*0.5))); }
 `;
+
+// Emit an unrolled small-integer complex power (|n|<=8) as a _cpN(base) call.
+// n=0 → 1, n=1 → base, n<0 → reciprocal. Returns null if out of range.
+function _cmulPowGLSL(a, n){
+  if(n===0) return "vec2(1.0,0.0)";
+  const m=Math.abs(n);
+  if(m>8) return null;
+  const pos = m===1 ? `(${a})` : `_cp${m}(${a})`;
+  return n<0 ? `_cdiv(vec2(1.0,0.0),${pos})` : pos;
+}
 
 function complexExprToGLSL(expr, uniforms, prefix=""){
   let text = String(expr);
@@ -489,8 +508,13 @@ function complexExprToGLSL(expr, uniforms, prefix=""){
         if(node.op==="/"){ const a=walk(node.args[0],depth),b=walk(node.args[1],depth); return (a==null||b==null)?null:`_cdiv(${a},${b})`; }
         if(node.op==="^"){
           const a=walk(node.args[0],depth); if(a==null) return null;
-          // integer exponent → exact repeated multiply; else general cpow
           const en=node.args[1];
+          if(en.type==="ConstantNode" && typeof en.value==="number" && Number.isInteger(en.value) && Math.abs(en.value)<=8){
+            // small integer power → fully unrolled inline _cmul chain. GPUs run a
+            // loop-with-break poorly (divergent loops can execute every iteration),
+            // so for the common exponents (², ³, …) emit branch-free multiplies.
+            const g=_cmulPowGLSL(a, en.value); if(g!=null) return g;
+          }
           if(en.type==="ConstantNode" && typeof en.value==="number" && Number.isInteger(en.value) && Math.abs(en.value)<=32)
             return `_cpowi(${a},${en.value})`;
           const b=walk(en,depth); return b==null?null:`_cpow(${a},${b})`;
