@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { TeapotGeometry } from "three/addons/geometries/TeapotGeometry.js";
 import { makeNode, makeProjectNode } from "../nodes/model.js";
-import { meshDataFromGeometry, meshDataSig } from "../geometry/builders.js";
 import { DEFAULT_NORMAL_SRC } from "../nodes/textureDefault.js";
 import { buildScopeForCamera } from "../core/scope.js";
 import { resolveNum } from "../core/math.js";
@@ -834,35 +832,8 @@ function lightsScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
 }
 
-// EMBEDDED MESH ASSET: the Utah teapot — the canonical computer-graphics test
-// object (Martin Newell, 1975) — baked into a `mesh` node. The geometry is
-// generated from three's TeapotGeometry, encoded into the node's `data` prop
-// (math-space positions + face indices), and rendered as a lit BufferGeometry.
-// This is the same path a user-imported OBJ/GLTF takes: loader → BufferGeometry
-// → mesh node. A warm key light orbits so the glaze reads the curvature.
-function teapotScene(){
-  const project=makeProjectNode("Utah Teapot");
-  const cam=previewCam(makeNode("camera3d",{x:1140,y:120}));cam.label="Utah teapot · embedded mesh";
-  cam.props.orbRadius="12";cam.props.orbTheta="0.8";cam.props.orbPhi="1.0";
-  cam.props.spin="loop";cam.props.spinPeriod="32";
-  const geo=new TeapotGeometry(1.7,6,true,true,true,true,true);
-  const mesh=makeNode("mesh",{x:540,y:160});mesh.label="teapot";mesh.color="#d8c4a0";
-  mesh.props.data=meshDataFromGeometry(geo);
-  mesh.props.__dataSig=meshDataSig(mesh.props.data);
-  mesh.props.scale="1";mesh.props.shininess="64";
-  geo.dispose&&geo.dispose();
-  const anim=makeNode("animator",{x:40,y:360});anim.name="t";anim.value=0;
-  anim.props.min="0";anim.props.max="6.283";anim.props.period="9";anim.props.loop="loop";anim.playing=true;
-  const warm=makeNode("light",{x:360,y:360});warm.label="warm key";warm.color="#ffd28a";
-  warm.props.kind="point";warm.props.color="#ffd2a8";warm.props.intensity="2.4";warm.props.falloff="0.015";
-  warm.props.posX="5*cos(t)";warm.props.posY="5*sin(t)";warm.props.posZ="4";
-  warm.attachments=[anim.id];
-  const cool=makeNode("light",{x:360,y:520});cool.label="cool fill";cool.color="#8fb7ff";
-  cool.props.kind="directional";cool.props.color="#86a8ff";cool.props.intensity="0.5";
-  cool.props.dirX="-0.5";cool.props.dirY="-0.4";cool.props.dirZ="0.6";
-  cam.attachments=[mesh.id,warm.id,cool.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[mesh.id]:mesh,[anim.id]:anim,[warm.id]:warm,[cool.id]:cool},camId:cam.id,animated:true};
-}
+// EMBEDDED MESH ASSET: (removed — the mesh node type was retired.)
+
 
 // DYNAMIC LIGHTING on a PARAMETRIC SURFACE: a matte torus lit by a warm point
 // light orbiting through its hole (position driven by the animator t) plus a cool
@@ -1915,7 +1886,6 @@ Object.assign(SCENES, {
   "sierpinski-data": sierpinskiDataScene,
   "implicit-tex": implicitTexScene,
   "curve-rgb": curveRgbScene,
-  "teapot": teapotScene,
   "metamorph": metamorphScene,
   "self-similar-zoom": selfSimilarZoomScene,
   "complex-domain": complexDomainScene,

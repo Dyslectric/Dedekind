@@ -14,7 +14,6 @@ import { TextureEditor, VideoEditor, LightEditor } from "./propspanel/MediaEdito
 import { TransformerEditor } from "./propspanel/TransformerEditor.jsx";
 import { PointsEditor } from "./propspanel/PointsEditor.jsx";
 import { RawGeomEditor } from "./propspanel/RawGeomEditor.jsx";
-import { MeshEditor } from "./propspanel/MeshEditor.jsx";
 import { FlowEditor } from "./propspanel/FlowEditor.jsx";
 import { CameraEditor } from "./propspanel/CameraEditor.jsx";
 import {
@@ -112,7 +111,6 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Unified: points / glyphs / sequences ── */}
         {node.type==="points"&&<PointsEditor {...ed}/>}
         {node.type==="rawGeom"&&<RawGeomEditor {...ed}/>}
-        {node.type==="mesh"&&<MeshEditor {...ed}/>}
 
         {/* ── Flow ── */}
         {node.type==="flow"&&<FlowEditor {...ed}/>}

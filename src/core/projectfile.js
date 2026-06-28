@@ -44,7 +44,6 @@ const EXT = "ddk";
 //     URLs are small references, left inline (not extracted); blob: URLs are
 //     session-only and can't be persisted, so they're dropped (like the hash).
 const ASSET_PROPS = [
-  { type: "mesh",    prop: "data", kind: "json"  },
   { type: "texture", prop: "src",  kind: "media" },
   { type: "video",   prop: "src",  kind: "media" },
 ];

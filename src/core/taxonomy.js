@@ -29,10 +29,6 @@ const CATEGORY = {
   //   paramSpace — parameterized manifold (curve=degree 1, surface=degree 2)
   //   points     — points / glyphs / sequences, plane or space, optional vectors
   paramSpace:"plot", points:"plot", rawGeom:"plot",
-  // mesh: an embedded triangle mesh asset (imported geometry — OBJ/GLTF/etc. or a
-  // baked primitive). Stores its vertices+faces in props and renders as a GPU
-  // BufferGeometry. Category "plot": it attaches to a camera like any geometry.
-  mesh:"plot",
   // New function/transformer model:
   //   fnMap      — a pure map ℝᵐ→ℝⁿ (no spatial meaning on its own). Category
   //                "map": it attaches to a transformer (or domain source), never

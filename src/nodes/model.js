@@ -40,7 +40,6 @@ const TYPE_META={
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
   points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   rawGeom:   {tag:"RAW",  tc:"#9fd6a0",bg:"#0e1810",hdr:"#122218"},
-  mesh:      {tag:"MSH",  tc:"#cfd6e0",bg:"#10141c",hdr:"#161c28"},
   fnMap:     {tag:"ƒ→",   tc:"#7ec8ff",bg:"#0a1622",hdr:"#0e1f30"},
   equation:  {tag:"EQ=",  tc:"#ffd479",bg:"#1c1606",hdr:"#241d08"},
   transformer:{tag:"TRN", tc:"#ffb454",bg:"#1a1206",hdr:"#241a08"},
@@ -222,20 +221,6 @@ function makeNode(type,pos){
       radius:"0.08", drawLines:false,                   // points
       arrowLen:"0.5", normalize:false, lenMode:"raw",   // glyphs
       showWire:true,                                    // triangles
-    },attachments:[]},
-
-    // mesh: an embedded triangle-mesh asset. `data` is a compact JSON string
-    //   {"p":[x,y,z,…math-space positions],"i":[…flat triangle indices]} — the
-    // geometry baked into the project (imported from OBJ/GLTF/STL/PLY via the
-    // editor's file drop, or generated, e.g. the Utah teapot demo). Coordinates
-    // are MATH space (z up); the builder applies the same math→three swap as every
-    // other plot. `scale` multiplies the geometry; `lit` shades it with the
-    // scene's lights (a MeshPhong); otherwise a flat MeshBasic. __dataSig is a
-    // cheap content fingerprint so the rebuild cache invalidates on re-import.
-    mesh:{label:"Mesh",color:"__AUTO__",props:{
-      data:"", __dataSig:"",
-      scale:"1", lit:true, opacity:"1", shininess:"36",
-      flatShading:false, doubleSide:true, showWire:false,
     },attachments:[]},
 
     // ── Function / transformer model ───────────────────────────────────────
