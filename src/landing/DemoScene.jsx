@@ -108,9 +108,17 @@ const DemoStage = memo(function DemoStage({ mobile, pausedRef, phaseRef }){
   const scope = nodes ? buildScopeForCamera(camId, nodes, animValsRef.current) : {};
 
   if(!nodes || !liveCam) return null;
+  // A complex domain-colouring transformer paints a full-viewport fragment shader
+  // (per-pixel complex f(z)); on a HiDPI display that's DPR² as many fragments.
+  // These scenes are pure colour fields (grid/axes/labels off), so a capped pixel
+  // ratio cuts the shader's fragment count with no visible loss. Detect one and
+  // lower the cap.
+  const hasDomainQuad = (liveCam.props?.mode==="2d") &&
+    Object.values(nodes).some(n=>n.type==="transformer" && (n.props?.cplxMode||"")==="domain");
+  const capPR = mobile ? 1.1 : (hasDomainQuad ? 1 : undefined);
   return <ViewportSwitch camNode={liveCam} nodes={nodes} scope={scope} theme={theme} projectNode={proj}
     onCameraChange={()=>{}} animValsRef={animValsRef} onUpdateNode={()=>{}}
-    maxPixelRatio={mobile?1.1:undefined}/>;
+    maxPixelRatio={capPR}/>;
 });
 
 export function DemoScene(){
