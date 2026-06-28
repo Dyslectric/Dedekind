@@ -533,6 +533,11 @@ function nodeExprText(node){
     p.out0,p.out1,p.out2,p.out3,p.data,p.colorExpr,p.colorMin,p.colorMax,p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,
     p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig,
     p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA,
+    // Index/recursive authoring props are SINGULAR (idxPoint, idxGlyph, recInit…)
+    // — without these, scopeSig can't see an animator/slider referenced only in a
+    // point-index expression (e.g. a Frenet arrow's `cos(s)+i*TX(s)`), so the
+    // plot's signature wouldn't change as `s` animates and it would wrongly cache.
+    p.idxPoint,p.idxGlyph,p.recInit,p.recStep,p.recCount,p.recGlyphInit,p.recGlyphStep,p.recGlyphCount,p.listPoints,p.listGlyphs,p.colExpr,
     p.matColor,p.matSpec,p.matEmit,p.matR,p.matG,p.matB,p.colorR,p.colorG,p.colorB,
     p.ptsList,p.edgeList];
   return fields.filter(e=>typeof e==="string"&&e.length).join("\u0001");
