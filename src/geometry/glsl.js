@@ -485,6 +485,13 @@ function complexExprToGLSL(expr, uniforms, prefix=""){
         if(node.name==="re") return "vec2(_z.x,0.0)";
         if(node.name==="im") return "vec2(_z.y,0.0)";
         if(node.name==="i")  return "vec2(0.0,1.0)";
+        // A user slider/constant of the SAME name shadows the math constant, so a
+        // coefficient literally called e or pi resolves to its uniform, not Euler's
+        // number / π. (Checked before the _GLSL_CONST fallbacks below.)
+        if(_COMPLEX_SCOPE_SYMS.has(node.name)){
+          uniforms.add("re_"+node.name); uniforms.add("im_"+node.name);
+          return `vec2(${prefix}re_${node.name},${prefix}im_${node.name})`;
+        }
         if(node.name==="pi") return C(Math.PI,0);
         if(node.name==="e")  return C(Math.E,0);
         if(node.name==="tau")return C(2*Math.PI,0);

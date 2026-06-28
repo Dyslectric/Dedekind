@@ -1579,6 +1579,34 @@ function complexCubicScene(){
     [a.id]:a,[b.id]:b,[c.id]:c,[d.id]:d},camId:cam.id,animated:false};
 }
 
+// The same, one degree up: a·z⁴ + b·z³ + c·z² + d·z + e on five complex sliders,
+// four roots showing as four glow centres. Defaults a=1, c=−1, e=0 → z⁴ − z²,
+// roots at 0 (double), +1 and −1.
+function complexQuarticScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:980,y:317}));cam.label="a·z⁴ + b·z³ + c·z² + d·z + e";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=true;cam.props.showTickLabels=false;
+  const mk=(y,nm,lab,re,im)=>{const s=makeNode("slider",{x:20,y});s.name=nm;s.label=lab;
+    s.props.mode="complex";s.props.cmode="square";s.props.re=String(re);s.props.im=String(im);s.props.range="2";return s;};
+  const a=mk(150,"a","a (z⁴)",1,0);
+  const b=mk(270,"b","b (z³)",0,0);
+  const c=mk(390,"c","c (z²)",-1,0);
+  const d=mk(510,"d","d (z¹)",0,0);
+  const k=mk(630,"k","k (z⁰)",0,0);
+  const fn=makeNode("fnMap",{x:360,y:317});fn.label="a z⁴+b z³+c z²+d z+k";fn.color="#c4b5fd";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
+  // z = re + i·im  (constant term named k, not e — e is Euler's number)
+  fn.props.out0="a*(re+i*im)^4 + b*(re+i*im)^3 + c*(re+i*im)^2 + d*(re+i*im) + k";
+  const tr=makeNode("transformer",{x:720,y:317});tr.label="domain colouring";tr.color="#c4b5fd";
+  tr.props.cplxMode="domain";tr.props.domainStyle="glow";tr.props.res="140";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
+  tr.attachments=[fn.id,a.id,b.id,c.id,d.id,k.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
+    [a.id]:a,[b.id]:b,[c.id]:c,[d.id]:d,[k.id]:k},camId:cam.id,animated:false};
+}
+
 
 // intersections — the cube roots of unity — are marked. varA=Re z, varB=Im z.
 function complexEqScene(){
@@ -1892,6 +1920,7 @@ Object.assign(SCENES, {
   "self-similar-zoom": selfSimilarZoomScene,
   "complex-domain": complexDomainScene,
   "complex-cubic": complexCubicScene,
+  "complex-quartic": complexQuarticScene,
   "complex-eq": complexEqScene,
   "gpu-hsl": gpuHslSurfaceScene,
 });
