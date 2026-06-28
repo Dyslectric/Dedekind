@@ -12,17 +12,33 @@ export function FnMapEditor({ node, scope, onChange }){
   const inDim=Math.max(1,Math.min(3,Math.round(Number(node.props.inDim||"1"))));
   const outDim=Math.max(1,Math.min(4,Math.round(Number(node.props.outDim||"1"))));
   const inVars=["x","y","z"].slice(0,inDim).join(", ");
+  // The complex field (i = imaginary unit, ℂ→ℂ domain colouring) only has a
+  // meaning for a single-input single-output map. For any other signature it
+  // isn't offered, and changing the dimensions away from 1→1 snaps the field back
+  // to ℝ so a map can't be left in an unrenderable complex N→M state.
+  const cplxOk = inDim===1 && outDim===1;
+  // setting a dimension also enforces the field constraint
+  const setDim=(k,v)=>{
+    const nIn  = k==="inDim"  ? Math.round(Number(v)||1) : inDim;
+    const nOut = k==="outDim" ? Math.round(Number(v)||1) : outDim;
+    const props={...node.props,[k]:v};
+    if(!(nIn===1&&nOut===1) && (props.field||"real")==="complex") props.field="real";
+    onChange({props});
+  };
+  const fieldOpts = exprTypeList().filter(t=> cplxOk || t.id!=="complex");
+  // a project loaded with a complex non-1→1 map: correct the stored field too
+  const fieldVal = (!cplxOk && (node.props.field||"real")==="complex") ? "real" : (node.props.field||"real");
   return <>
     <Sec title="Signature">
       <PR label="inputs">
-        <select value={String(inDim)} onChange={e=>set("inDim",e.target.value)} style={{...S.inp,width:"100%"}}>
+        <select value={String(inDim)} onChange={e=>setDim("inDim",e.target.value)} style={{...S.inp,width:"100%"}}>
           <option value="1">1 — f(x)</option>
           <option value="2">2 — f(x, y)</option>
           <option value="3">3 — f(x, y, z)</option>
         </select>
       </PR>
       <PR label="outputs">
-        <select value={String(outDim)} onChange={e=>set("outDim",e.target.value)} style={{...S.inp,width:"100%"}}>
+        <select value={String(outDim)} onChange={e=>setDim("outDim",e.target.value)} style={{...S.inp,width:"100%"}}>
           <option value="1">1 — scalar</option>
           <option value="2">2 — vector (2D)</option>
           <option value="3">3 — vector (3D)</option>
@@ -30,12 +46,12 @@ export function FnMapEditor({ node, scope, onChange }){
         </select>
       </PR>
       <PR label="field">
-        <select value={node.props.field||"real"} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
-          {exprTypeList().map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
+        <select value={fieldVal} onChange={e=>set("field",e.target.value)} style={{...S.inp,width:"100%"}}>
+          {fieldOpts.map(t=><option key={t.id} value={t.id}>{t.label} — {t.name}</option>)}
         </select>
       </PR>
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
-        A pure map from {inDim} input{inDim>1?"s":""} to {outDim} output{outDim>1?"s":""}, in the variables <em>{inVars}</em>. The <strong>field</strong> sets the scalar domain of the outputs: in <em>ℝ</em>, <code style={{fontFamily:"monospace"}}>i</code> is a free variable; in <em>ℂ</em>, <code style={{fontFamily:"monospace"}}>i</code> is the imaginary unit and a result is plotted by its real part when it&rsquo;s (near-)real. It does not plot on its own — wire it into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong> to render it as a function plot or a vector field, where each output can be bound to a spatial axis or to color.
+        A pure map from {inDim} input{inDim>1?"s":""} to {outDim} output{outDim>1?"s":""}, in the variables <em>{inVars}</em>. The <strong>field</strong> sets the scalar domain of the outputs: in <em>ℝ</em>, <code style={{fontFamily:"monospace"}}>i</code> is a free variable; in <em>ℂ</em>, <code style={{fontFamily:"monospace"}}>i</code> is the imaginary unit and a result is plotted by its real part when it&rsquo;s (near-)real. {!cplxOk&&<>The <em>ℂ</em> field is available only for a single-input, single-output map (a function ℂ→ℂ); set both inputs and outputs to 1 to use it. </>}It does not plot on its own — wire it into a <strong style={{color:TYPE_META.transformer.tc}}>Transformer</strong> to render it as a function plot or a vector field, where each output can be bound to a spatial axis or to color.
       </div>
     </Sec>
     <Sec title={`Components ( in ${inVars} )`}>
