@@ -40,7 +40,7 @@ function surfaceScene(){
   const tr=makeNode("transformer",{x:620,y:160});tr.color="#4a90d0";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin="-4.5";tr.props.aMax="4.5";tr.props.bMin="-4.5";tr.props.bMax="4.5";tr.props.res="44";
-  tr.props.colorMode="gradient";tr.props.colorExpr="out0";tr.props.colorLo="#1b3a8f";tr.props.colorHi="#ff5ea8";
+  tr.props.colorOn=true;tr.props.colorMode="ramp";tr.props.colorExpr="out0";tr.props.colorLo="#1b3a8f";tr.props.colorHi="#ff5ea8";
   tr.attachments=[fn.id];fn.attachments=[anim.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -57,7 +57,7 @@ function fieldScene(){
   const fn=makeNode("fnMap",{x:300,y:160});fn.props.inDim="3";fn.props.outDim="4";
   fn.props.out0="-y + 0.3*sin(t)";fn.props.out1="x";fn.props.out2="0.35*z";fn.props.out3="sqrt(x*x+y*y+z*z)";
   const tr=makeNode("transformer",{x:620,y:160});tr.color="#ffb454";
-  tr.props.mode="field";tr.props.colorMode="gradient";tr.props.colorLo="#5be0c0";tr.props.colorHi="#ff5ea8";
+  tr.props.mode="field";tr.props.colorOn=true;tr.props.colorMode="ramp";tr.props.colorLo="#5be0c0";tr.props.colorHi="#ff5ea8";
   tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.inAxis2="z";
   tr.props.outAxis0="x";tr.props.outAxis1="y";tr.props.outAxis2="z";
   tr.props.aMin="-2.4";tr.props.aMax="2.4";tr.props.bMin="-2.4";tr.props.bMax="2.4";tr.props.cMin="-2.4";tr.props.cMax="2.4";
@@ -90,12 +90,12 @@ function latticeScene(){
   cam.props.orbRadius="11";cam.props.orbTheta="0.9";cam.props.orbPhi="1.0";
   cam.props.showCamLabel=false;cam.props.showResetBtn=false;cam.props.showShareBtn=false;cam.props.showScalarOverlay=false;
   // a phyllotaxis-style shell of points, colored by height — static, by index i.
-  const pts=makeNode("points",{x:620,y:160});pts.color="#f99ab4";
-  pts.props.kind="points";pts.props.mode="index";pts.props.useColor=false;
-  pts.props.idxPoint="2.6*sqrt(i/360)*cos(i*2.4), 2.6*sqrt(i/360)*sin(i*2.4), (i/360)*3 - 1.5";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.color="#f99ab4";
+  pts.props.prim="points";pts.props.src="index";pts.props.useColor=false;
+  pts.props.idxPoints="2.6*sqrt(i/360)*cos(i*2.4), 2.6*sqrt(i/360)*sin(i*2.4), (i/360)*3 - 1.5";
   pts.props.idxCount="360";
   pts.props.drawLines=false;pts.props.radius="0.075";
-  pts.props.colorMode="gradient";pts.props.colorExpr="z";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="z";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -272,7 +272,7 @@ function barthScene(){
   const tr=makeNode("transformer",{x:700,y:160});tr.label="Depth";tr.color="#ff6ec7";
   tr.props.mode="graph";
   tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-2.2";tr.props.cMax="2.2";
-  tr.props.res="240";tr.props.colorMode="gradient";
+  tr.props.res="240";tr.props.colorOn=true;tr.props.colorMode="ramp";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -374,7 +374,7 @@ function whitneyScene(){
   const tr=makeNode("transformer",{x:700,y:160});tr.label="Whitney";tr.color="#7ad7ff";
   tr.props.mode="graph";
   tr.props.aMin="-2";tr.props.aMax="2";tr.props.bMin="-2";tr.props.bMax="2";tr.props.cMin="-0.5";tr.props.cMax="2.5";
-  tr.props.res="240";tr.props.colorMode="gradient";
+  tr.props.res="240";tr.props.colorOn=true;tr.props.colorMode="ramp";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -477,14 +477,14 @@ function recursiveGlyphScene(){
   const a=makeNode("slider",{x:86,y:128});a.name="a";a.label="Slider";a.value=0.53;
   a.props.min="0";a.props.max="1";a.props.step="0.01";
   const b=makeNode("expr",{x:61,y:344});b.name="b";b.label="Expr";b.props.expr="256";
-  const pts=makeNode("points",{x:414,y:250});pts.label="Points";pts.color="#ff552b";
-  pts.props.kind="glyphs";pts.props.mode="recursive";pts.props.useColor=false;
-  pts.props.recGlyphInit="4, 4 | -8*a, 0";
-  pts.props.recGlyphStep=
+  const pts=makeNode("rawGeom",{x:414,y:250});pts.label="Points";pts.color="#ff552b";
+  pts.props.prim="glyphs";pts.props.src="recursive";pts.props.useColor=false;
+  pts.props.recGlyphs="4, 4 | -8*a, 0";
+  pts.props.recGlyphsStep=
     "x[n-1] - (x[n-1] + y[n-1])*a, y[n-1] + (x[n-1] - y[n-1])*a | "+
     "-(x[n-1] - (x[n-1] + y[n-1])*a + y[n-1] + (x[n-1] - y[n-1])*a)*a, "+
     "((x[n-1] - (x[n-1] + y[n-1])*a) - (y[n-1] + (x[n-1] - y[n-1])*a))*a";
-  pts.props.recGlyphCount="b";
+  pts.props.recCount="b";
   pts.props.radius="4";pts.props.drawLines=true;pts.props.arrowLen="1";pts.props.normalize=true;
   pts.props.anim="crest";pts.props.speed="1";pts.props.crestColor="#ffffff";
   pts.props.colorMode="off";pts.props.colorExpr="i";pts.props.colorLo="#3a6aff";pts.props.colorHi="#ff5ea8";
@@ -2566,7 +2566,7 @@ function tutTorusLevelScene(){
   const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#ffcf6e";
   tr.props.mode="graph";
   tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-1";tr.props.cMax="1";
-  tr.props.res="160";tr.props.colorMode="gradient";
+  tr.props.res="160";tr.props.colorOn=true;tr.props.colorMode="ramp";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
 }
@@ -2735,15 +2735,15 @@ function tutRosslerScene(){
   cam.props.spin="loop";cam.props.spinPeriod="40";
   const f=makeNode("animator",{x:40,y:360});f.name="f";f.value=0;
   f.props.min="0";f.props.max="1";f.props.period="18";f.props.loop="loop";f.playing=true;
-  const pts=makeNode("points",{x:620,y:160});pts.label="Rössler trajectory";pts.color="#ffcf6e";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="1, 1, 1";
-  pts.props.recStep=
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="Rössler trajectory";pts.color="#ffcf6e";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="1, 1, 1";
+  pts.props.recPointsStep=
     "x[n-1] + 0.02*(-y[n-1] - z[n-1]), "+
     "y[n-1] + 0.02*(x[n-1] + 0.2*y[n-1]), "+
     "z[n-1] + 0.02*(0.2 + z[n-1]*(x[n-1] - 5.7))";
   pts.props.recCount="6000";pts.props.drawLines=true;pts.props.radius="0";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#ffcf6e";pts.props.colorHi="#ff6ec7";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#ffcf6e";pts.props.colorHi="#ff6ec7";
   pts.props.sequenced=true;pts.props.seqVar="f";
   pts.attachments=[f.id];
   cam.attachments=[pts.id];
@@ -2804,16 +2804,16 @@ function tutLorenzScene(){
   // reveal fraction 0→1 loops; the points node shows that prefix of the path
   const f=makeNode("animator",{x:40,y:360});f.name="f";f.value=0;
   f.props.min="0";f.props.max="1";f.props.period="16";f.props.loop="loop";f.playing=true;
-  const pts=makeNode("points",{x:620,y:160});pts.label="Lorenz trajectory";pts.color="#5ad1e6";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="0.1, 0, 0";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="Lorenz trajectory";pts.color="#5ad1e6";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="0.1, 0, 0";
   // Euler step, h=0.005: xₙ = xₙ₋₁ + h·f(xₙ₋₁)
-  pts.props.recStep=
+  pts.props.recPointsStep=
     "x[n-1] + 0.005*(10*(y[n-1]-x[n-1])), "+
     "y[n-1] + 0.005*(x[n-1]*(28-z[n-1]) - y[n-1]), "+
     "z[n-1] + 0.005*(x[n-1]*y[n-1] - (8/3)*z[n-1])";
   pts.props.recCount="5000";pts.props.drawLines=true;pts.props.radius="0";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
   pts.props.sequenced=true;pts.props.seqVar="f";
   pts.attachments=[f.id];
   cam.attachments=[pts.id];
@@ -2977,12 +2977,12 @@ function tutCobwebScene(){
   diagTr.props.aMin="0";diagTr.props.aMax="1";diagTr.props.res="2";diagTr.attachments=[diagFn.id];
   // the cobweb zigzag itself, as a recurrence alternating on parity of n
   const odd="(mod(n,2)==1)", even="(mod(n,2)==0)";
-  const pts=makeNode("points",{x:680,y:360});pts.label="cobweb";pts.color="#ffcf6e";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="0.15, 0.15";
+  const pts=makeNode("rawGeom",{x:680,y:360});pts.label="cobweb";pts.color="#ffcf6e";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="0.15, 0.15";
   // x_next: odd→keep x (vertical), even→jump to y (horizontal)
   // y_next: odd→f(x) (vertical),  even→keep y (horizontal)
-  pts.props.recStep=
+  pts.props.recPointsStep=
     `${odd}*x[n-1] + ${even}*y[n-1], `+
     `${odd}*(r*x[n-1]*(1-x[n-1])) + ${even}*y[n-1]`;
   pts.props.recCount="160";pts.props.drawLines=true;pts.props.radius="0";
@@ -3032,12 +3032,12 @@ function _logisticAt(label, r){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label=label;cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="3";cam.props.planeOy="0.5";
-  const pts=makeNode("points",{x:620,y:160});pts.label=`r = ${r}`;pts.color="#ffcf6e";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="2.6, 0.3";
-  pts.props.recStep=`x[n-1] + 0.014, ${r}*y[n-1]*(1 - y[n-1])`;
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label=`r = ${r}`;pts.color="#ffcf6e";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="2.6, 0.3";
+  pts.props.recPointsStep=`x[n-1] + 0.014, ${r}*y[n-1]*(1 - y[n-1])`;
   pts.props.recCount="100";pts.props.drawLines=false;pts.props.radius="3";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -3199,13 +3199,13 @@ function tutLogisticRScene(){
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="3";cam.props.planeOy="0.5";
   const r=makeNode("slider",{x:20,y:320});r.name="r";r.label="r · growth rate";r.value=3.2;
   r.props.min="2.6";r.props.max="4.0";r.props.step="0.005";
-  const pts=makeNode("points",{x:620,y:160});pts.label="xₙ₊₁ = r·xₙ(1−xₙ)";pts.color="#ffcf6e";
-  pts.props.kind="points";pts.props.mode="recursive";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="xₙ₊₁ = r·xₙ(1−xₙ)";pts.color="#ffcf6e";
+  pts.props.prim="points";pts.props.src="recursive";
   // plot the orbit as (n stepped across the view, x_n); r comes from the slider
-  pts.props.recInit="2.6, 0.3";
-  pts.props.recStep="x[n-1] + 0.014, r*y[n-1]*(1 - y[n-1])";
+  pts.props.recPoints="2.6, 0.3";
+  pts.props.recPointsStep="x[n-1] + 0.014, r*y[n-1]*(1 - y[n-1])";
   pts.props.recCount="100";pts.props.drawLines=false;pts.props.radius="3";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
   pts.attachments=[r.id];
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[r.id]:r,[pts.id]:pts},camId:cam.id,animated:false};
@@ -3273,9 +3273,9 @@ function tutFrameMovingScene(){
   curve.props.degree="1";curve.props.exprX="cos(t)";curve.props.exprY="sin(t)";curve.props.exprZ="t/3";
   curve.props.tMin="0";curve.props.tMax="18.85";curve.props.res="300";
   // a marker point at parameter s (index mode, single point at the current s)
-  const mark=makeNode("points",{x:360,y:340});mark.label="marker";mark.color="#ffcf6e";
-  mark.props.kind="points";mark.props.mode="index";
-  mark.props.idxPoint="cos(s), sin(s), s/3";mark.props.idxCount="1";
+  const mark=makeNode("rawGeom",{x:360,y:340});mark.label="marker";mark.color="#ffcf6e";
+  mark.props.prim="points";mark.props.src="index";
+  mark.props.idxPoints="cos(s), sin(s), s/3";mark.props.idxCount="1";
   mark.props.drawLines=false;mark.props.radius="0.13";mark.attachments=[s.id];
   const cam3=cam;cam3.attachments=[curve.id,mark.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[curve.id]:curve,[mark.id]:mark,[s.id]:s},camId:cam.id,animated:true};
@@ -3299,13 +3299,13 @@ function tutTangentLineScene(){
   tr.attachments=[fn.id];
   // tangent line through (a, a²) with slope 2a: a 2-point segment over i=0..1
   // x = a-1 + 2i, y = a² + 2a(x-a). At i=0: x=a-1; at i=1: x=a+1.
-  const tan=makeNode("points",{x:360,y:300});tan.label="tangent";tan.color="#ffcf6e";
-  tan.props.kind="points";tan.props.mode="index";
-  tan.props.idxPoint="a - 1 + 2*i, a*a + 2*a*((a-1+2*i) - a), 0";tan.props.idxCount="2";
+  const tan=makeNode("rawGeom",{x:360,y:300});tan.label="tangent";tan.color="#ffcf6e";
+  tan.props.prim="points";tan.props.src="index";
+  tan.props.idxPoints="a - 1 + 2*i, a*a + 2*a*((a-1+2*i) - a), 0";tan.props.idxCount="2";
   tan.props.drawLines=true;tan.props.radius="0";tan.attachments=[a.id];
   // the point of tangency
-  const pt=makeNode("points",{x:360,y:440});pt.label="contact";pt.color="#ff5ea8";
-  pt.props.kind="points";pt.props.mode="index";pt.props.idxPoint="a, a*a, 0";pt.props.idxCount="1";
+  const pt=makeNode("rawGeom",{x:360,y:440});pt.label="contact";pt.color="#ff5ea8";
+  pt.props.prim="points";pt.props.src="index";pt.props.idxPoints="a, a*a, 0";pt.props.idxCount="1";
   pt.props.drawLines=false;pt.props.radius="5";pt.attachments=[a.id];
   cam.attachments=[tr.id,tan.id,pt.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[fn.id]:fn,[tr.id]:tr,[tan.id]:tan,[pt.id]:pt},camId:cam.id,animated:false};
@@ -3333,8 +3333,8 @@ function tutTangentPlaneScene(){
   plane.props.exprZ="(a*a - b*b) + 2*a*u - 2*b*v";
   plane.props.uMin="-0.6";plane.props.uMax="0.6";plane.props.vMin="-0.6";plane.props.vMax="0.6";
   plane.props.uRes="2";plane.props.vRes="2";plane.attachments=[a.id,b.id];
-  const pt=makeNode("points",{x:520,y:460});pt.label="contact";pt.color="#ff5ea8";
-  pt.props.kind="points";pt.props.mode="index";pt.props.idxPoint="a, b, a*a - b*b";pt.props.idxCount="1";
+  const pt=makeNode("rawGeom",{x:520,y:460});pt.label="contact";pt.color="#ff5ea8";
+  pt.props.prim="points";pt.props.src="index";pt.props.idxPoints="a, b, a*a - b*b";pt.props.idxCount="1";
   pt.props.drawLines=false;pt.props.radius="0.07";pt.attachments=[a.id,b.id];
   cam.attachments=[surf.id,plane.id,pt.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b,[surf.id]:surf,[plane.id]:plane,[pt.id]:pt},camId:cam.id,animated:true};
@@ -3400,17 +3400,17 @@ function tutFrenetScene(){
   const By=`((${Tz})*(${Nx}) - (${Tx})*(${Nz}))`;
   const Bz=`((${Tx})*(${Ny}) - (${Ty})*(${Nx}))`;
   const arrow=(name,col,vx,vy,vz)=>{
-    const n=makeNode("points",{x:300,y:200});n.label=name;n.color=col;
-    n.props.kind="points";n.props.mode="index";
-    n.props.idxPoint=`cos(s) + i*${L}*(${vx}), sin(s) + i*${L}*(${vy}), s/3 + i*${L}*(${vz})`;
+    const n=makeNode("rawGeom",{x:300,y:200});n.label=name;n.color=col;
+    n.props.prim="points";n.props.src="index";
+    n.props.idxPoints=`cos(s) + i*${L}*(${vx}), sin(s) + i*${L}*(${vy}), s/3 + i*${L}*(${vz})`;
     n.props.idxCount="2";n.props.drawLines=true;n.props.radius="0";n.attachments=[s.id];
     return n;
   };
   const Tn=arrow("T",  "#ff5ea8", Tx,Ty,Tz);
   const Nn=arrow("N",  "#5be0c0", Nx,Ny,Nz);
   const Bn=arrow("B",  "#ffcf6e", Bx,By,Bz);
-  const mark=makeNode("points",{x:300,y:440});mark.label="point";mark.color="#ffffff";
-  mark.props.kind="points";mark.props.mode="index";mark.props.idxPoint=P;mark.props.idxCount="1";
+  const mark=makeNode("rawGeom",{x:300,y:440});mark.label="point";mark.color="#ffffff";
+  mark.props.prim="points";mark.props.src="index";mark.props.idxPoints=P;mark.props.idxCount="1";
   mark.props.drawLines=false;mark.props.radius="0.09";mark.attachments=[s.id];
   cam.attachments=[curve.id,Tn.id,Nn.id,Bn.id,mark.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[s.id]:s,[curve.id]:curve,[Tn.id]:Tn,[Nn.id]:Nn,[Bn.id]:Bn,[mark.id]:mark},camId:cam.id,animated:true};
@@ -3453,17 +3453,17 @@ function tutFrenetMeasureScene(){
   const allFns=fns.map(f=>f.id);
   const L=0.7;
   const arrow=(name,col,fx,fy,fz,y)=>{
-    const n=makeNode("points",{x:1180,y});n.label=name;n.color=col;
-    n.props.kind="points";n.props.mode="index";
-    n.props.idxPoint=`cos(s) + i*${L}*${fx}(s), sin(s) + i*${L}*${fy}(s), 0.6*sin(3*s) + i*${L}*${fz}(s)`;
+    const n=makeNode("rawGeom",{x:1180,y});n.label=name;n.color=col;
+    n.props.prim="points";n.props.src="index";
+    n.props.idxPoints=`cos(s) + i*${L}*${fx}(s), sin(s) + i*${L}*${fy}(s), 0.6*sin(3*s) + i*${L}*${fz}(s)`;
     n.props.idxCount="2";n.props.drawLines=true;n.props.radius="0";n.attachments=[s.id,...allFns];
     scene[n.id]=n; return n;
   };
   const Tn=arrow("T","#ff5ea8","TX","TY","TZ",300);
   const Nn=arrow("N","#5be0c0","NX","NY","NZ",380);
   const Bn=arrow("B","#ffcf6e","BX","BY","BZ",460);
-  const mark=makeNode("points",{x:1180,y:540});mark.label="point";mark.color="#ffffff";
-  mark.props.kind="points";mark.props.mode="index";mark.props.idxPoint="cos(s), sin(s), 0.6*sin(3*s)";mark.props.idxCount="1";
+  const mark=makeNode("rawGeom",{x:1180,y:540});mark.label="point";mark.color="#ffffff";
+  mark.props.prim="points";mark.props.src="index";mark.props.idxPoints="cos(s), sin(s), 0.6*sin(3*s)";mark.props.idxCount="1";
   mark.props.drawLines=false;mark.props.radius="0.09";mark.attachments=[s.id];scene[mark.id]=mark;
   cam.attachments=[curve.id,Tn.id,Nn.id,Bn.id,mark.id];
   return {scene,camId:cam.id,animated:true};
@@ -3497,17 +3497,17 @@ function tutGeodesicSphereScene(){
   arc.props.exprZ=`${w0}*(${A[2]}) + ${w1}*(${B[2]})`;
   arc.props.tMin="0";arc.props.tMax="1";arc.props.res="200";
   // endpoint dots A and B
-  const ends=makeNode("points",{x:300,y:380});ends.label="A, B";ends.color="#ff5ea8";
-  ends.props.kind="points";ends.props.mode="index";
-  ends.props.idxPoint=`(i<0.5)*(${A[0]}) + (i>0.5)*(${B[0]}), (i<0.5)*(${A[1]}) + (i>0.5)*(${B[1]}), (i<0.5)*(${A[2]}) + (i>0.5)*(${B[2]})`;
+  const ends=makeNode("rawGeom",{x:300,y:380});ends.label="A, B";ends.color="#ff5ea8";
+  ends.props.prim="points";ends.props.src="index";
+  ends.props.idxPoints=`(i<0.5)*(${A[0]}) + (i>0.5)*(${B[0]}), (i<0.5)*(${A[1]}) + (i>0.5)*(${B[1]}), (i<0.5)*(${A[2]}) + (i>0.5)*(${B[2]})`;
   ends.props.idxCount="2";ends.props.drawLines=false;ends.props.radius="0.08";
   // a marker that travels the geodesic
   const s=makeNode("animator",{x:40,y:470});s.name="s";s.value=0;
   s.props.min="0";s.props.max="1";s.props.period="6";s.props.loop="bounce";s.playing=true;
   const ws0=`sin((1-s)*${Om})/${sOm}`, ws1=`sin(s*${Om})/${sOm}`;
-  const mover=makeNode("points",{x:300,y:520});mover.label="traveler";mover.color="#ffffff";
-  mover.props.kind="points";mover.props.mode="index";
-  mover.props.idxPoint=`${ws0}*(${A[0]}) + ${ws1}*(${B[0]}), ${ws0}*(${A[1]}) + ${ws1}*(${B[1]}), ${ws0}*(${A[2]}) + ${ws1}*(${B[2]})`;
+  const mover=makeNode("rawGeom",{x:300,y:520});mover.label="traveler";mover.color="#ffffff";
+  mover.props.prim="points";mover.props.src="index";
+  mover.props.idxPoints=`${ws0}*(${A[0]}) + ${ws1}*(${B[0]}), ${ws0}*(${A[1]}) + ${ws1}*(${B[1]}), ${ws0}*(${A[2]}) + ${ws1}*(${B[2]})`;
   mover.props.idxCount="1";mover.props.drawLines=false;mover.props.radius="0.06";mover.attachments=[s.id];
   cam.attachments=[tr.id,arc.id,ends.id,mover.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[arc.id]:arc,[ends.id]:ends,[mover.id]:mover,[s.id]:s},camId:cam.id,animated:true};
@@ -3542,9 +3542,9 @@ function tutGeodesicCompareScene(){
   gc.props.exprZ=`${w0}*(${A[2]}) + ${w1}*(${B[2]})`;
   gc.props.tMin="0";gc.props.tMax="1";gc.props.res="200";
   // the shared endpoints
-  const ends=makeNode("points",{x:300,y:500});ends.label="A, B";ends.color="#ffcf6e";
-  ends.props.kind="points";ends.props.mode="index";
-  ends.props.idxPoint=`(i<0.5)*(${A[0]}) + (i>0.5)*(${B[0]}), (i<0.5)*(${A[1]}) + (i>0.5)*(${B[1]}), (i<0.5)*(${A[2]}) + (i>0.5)*(${B[2]})`;
+  const ends=makeNode("rawGeom",{x:300,y:500});ends.label="A, B";ends.color="#ffcf6e";
+  ends.props.prim="points";ends.props.src="index";
+  ends.props.idxPoints=`(i<0.5)*(${A[0]}) + (i>0.5)*(${B[0]}), (i<0.5)*(${A[1]}) + (i>0.5)*(${B[1]}), (i<0.5)*(${A[2]}) + (i>0.5)*(${B[2]})`;
   ends.props.idxCount="2";ends.props.drawLines=false;ends.props.radius="0.08";
   cam.attachments=[tr.id,lat.id,gc.id,ends.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,[lat.id]:lat,[gc.id]:gc,[ends.id]:ends},camId:cam.id,animated:true};
@@ -3568,7 +3568,7 @@ function tutGaussCurvatureScene(){
   surf.props.exprZ="0.6*sin(v)";
   surf.props.uMin="0";surf.props.uMax="6.2832";surf.props.vMin="0";surf.props.vMax="6.2832";
   surf.props.uRes="120";surf.props.vRes="60";
-  surf.props.colorMode="gradient";surf.props.colorExpr="cos(v)";surf.props.colorLo="#ff5ea8";surf.props.colorHi="#5ad1e6";
+  surf.props.colorOn=true;surf.props.colorMode="ramp";surf.props.colorExpr="cos(v)";surf.props.colorLo="#ff5ea8";surf.props.colorHi="#5ad1e6";
   surf.props.colorMin="-1";surf.props.colorMax="1";
   cam.attachments=[surf.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[surf.id]:surf},camId:cam.id,animated:true};
@@ -3598,9 +3598,9 @@ function tutPointsListScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="a list of points";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.6";
-  const pts=makeNode("points",{x:620,y:160});pts.label="points";pts.color="#a6e3a1";
-  pts.props.kind="points";pts.props.mode="list";
-  pts.props.listPoints="-2, -1\n-1, 1\n0, -0.5\n1, 1.5\n2, 0";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="points";pts.color="#a6e3a1";
+  pts.props.prim="points";pts.props.src="list";
+  pts.props.rawPoints="-2, -1\n-1, 1\n0, -0.5\n1, 1.5\n2, 0";
   pts.props.drawLines=true;pts.props.radius="6";
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
@@ -3612,11 +3612,11 @@ function tutPointsIndexScene(){
   cam.props.orbRadius="11";cam.props.orbTheta="0.9";cam.props.orbPhi="1.0";cam.props.spin="loop";cam.props.spinPeriod="40";
   const g=makeNode("slider",{x:20,y:340});g.name="g";g.label="g · divergence angle";g.value=2.399963;
   g.props.min="2.3";g.props.max="2.5";g.props.step="0.0005";
-  const pts=makeNode("points",{x:620,y:160});pts.label="phyllotaxis";pts.color="#9b8cff";
-  pts.props.kind="points";pts.props.mode="index";
-  pts.props.idxPoint="2.6*sqrt(i/360)*cos(i*g), 2.6*sqrt(i/360)*sin(i*g), (i/360)*2 - 1";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="phyllotaxis";pts.color="#9b8cff";
+  pts.props.prim="points";pts.props.src="index";
+  pts.props.idxPoints="2.6*sqrt(i/360)*cos(i*g), 2.6*sqrt(i/360)*sin(i*g), (i/360)*2 - 1";
   pts.props.idxCount="360";pts.props.drawLines=false;pts.props.radius="0.06";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#1b3a8f";pts.props.colorHi="#ffb454";
   pts.attachments=[g.id];
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[g.id]:g,[pts.id]:pts},camId:cam.id,animated:false};
@@ -3630,10 +3630,10 @@ function tutPointsRecursiveScene(){
   d.props.min="0.85";d.props.max="1.0";d.props.step="0.002";
   const w=makeNode("slider",{x:20,y:400});w.name="w";w.label="w · turn per step";w.value=0.4;
   w.props.min="0.1";w.props.max="1.2";w.props.step="0.01";
-  const pts=makeNode("points",{x:620,y:160});pts.label="orbit";pts.color="#7ad7ff";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="3, 0";
-  pts.props.recStep="d*(x[n-1]*cos(w) - y[n-1]*sin(w)), d*(x[n-1]*sin(w) + y[n-1]*cos(w))";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="orbit";pts.color="#7ad7ff";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="3, 0";
+  pts.props.recPointsStep="d*(x[n-1]*cos(w) - y[n-1]*sin(w)), d*(x[n-1]*sin(w) + y[n-1]*cos(w))";
   pts.props.recCount="120";pts.props.drawLines=true;pts.props.radius="3.5";
   pts.attachments=[d.id,w.id];
   cam.attachments=[pts.id];
@@ -3675,13 +3675,13 @@ function tutOrbitLogisticScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="logistic orbit";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="2.8";cam.props.planeOy="0.5";
-  const pts=makeNode("points",{x:620,y:160});pts.label="xₙ₊₁ = r·xₙ(1−xₙ)";pts.color="#ffcf6e";
-  pts.props.kind="points";pts.props.mode="recursive";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="xₙ₊₁ = r·xₙ(1−xₙ)";pts.color="#ffcf6e";
+  pts.props.prim="points";pts.props.src="recursive";
   // plot (n scaled into view, x_n); r = 3.6 sits in the chaotic regime
-  pts.props.recInit="0, 0.2";
-  pts.props.recStep="x[n-1] + 0.06, 3.6*y[n-1]*(1 - y[n-1])";
+  pts.props.recPoints="0, 0.2";
+  pts.props.recPointsStep="x[n-1] + 0.06, 3.6*y[n-1]*(1 - y[n-1])";
   pts.props.recCount="100";pts.props.drawLines=false;pts.props.radius="3";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#ff5ea8";
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -3693,12 +3693,12 @@ function tutOrbitAttractorScene(){
   // animate the number of plotted iterations so the attractor fills in over time
   const n=makeNode("animator",{x:40,y:340});n.name="N";n.value=80;
   n.props.min="80";n.props.max="1500";n.props.period="9";n.props.loop="loop";n.playing=true;
-  const pts=makeNode("points",{x:620,y:160});pts.label="iterated map";pts.color="#c4b5fd";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="0.1, 0.1";
-  pts.props.recStep="sin(-1.4*y[n-1]) + 1.6*cos(-1.4*x[n-1]), sin(1.6*x[n-1]) + 0.7*cos(1.6*y[n-1])";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="iterated map";pts.color="#c4b5fd";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="0.1, 0.1";
+  pts.props.recPointsStep="sin(-1.4*y[n-1]) + 1.6*cos(-1.4*x[n-1]), sin(1.6*x[n-1]) + 0.7*cos(1.6*y[n-1])";
   pts.props.recCount="N";pts.props.drawLines=false;pts.props.radius="1.6";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
   pts.attachments=[n.id];
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
@@ -3710,12 +3710,12 @@ function tutOrbitConvergeScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="settling to a fixed point";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.2";cam.props.planeOx="2.6";cam.props.planeOy="0.5";
-  const pts=makeNode("points",{x:620,y:160});pts.label="r = 2.8";pts.color="#5ad1e6";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="0, 0.08";
-  pts.props.recStep="x[n-1] + 0.09, 2.8*y[n-1]*(1 - y[n-1])";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="r = 2.8";pts.color="#5ad1e6";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="0, 0.08";
+  pts.props.recPointsStep="x[n-1] + 0.09, 2.8*y[n-1]*(1 - y[n-1])";
   pts.props.recCount="60";pts.props.drawLines=true;pts.props.radius="2.6";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#5ad1e6";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5b9cf6";pts.props.colorHi="#5ad1e6";
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -3726,15 +3726,15 @@ function tutSensitiveScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1040,y:120}));cam.label="sensitive dependence";cam.props.showOpenBtn=false;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3.4";cam.props.planeOx="2.8";cam.props.planeOy="0.5";
-  const a=makeNode("points",{x:620,y:120});a.label="x₀ = 0.300";a.color="#5ad1e6";
-  a.props.kind="points";a.props.mode="recursive";
-  a.props.recInit="0, 0.300";
-  a.props.recStep="x[n-1] + 0.06, 3.9*y[n-1]*(1 - y[n-1])";
+  const a=makeNode("rawGeom",{x:620,y:120});a.label="x₀ = 0.300";a.color="#5ad1e6";
+  a.props.prim="points";a.props.src="recursive";
+  a.props.recPoints="0, 0.300";
+  a.props.recPointsStep="x[n-1] + 0.06, 3.9*y[n-1]*(1 - y[n-1])";
   a.props.recCount="100";a.props.drawLines=true;a.props.radius="2.2";
-  const b=makeNode("points",{x:620,y:300});b.label="x₀ = 0.3005";b.color="#ff5ea8";
-  b.props.kind="points";b.props.mode="recursive";
-  b.props.recInit="0, 0.3005";
-  b.props.recStep="x[n-1] + 0.06, 3.9*y[n-1]*(1 - y[n-1])";
+  const b=makeNode("rawGeom",{x:620,y:300});b.label="x₀ = 0.3005";b.color="#ff5ea8";
+  b.props.prim="points";b.props.src="recursive";
+  b.props.recPoints="0, 0.3005";
+  b.props.recPointsStep="x[n-1] + 0.06, 3.9*y[n-1]*(1 - y[n-1])";
   b.props.recCount="100";b.props.drawLines=true;b.props.radius="2.2";
   cam.attachments=[a.id,b.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[a.id]:a,[b.id]:b},camId:cam.id,animated:false};
@@ -3748,12 +3748,12 @@ function tutHenonScene(){
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="1.6";cam.props.planeOy="0";
   const n=makeNode("animator",{x:40,y:340});n.name="N";n.value=120;
   n.props.min="120";n.props.max="3000";n.props.period="10";n.props.loop="loop";n.playing=true;
-  const pts=makeNode("points",{x:620,y:160});pts.label="a = 1.4, b = 0.3";pts.color="#ffcf6e";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="0, 0";
-  pts.props.recStep="1 - 1.4*x[n-1]*x[n-1] + y[n-1], 0.3*x[n-1]";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="a = 1.4, b = 0.3";pts.color="#ffcf6e";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="0, 0";
+  pts.props.recPointsStep="1 - 1.4*x[n-1]*x[n-1] + y[n-1], 0.3*x[n-1]";
   pts.props.recCount="N";pts.props.drawLines=false;pts.props.radius="1.4";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#ffcf6e";pts.props.colorHi="#ff5ea8";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#ffcf6e";pts.props.colorHi="#ff5ea8";
   pts.attachments=[n.id];
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
@@ -3767,12 +3767,12 @@ function tutGingerbreadScene(){
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="6";cam.props.planeOx="2.3";cam.props.planeOy="2.3";
   const n=makeNode("animator",{x:40,y:340});n.name="N";n.value=200;
   n.props.min="200";n.props.max="4000";n.props.period="11";n.props.loop="loop";n.playing=true;
-  const pts=makeNode("points",{x:620,y:160});pts.label="x' = 1 − y + |x|, y' = x";pts.color="#9b8cff";
-  pts.props.kind="points";pts.props.mode="recursive";
-  pts.props.recInit="-0.1, 0";
-  pts.props.recStep="1 - y[n-1] + abs(x[n-1]), x[n-1]";
+  const pts=makeNode("rawGeom",{x:620,y:160});pts.label="x' = 1 − y + |x|, y' = x";pts.color="#9b8cff";
+  pts.props.prim="points";pts.props.src="recursive";
+  pts.props.recPoints="-0.1, 0";
+  pts.props.recPointsStep="1 - y[n-1] + abs(x[n-1]), x[n-1]";
   pts.props.recCount="N";pts.props.drawLines=false;pts.props.radius="1.3";
-  pts.props.colorMode="gradient";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
+  pts.props.colorOn=true;pts.props.colorMode="ramp";pts.props.colorExpr="i";pts.props.colorLo="#5ad1e6";pts.props.colorHi="#9b8cff";
   pts.attachments=[n.id];
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[n.id]:n,[pts.id]:pts},camId:cam.id,animated:true};
