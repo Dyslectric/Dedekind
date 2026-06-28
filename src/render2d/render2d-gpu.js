@@ -18,6 +18,20 @@ import { advectSeeds } from "../geometry/flow.js";
 function nicestep(r){ if(!r||!isFinite(r))return 1; const m=Math.pow(10,Math.floor(Math.log10(Math.abs(r)))); const f=r/m; return m*(f<2?1:f<5?2:5); }
 // HSL→RGB (h in [0,1)); used for complex domain colouring in the 2-D viewport.
 function hsl2rgb2d(h,s,l){ h=((h%1)+1)%1; const a=s*Math.min(l,1-l); const f=(n)=>{const k=(n+h*12)%12; return l-a*Math.max(-1,Math.min(k-3,9-k,1));}; return [f(0),f(8),f(4)]; }
+// Domain colour of a complex value w, matching the GPU shader and _glowColorExprs.
+// glow=true: white core at zeros, R/G/B halo by phase, fading with |w|.
+// glow=false: classic hue=arg, lightness rising with |w| (zeros dark).
+function domainColor2d(re, im, glow){
+  if(glow){
+    const M=Math.hypot(re,im), A=Math.atan2(im,re);
+    const wR=Math.pow(0.5+0.5*Math.cos(A),3), wG=Math.pow(0.5+0.5*Math.cos(A-2.0944),3), wB=Math.pow(0.5+0.5*Math.cos(A-4.18879),3);
+    const den=wR+wG+wB+1e-6, hR=wR/den,hG=wG/den,hB=wB/den;
+    const b=0.6/(0.6+M), s=M/(M+0.14);
+    return [b*(1-s*(1-hR)), b*(1-s*(1-hG)), b*(1-s*(1-hB))];
+  }
+  const mod=Math.hypot(re,im), hue=Math.atan2(im,re)/(2*Math.PI), l=1-1/(1+mod*0.5);
+  return hsl2rgb2d(hue,0.95,0.12+0.76*l);
+}
 function fmt(v){ if(Math.abs(v)<1e-9)return"0"; if(Math.abs(v)>=1000||Math.abs(v)<0.01)return v.toExponential(1); return parseFloat(v.toPrecision(3)).toString(); }
 
 function hexRGB(hex){
@@ -695,8 +709,26 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
         const uobj={};
         for(const u of uniforms) uobj[GLSL_UNIFORM_PREFIX+u]={value:resolveUniformValue(u,ascope)};
         const decls=[...uniforms].map(u=>`uniform float ${GLSL_UNIFORM_PREFIX}${u};`).join("\n");
+        const glow = (tp.domainStyle||"standard")==="glow";
         const vert=`attribute vec2 ab; varying vec2 vAb;
           void main(){ vAb=ab; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+        const colorBody = glow
+          // Glow scheme (matches _glowColorExprs): white core at each zero, a
+          // saturated R/G/B halo by phase, brightness fading as |f| grows.
+          ? `float M=length(w); float A=atan(w.y,w.x);
+             float wR=pow(0.5+0.5*cos(A),3.0);
+             float wG=pow(0.5+0.5*cos(A-2.0944),3.0);
+             float wB=pow(0.5+0.5*cos(A-4.18879),3.0);
+             float den=wR+wG+wB+1e-6;
+             vec3 hue=vec3(wR,wG,wB)/den;
+             float b=0.6/(0.6+M);
+             float s=M/(M+0.14);
+             gl_FragColor=vec4(b*(vec3(1.0)-s*(vec3(1.0)-hue)),1.0);`
+          // Standard scheme: hue = arg f, lightness rising with |f| (zeros dark).
+          : `float mod=length(w);
+             float hue=atan(w.y,w.x)/6.283185307179586;
+             float l=1.0-1.0/(1.0+mod*0.5);
+             gl_FragColor=vec4(_hsl(hue,0.95,0.12+0.76*l),1.0);`;
         const frag=`precision highp float;
           ${decls}
           varying vec2 vAb;
@@ -707,10 +739,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
           vec2 _f(vec2 _z){ return ${gz}; }
           void main(){
             vec2 w=_f(vAb);
-            float mod=length(w);
-            float hue=atan(w.y,w.x)/6.283185307179586;
-            float l=1.0-1.0/(1.0+mod*0.5);
-            gl_FragColor=vec4(_hsl(hue,0.95,0.12+0.76*l),1.0);
+            ${colorBody}
           }`;
         const mat=new THREE.ShaderMaterial({uniforms:uobj,vertexShader:vert,fragmentShader:frag,
           side:THREE.DoubleSide,depthTest:false,depthWrite:false});
@@ -738,7 +767,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
         // imaginary axis under the default +Z camera (v collapsed to 0, the whole
         // picture flattened to a line). Place them directly.
         pos.push(reVals[i], imVals[j], 0);
-        if(w){ const mod=Math.hypot(w.re,w.im); const hue=Math.atan2(w.im,w.re)/(2*Math.PI); const l=1-1/(1+mod*0.5); const c=hsl2rgb2d(hue,0.95,0.12+0.76*l); col.push(c[0],c[1],c[2]); }
+        if(w){ const c=domainColor2d(w.re, w.im, (tp.domainStyle||"standard")==="glow"); col.push(c[0],c[1],c[2]); }
         else col.push(0.12,0.12,0.15);
       }
     }

@@ -1330,7 +1330,7 @@ function domainColorScene(label, fexpr, R){
   fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
   fn.props.out0=fexpr;                                       // f(z), z = re + i·im
   const tr=makeNode("transformer",{x:720,y:200});tr.label=label;tr.color="#8aadf4";
-  tr.props.cplxMode="domain";tr.props.res="200";
+  tr.props.cplxMode="domain";tr.props.domainStyle="glow";tr.props.res="200";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);
   tr.attachments=[fn.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
@@ -1541,7 +1541,7 @@ function complexDomainScene(){
   // z = re + i·im
   fn.props.out0="((re+i*im)^2 - 1)/((re+i*im)^2 + 1)";
   const tr=makeNode("transformer",{x:477,y:317});tr.label="domain colouring";tr.color="#c4b5fd";
-  tr.props.cplxMode="domain";tr.props.res="140";
+  tr.props.cplxMode="domain";tr.props.domainStyle="glow";tr.props.res="140";
   tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
   tr.attachments=[fn.id];
   cam.attachments=[tr.id];
