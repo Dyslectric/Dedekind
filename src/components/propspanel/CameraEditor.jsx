@@ -62,6 +62,7 @@ export function CameraEditor({
     <Sec title="Display">
       <PR label="grid"><Toggle v={node.props.showGrid!==false} onChange={v=>onChange({props:{...node.props,showGrid:v}})}/></PR>
       <PR label="axes"><Toggle v={node.props.showAxes!==false} onChange={v=>onChange({props:{...node.props,showAxes:v}})}/></PR>
+      {node.props.mode==="2d"&&<PR label="tick labels"><Toggle v={node.props.showTickLabels!==false} onChange={v=>onChange({props:{...node.props,showTickLabels:v}})}/></PR>}
       <PR label="scalar HUD"><Toggle v={node.props.showScalarOverlay!==false} onChange={v=>onChange({props:{...node.props,showScalarOverlay:v}})}/></PR>
       <PR label="custom bg"><Toggle v={!!node.props.bgOverride} onChange={v=>onChange({props:{...node.props,bgOverride:v}})}/></PR>
       {node.props.bgOverride&&<PR label="bg"><ColorRow v={node.props.bgColor||"#070810"} onChange={v=>onChange({props:{...node.props,bgColor:v}})}/></PR>}

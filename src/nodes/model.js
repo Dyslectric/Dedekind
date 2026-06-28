@@ -49,7 +49,7 @@ const TYPE_META={
 // ── Node factory ─────────────────────────────────────────────────────────────
 const PROJECT_ID=uid();
 function makeNode(type,pos){
-  const camProps=(mode)=>({posX:"6",posY:"4",posZ:"6",targetX:"0",targetY:"0",targetZ:"0",orbTheta:"0.8",orbPhi:"1.0",orbRadius:"14",fov:"50",near:"0.01",far:"2000",projection:"perspective",orthoSize:"10",mode,showGrid:true,showAxes:true,bgOverride:false,bgColor:"#0d0f18",showScalarOverlay:true,showCamLabel:true,showResetBtn:true,showHints:false,showShareBtn:true,showOpenBtn:true,
+  const camProps=(mode)=>({posX:"6",posY:"4",posZ:"6",targetX:"0",targetY:"0",targetZ:"0",orbTheta:"0.8",orbPhi:"1.0",orbRadius:"14",fov:"50",near:"0.01",far:"2000",projection:"perspective",orthoSize:"10",mode,showGrid:true,showAxes:true,showTickLabels:true,bgOverride:false,bgColor:"#0d0f18",showScalarOverlay:true,showCamLabel:true,showResetBtn:true,showHints:false,showShareBtn:true,showOpenBtn:true,
     // ── 2-D camera plane: a single flat plane defined by an origin point and a
     // gradient / normal vector. 3-D plots are orthographically projected onto it
     // (no notion of distance). Default = world XY plane (normal +Z).

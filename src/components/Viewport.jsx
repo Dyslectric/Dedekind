@@ -563,7 +563,8 @@ function Viewport2D({ camNode, nodes, scope, theme, animValsRef, onUpdateNode, o
       // custom background override is honoured by the grid layer
       if(st.camNode?.props?.bgOverride) th.bg2d=st.camNode.props.bgColor;
       drawGrid2D(gctx, viewRef.current, W, H, th);
-      drawLabels2D(lctx, viewRef.current, W, H, th);
+      if(st.camNode?.props?.showTickLabels!==false) drawLabels2D(lctx, viewRef.current, W, H, th);
+      else { const dpr=lctx._dpr||1; lctx.setTransform(dpr,0,0,dpr,0,0); lctx.clearRect(0,0,W,H); }
     };
 
     const loop=()=>{
