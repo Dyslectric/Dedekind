@@ -224,6 +224,11 @@ function makeNode(type,pos){
       recTris:"0, 0, 0 | 1, 0, 0 | 0, 1, 0",
       recTrisStep:"x[n-1], y[n-1], z[n-1] | x2[n-1]*0.9, y2[n-1]*0.9, z2[n-1] | x3[n-1]*0.9, y3[n-1]*0.9, z3[n-1]",
       recCount:"80",
+      // ── fromlist: positions (and optional colour scalar) come from a wired
+      //   vector list by name; edgeList names an index-pair list that connects
+      //   them with segments. Ported from the points node so list-driven cages /
+      //   root clouds work directly on rawGeom. ──
+      ptsList:"", edgeList:"",
       // ── per-vertex color ──
       //   colorMode "ramp" — a scalar (colorExpr) mapped through the lo→hi ramp
       //   colorMode "rgb"  — three expressions, each 0..1024 (10-bit per channel)

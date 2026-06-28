@@ -989,6 +989,21 @@ function buildRawGeom3d(p, scope, color){
     const pcols = rampGroups ? rampGroups.map(g=>g[0]) : null;
     const objs = buildPointSeqGPU(pts, color, r, p.drawLines===true, pcols);
     if(alphaGroups) for(const o of objs){ if(o.material){ o.material.transparent=true; o.material.opacity=meanAlpha; } }
+    // edgeList: a wired index-pair list [[i,j],…] (1-based) connecting the points
+    // with segments — referenced, not duplicated (a cage / wireframe). Ported from
+    // the points node.
+    const exEdges = p.edgeList;
+    if(exEdges && Array.isArray(scope[exEdges]) && pts.length){
+      const segs=[];
+      for(const e of scope[exEdges]){ if(!Array.isArray(e)||e.length<2) continue;
+        const a=pts[Math.round(e[0])-1], b=pts[Math.round(e[1])-1]; if(a&&b) segs.push([a,b]); }
+      if(segs.length){
+        const world=p.lineMode==="world";
+        const lw=(p.lineWidth!==""&&p.lineWidth!=null)?resolveNum(p.lineWidth,scope, world?0.04:CURVE_3D_PX):(world?0.04:undefined);
+        const seg=buildSegments3d(segs,color,null,{world,width:lw});
+        if(seg.length) return [...objs,...seg];
+      }
+    }
     return objs;
   }
   if(prim==="segments"){
@@ -1203,6 +1218,31 @@ function sampleRawGeom(p, prim, scope){
       if(cols) cols.push(cgroup);
       if(rgb) rgb.push(rgroup);
       if(alpha) alpha.push(agroup);
+    }
+    return { verts, cols, rgb, alpha };
+  }
+
+  if((p.src||"list")==="fromlist"){
+    // positions come from a wired vector list (rows [x,y[,z[,colorScalar]]]),
+    // referenced by name. Points-only. A 4th column is the colour scalar when
+    // colour (ramp) is on.
+    const arr = p.ptsList ? scope[p.ptsList] : null;
+    if(!Array.isArray(arr)) return { verts, cols, rgb, alpha };
+    let row=0;
+    for(const r of arr){
+      if(!Array.isArray(r)){ row++; continue; }
+      const x=+r[0], y=+r[1], z=r.length>2?+r[2]:0;
+      if(!isFinite(x)||!isFinite(y)){ row++; continue; }
+      const v=[x,y,isFinite(z)?z:0];
+      verts.push([v]);
+      if(anyPerVertex){
+        const cg=cols?[]:null, rg=rgb?[]:null, ag=alpha?[]:null;
+        if(rgbMode) evalColor({...scope,i:row,n:row,x:v[0],y:v[1],z:v[2],part:0},null,rg,ag);
+        else if(cols){ const cscal=r.length>3?+r[3]:row; cg.push(isFinite(cscal)?cscal:0); if(ag) evalColor({...scope,i:row,n:row,x:v[0],y:v[1],z:v[2],part:0},null,null,ag); }
+        else if(ag) evalColor({...scope,i:row,n:row,x:v[0],y:v[1],z:v[2],part:0},null,null,ag);
+        if(cols) cols.push(cg); if(rgb) rgb.push(rg); if(alpha) alpha.push(ag);
+      }
+      row++;
     }
     return { verts, cols, rgb, alpha };
   }

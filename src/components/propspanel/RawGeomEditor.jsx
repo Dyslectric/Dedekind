@@ -66,6 +66,7 @@ export function RawGeomEditor({ node, scope, onChange }){
           <option value="list">list (literal data)</option>
           <option value="index">index (expressions over i, j, k)</option>
           <option value="recursive">recursive (each from the previous)</option>
+          {prim==="points" && <option value="fromlist">from a wired list</option>}
         </select>
       </PR>
       <div style={{fontSize:13,color:ui.uiFaint,marginTop:3,lineHeight:1.5}}>
@@ -73,6 +74,8 @@ export function RawGeomEditor({ node, scope, onChange }){
           ? <>One template primitive generated over a count. Coordinates are expressions in <em>i</em> (sequence) and <em>i, j, k</em> (lattice), plus <em>n</em> (flat index). Wired scalars and functions are in scope.</>
           : isRec
           ? <>Each primitive is defined from the previous one. Write the recurrence with <em>x[n-1], y[n-1], z[n-1]</em> for the previous vertex; for a second vertex use <em>x2,y2,z2</em> (a glyph&rsquo;s vector also takes <em>vx,vy,vz</em>), and a third triangle vertex uses <em>x3,y3,z3</em>. Wired scalars and functions are in scope.</>
+          : src==="fromlist"
+          ? <>Points come straight from a wired vector list (rows <em>x, y[, z]</em>); editing the list updates them live. An optional edge list (index pairs, 1-based) joins them with segments.</>
           : <>Type primitives directly, one per line. Numbers can reference wired sliders and constants.</>}
       </div>
     </Sec>
@@ -88,6 +91,10 @@ export function RawGeomEditor({ node, scope, onChange }){
       <PR label="next"><MathInput v={p[recStepField]||""} sc={scope} multiline onChange={v=>set(recStepField,v)} placeholder={recStepHint}/></PR>
       <PR label="count"><XF v={p.recCount??"80"} sc={scope} onChange={v=>set("recCount",v)}/></PR>
       <div style={{fontSize:12.5,color:ui.uiMuted,marginTop:4}}>{count} {prim}</div>
+    </Sec> : src==="fromlist" ? <Sec title="From list">
+      <PR label="points"><input value={p.ptsList||""} onChange={e=>set("ptsList",e.target.value)} placeholder="wired list name (e.g. V)" style={{...S.inp,width:"100%"}}/></PR>
+      <PR label="edges"><input value={p.edgeList||""} onChange={e=>set("edgeList",e.target.value)} placeholder="index-pair list (optional, e.g. E)" style={{...S.inp,width:"100%"}}/></PR>
+      <div style={{fontSize:12.5,color:ui.uiMuted,marginTop:4}}>{count} points</div>
     </Sec> : <Sec title="Data">
       <MathInput v={p[listField]||""} sc={scope} multiline onChange={v=>set(listField,v)} placeholder={listHint}/>
       <div style={{fontSize:12.5,color:ui.uiMuted,marginTop:4}}>{count} {prim}</div>

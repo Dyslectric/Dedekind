@@ -301,6 +301,16 @@ function geomSignature(node, scope){
       const srcMode=(p.src||"list");
       const isIdx=srcMode==="index";
       const isRec=srcMode==="recursive";
+      if(srcMode==="fromlist"){
+        // positions live in a wired list; hash the resolved list + edge list so an
+        // upstream change rebuilds. Points-only.
+        const arr=p.ptsList?scope[p.ptsList]:null;
+        const listSig=Array.isArray(arr)?arr.length+":"+(arr[0]?arr[0].join(","):"")+"|"+(arr[arr.length-1]?arr[arr.length-1].join(","):""):"none";
+        const earr=p.edgeList?scope[p.edgeList]:null;
+        const edgeSig=Array.isArray(earr)?"e"+earr.length:"";
+        const colSig = p.colorOn?`|col:${p.colorMode||"ramp"}:${p.colorExpr||""}|${p.colorLo||""}|${p.colorHi||""}|${p.colorMin||""}|${p.colorMax||""}`:"";
+        return `raw|${c}|${p.prim}|fl|${p.ptsList||""}:${listSig}|${p.edgeList||""}:${edgeSig}${colSig}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines?1:0}|${p.showWire!==false?1:0}|seq:${p.sequenced?p.seqFrac||"1":""}`;
+      }
       if(isRec){
         // recursive: hash the init/step templates + count (resolved) + colour
         // recurrence, and fold scopeSig so wired scalars/fnDefs in the recurrence
