@@ -1741,11 +1741,16 @@ function dcMovableRootsScene(){
   const tr=makeNode("transformer",{x:720,y:160});tr.label="f(z) zeros";tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="160";
-  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";tr.props.matUnlit=true;
+  tr.props.showWire=false;
+  // Colour the plane by an RGB expression of the roots. The complex roots make
+  // the surface CPU-sampled (no complex in GLSL); the colorStyle="rgb" path
+  // produces per-vertex colour on the CPU, so the picture survives off the GPU
+  // (the old material matR/G/B path was GPU-shader only and went flat on CPU).
   const M="hypot(x-re(root1),y-im(root1))*hypot(x-re(root2),y-im(root2))*hypot(x-re(root3),y-im(root3))";
   const A="atan2(y-im(root1),x-re(root1))+atan2(y-im(root2),x-re(root2))+atan2(y-im(root3),x-re(root3))";
   const [r,g,b]=_glowColorExprs(M, A);
-  tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
+  tr.props.colorSource="rgb";tr.props.colorStyle="rgb";
+  tr.props.colorR=r;tr.props.colorG=g;tr.props.colorB=b;
   tr.attachments=[fn.id,root1.id,root2.id,root3.id];
   cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,

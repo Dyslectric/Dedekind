@@ -3,6 +3,7 @@ import { catOf, SCALAR_TYPES } from "../core/taxonomy.js";
 import { collectScalarDeps, resolveScope } from "../core/scope.js";
 import { resolveNum } from "../core/math.js";
 import { FnDefRow } from "./FnDefRow.jsx";
+import { ComplexPad } from "./propspanel/ComplexPad.jsx";
 import { useUI } from "../theme/tokens.jsx";
 
 function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode, mobile }) {
@@ -102,6 +103,24 @@ function ScalarOverlay({ camNode, nodes, scope, animValsRef, onUpdateNode, mobil
           return <FnDefRow key={n.id} node={n} scope={ownSc} onUpdateNode={onUpdateNode}/>;
         }
         if (n.type === "slider") {
+          // Complex-mode slider: render the joysquare/joystick pad, not a track.
+          if (n.props.mode === "complex") {
+            const re = Number(n.props.re) || 0, im = Number(n.props.im) || 0;
+            const cmode = n.props.cmode === "polar" ? "polar" : "square";
+            return (
+              <div key={n.id} style={{display:"flex",flexDirection:"column",gap:2,marginBottom:4}}>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <span style={{color:"#8a93b8",fontSize:12}}>▦</span>
+                  <span style={{color:"#aab4cc",flex:1}}>{n.name}</span>
+                  <span style={{color:"#fd8",fontSize:11}}>{fmt4(re)}{im>=0?"+":"−"}{fmt4(Math.abs(im))}i</span>
+                </div>
+                <ComplexPad
+                  re={re} im={im} range={n.props.range} mode={cmode} color="#fd8"
+                  onChange={({re, im}) => onUpdateNode && onUpdateNode(n.id, {props:{...n.props, re:String(re), im:String(im)}})}
+                />
+              </div>
+            );
+          }
           const min = resolveNum(n.props.min, ownSc, -5);
           const max = resolveNum(n.props.max, ownSc, 5);
           const step = resolveNum(n.props.step, ownSc, 0.01);
