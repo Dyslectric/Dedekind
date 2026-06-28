@@ -578,7 +578,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       const flat=rampColors(flatVals,tp,scope);
       let k=0; for(let j=0;j<nv;j++) for(let i=0;i<nu;i++) colRows[j][i]=flat[k++];
     }
-    return buildSurf(rows, color, useCol?colRows:null, tp.showWire!==false);
+    return buildSurf(rows, color, useCol?colRows:null, tp.showWire!==false, direct);
   }
   // 3 inputs in graph mode: render as a value-coloured point cloud at the
   // graphed positions (no single surface to draw).

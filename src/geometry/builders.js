@@ -485,7 +485,7 @@ function buildSegments3d(segs, color, cols=null, opts=null){
   seg.frustumCulled = false;
   return [seg];
 }
-function buildSurf(rows,color,colRows=null,showWire=true){
+function buildSurf(rows,color,colRows=null,showWire=true,unlit=false){
   const nv=rows.length,nu=rows[0].length,pos=[],idx=[],colArr=[];
   const useCol=!!colRows;
   for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){
@@ -498,7 +498,12 @@ function buildSurf(rows,color,colRows=null,showWire=true){
   if(useCol) g.setAttribute("color",new THREE.Float32BufferAttribute(colArr,3));
   g.setIndex(idx);g.computeVertexNormals();
   const c3=hexToThree(color);
-  const mat=new THREE.MeshPhongMaterial({color:useCol?0xffffff:c3,vertexColors:useCol,side:THREE.DoubleSide,transparent:true,opacity:0.82,shininess:40});
+  // Unlit (domain-colouring / direct-style) surfaces show their authored colour
+  // with no shading — a flat z=const plane would otherwise be Phong-lit to a near
+  // -uniform wash that buries the colour. Lit surfaces keep Phong shading.
+  const mat=unlit
+    ? new THREE.MeshBasicMaterial({color:useCol?0xffffff:c3,vertexColors:useCol,side:THREE.DoubleSide,transparent:true,opacity:0.95})
+    : new THREE.MeshPhongMaterial({color:useCol?0xffffff:c3,vertexColors:useCol,side:THREE.DoubleSide,transparent:true,opacity:0.82,shininess:40});
   const mesh=new THREE.Mesh(g,mat);
   if(!showWire) return [mesh];
   // WireframeGeometry builds a whole extra edge buffer; skip it when off.
