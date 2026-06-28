@@ -334,6 +334,13 @@ function geomSignature(node, scope){
       // scalars are live uniforms, so only the baked domain bounds / colour ranges
       // fold into the signature; the rest ride uniforms (no per-drag re-transpile).
       p.__eqRaymarch ? scopeSigFns(node,scope)
+        : p.cplxMode==="domain"
+          // The complex domain-colouring quad evaluates f(z) per fragment with the
+          // wired coefficient sliders as live re_/im_ uniforms (refreshed on a cache
+          // hit), so their VALUES must not fold into the geometry signature — else
+          // every coefficient drag is a miss → ShaderMaterial rebuild → GLSL
+          // recompile. Function defs still count (a structural change rebuilds).
+          ? scopeSigFns(node,scope)
         : p.__graphGPU
           ? scopeSigFns(node,scope)+"|gb:"+[p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,p.colorMin,p.colorMax,p.matColorMin,p.matColorMax].map(e=>resolveNum(e,scope,NaN)).join(",")
           : scopeSig(node,scope)

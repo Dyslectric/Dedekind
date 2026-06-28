@@ -1541,10 +1541,11 @@ function complexCubicScene(){
   fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
   // z = re + i·im
   fn.props.out0="a*(re+i*im)^3 + b*(re+i*im)^2 + c*(re+i*im) + d";
+  fn.attachments=[a.id,b.id,c.id,d.id];      // coefficients feed the MAP (it uses a,b,c,d)
   const tr=makeNode("transformer",{x:720,y:317});tr.label="domain colouring";tr.color="#c4b5fd";
   tr.props.cplxMode="domain";tr.props.domainStyle="glow";tr.props.res="140";
   tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
-  tr.attachments=[fn.id,a.id,b.id,c.id,d.id];
+  tr.attachments=[fn.id];
   cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
     [a.id]:a,[b.id]:b,[c.id]:c,[d.id]:d},camId:cam.id,animated:false};
@@ -1569,10 +1570,11 @@ function complexQuarticScene(){
   fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
   // z = re + i·im  (constant term named k, not e — e is Euler's number)
   fn.props.out0="a*(re+i*im)^4 + b*(re+i*im)^3 + c*(re+i*im)^2 + d*(re+i*im) + k";
+  fn.attachments=[a.id,b.id,c.id,d.id,k.id];   // coefficients feed the MAP
   const tr=makeNode("transformer",{x:720,y:317});tr.label="domain colouring";tr.color="#c4b5fd";
   tr.props.cplxMode="domain";tr.props.domainStyle="glow";tr.props.res="140";
   tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
-  tr.attachments=[fn.id,a.id,b.id,c.id,d.id,k.id];
+  tr.attachments=[fn.id];
   cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
     [a.id]:a,[b.id]:b,[c.id]:c,[d.id]:d,[k.id]:k},camId:cam.id,animated:false};

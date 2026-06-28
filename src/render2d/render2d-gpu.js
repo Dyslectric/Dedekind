@@ -1257,7 +1257,12 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
         if(names&&names.length){
           if(!uScope){
             uScope=resolveScope(childId,nodes,animVals||{});
-            for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(d&&d.type==="equation"){ Object.assign(uScope, resolveScope(d.id,nodes,animVals||{})); } }
+            // Sliders driving the shader may be wired to the structural child
+            // (the fnMap whose expression uses them, or an equation/paramSpace),
+            // not to the transformer itself — merge those scopes so the live
+            // uniform refresh sees the current coefficient values.
+            for(const depId of (rawNode.attachments||[])){ const d=nodes[depId];
+              if(d&&(d.type==="equation"||d.type==="fnMap"||d.type==="paramSpace"||d.type==="points")) Object.assign(uScope, resolveScope(d.id,nodes,animVals||{})); }
             uScope=augmentScopeForGPU(uScope);
           }
           for(const nm of names){ const u=o.material.uniforms[GLSL_UNIFORM_PREFIX+nm]; if(u) u.value=resolveUniformValue(nm, uScope); }
