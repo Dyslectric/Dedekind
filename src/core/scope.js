@@ -384,7 +384,8 @@ function plotSignature(node, p, scope, nodes, animVals){
                        fnMapNode&&fnMapNode.props.out2,fnMapNode&&fnMapNode.props.out3].filter(Boolean).join(" ");
     let usesComplexScope=false;
     for(const k in sigScope){ const v=sigScope[k];
-      if(v && typeof v==="object" && typeof v.re==="number" && typeof v.im==="number" && appearsIn(k, exprsBlob)){ usesComplexScope=true; break; } }
+      if(v && typeof v==="object" && typeof v.re==="number" && typeof v.im==="number"
+         && new RegExp("(^|[^A-Za-z0-9_])"+escapeRe(k)+"([^A-Za-z0-9_]|$)").test(exprsBlob)){ usesComplexScope=true; break; } }
     const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
       && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal && !usesComplexScope
       && graphTranspiles(p, fnMapNode, sigScope);
