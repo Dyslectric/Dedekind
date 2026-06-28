@@ -1024,9 +1024,7 @@ function octaListScene(){
   V.props.expr=_octaVertsExpr(2);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[5,1],[5,3],[5,2],[5,4],[6,1],[6,3],[6,2],[6,4],[1,3],[3,2],[2,4],[4,1]]";
-  const pts=makeNode("points",{x:740,y:200});pts.label="octahedron";pts.color="#5be0c0";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
-  pts.props.drawLines=false;pts.props.radius="0.1";
+  const pts=rawPts({x:740,y:200},{label:"octahedron",color:"#5be0c0",ptsList:"V",edgeList:"E",drawLines:false,radius:"0.1"});
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -1075,8 +1073,7 @@ function showcaseScene(){
   V.props.expr=_cubeVertsExpr(2.7);
   const E=makeNode("list",{x:380,y:470});E.name="E";E.label="cage edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
-  const cage=makeNode("points",{x:720,y:380});cage.label="cage";cage.color="#7f9cf5";
-  cage.props.kind="points";cage.props.mode="fromlist";cage.props.ptsList="V";cage.props.edgeList="E";cage.props.drawLines=false;cage.props.radius="0.1";
+  const cage=rawPts({x:720,y:380},{label:"cage",color:"#7f9cf5",ptsList:"V",edgeList:"E",drawLines:false,radius:"0.1"});
   cage.attachments=[V.id,E.id];
 
   // ── RGB orbit curve ──
@@ -1215,8 +1212,7 @@ function tetraListScene(){
   V.props.expr=_tetraVertsExpr(1.7);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[1,3],[1,4],[2,3],[2,4],[3,4]]";
-  const pts=makeNode("points",{x:740,y:200});pts.label="tetrahedron";pts.color="#ffd479";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";pts.props.drawLines=false;pts.props.radius="0.12";
+  const pts=rawPts({x:740,y:200},{label:"tetrahedron",color:"#ffd479",ptsList:"V",edgeList:"E",drawLines:false,radius:"0.12"});
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
@@ -1398,10 +1394,7 @@ function littlewoodScene(){
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="2.4";cam.props.showGrid=false;
   const P=makeNode("list",{x:340,y:160});P.name="P";P.label="roots";P.color="#8aadf4";
   P.props.expr=JSON.stringify(rows);
-  const pts=makeNode("points",{x:740,y:200});pts.label="Littlewood roots";pts.color="#5b9cf6";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="P";pts.props.useColor=true;
-  pts.props.drawLines=false;pts.props.radius="1.8";
-  pts.props.colorLo="#2a6df0";pts.props.colorHi="#ff5ea8";pts.props.colorMin="2";pts.props.colorMax=String(D);
+  const pts=rawPts({x:740,y:200},{label:"Littlewood roots",color:"#5b9cf6",ptsList:"P",useColor:true,drawLines:false,radius:"1.8",colorLo:"#2a6df0",colorHi:"#ff5ea8",colorMin:"2",colorMax:String(D)});
   pts.attachments=[P.id];
   cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[P.id]:P,[pts.id]:pts},camId:cam.id,animated:false};
@@ -1811,9 +1804,7 @@ function listCubeFacesScene(){
   V.props.expr=_cubeVertsExpr(1.4);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
-  const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
-  pts.props.drawLines=false;pts.props.radius="0.1";
+  const pts=rawPts({x:740,y:200},{label:"cube",color:"#8aadf4",ptsList:"V",edgeList:"E",drawLines:false,radius:"0.1"});
   pts.attachments=[V.id,E.id];
   const ft=_cubeFacesTemplate(1.4);
   const faces=_rawNode({x:740,y:420},"6 faces","#5b9cf6",{prim:"triangles",src:"index",
