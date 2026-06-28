@@ -1727,24 +1727,29 @@ function dcMovableRootsScene(){
   const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label="drag the three roots";cam.props.showOpenBtn=false;
   cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
   cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
-  const mk=(x,y,ax,ay,nm,lab,val)=>{const s=makeNode("slider",{x,y});s.name=nm;s.label=lab;s.value=val;s.props.min="-2";s.props.max="2";s.props.step="0.05";return s;};
-  const ax1=mk(20,260,0,0,"ax1","root1 · x",1),    ay1=mk(20,330,0,0,"ay1","root1 · y",0);
-  const ax2=mk(20,400,0,0,"ax2","root2 · x",-0.5), ay2=mk(20,470,0,0,"ay2","root2 · y",0.87);
-  const ax3=mk(20,540,0,0,"ax3","root3 · x",-0.5), ay3=mk(20,610,0,0,"ay3","root3 · y",-0.87);
+  // Each root is a single COMPLEX slider with a joysquare pad — drag the root
+  // around the plane directly instead of nudging an x and a y track. The colour
+  // expression reads re()/im() of each. (A complex-valued scope var can't ride the
+  // GLSL material path, so this surface samples on the CPU — fine at this res.)
+  const mk=(x,y,nm,lab,re,im)=>{const s=makeNode("slider",{x,y});s.name=nm;s.label=lab;
+    s.props.mode="complex";s.props.cmode="square";s.props.re=String(re);s.props.im=String(im);s.props.range="2";return s;};
+  const root1=mk(20,250,"root1","root1",1,0);
+  const root2=mk(20,420,"root2","root2",-0.5,0.87);
+  const root3=mk(20,590,"root3","root3",-0.5,-0.87);
   const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
   fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";
   const tr=makeNode("transformer",{x:720,y:160});tr.label="f(z) zeros";tr.color="#8aadf4";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
-  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
+  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="160";
   tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";tr.props.matUnlit=true;
-  const M="hypot(x-ax1,y-ay1)*hypot(x-ax2,y-ay2)*hypot(x-ax3,y-ay3)";
-  const A="atan2(y-ay1,x-ax1)+atan2(y-ay2,x-ax2)+atan2(y-ay3,x-ax3)";
+  const M="hypot(x-re(root1),y-im(root1))*hypot(x-re(root2),y-im(root2))*hypot(x-re(root3),y-im(root3))";
+  const A="atan2(y-im(root1),x-re(root1))+atan2(y-im(root2),x-re(root2))+atan2(y-im(root3),x-re(root3))";
   const [r,g,b]=_glowColorExprs(M, A);
   tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
-  tr.attachments=[fn.id,ax1.id,ay1.id,ax2.id,ay2.id,ax3.id,ay3.id];
+  tr.attachments=[fn.id,root1.id,root2.id,root3.id];
   cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
-    [ax1.id]:ax1,[ay1.id]:ay1,[ax2.id]:ax2,[ay2.id]:ay2,[ax3.id]:ax3,[ay3.id]:ay3},camId:cam.id,animated:false};
+    [root1.id]:root1,[root2.id]:root2,[root3.id]:root3},camId:cam.id,animated:false};
 }
 
 // The same cube, now with its six faces filled (translucent) so they can be

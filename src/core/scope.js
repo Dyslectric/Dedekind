@@ -377,8 +377,16 @@ function plotSignature(node, p, scope, nodes, animVals){
     // no complex numbers — so it stays on the CPU evaluator, which handles the
     // field correctly. Only real maps are eligible for transpilation.
     const fnFieldReal = !fnMapNode || (fnMapNode.props.field||"real")==="real";
+    // Likewise, if any expression references a COMPLEX scope value (e.g. a
+    // complex-mode slider read via re()/im()), GLSL can't represent it — force CPU.
+    const exprsBlob = [p.out0,p.out1,p.out2,p.out3,p.matColor,p.matR,p.matG,p.matB,p.matSpec,p.matEmit,
+                       fnMapNode&&fnMapNode.props.out0,fnMapNode&&fnMapNode.props.out1,
+                       fnMapNode&&fnMapNode.props.out2,fnMapNode&&fnMapNode.props.out3].filter(Boolean).join(" ");
+    let usesComplexScope=false;
+    for(const k in sigScope){ const v=sigScope[k];
+      if(v && typeof v==="object" && typeof v.re==="number" && typeof v.im==="number" && appearsIn(k, exprsBlob)){ usesComplexScope=true; break; } }
     const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
-      && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal
+      && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal && !usesComplexScope
       && graphTranspiles(p, fnMapNode, sigScope);
     pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU,__fnDefSig:fnTableSig(fnTableFromScope(sigScope))};
   }
