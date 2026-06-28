@@ -10,7 +10,7 @@ import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
 import { marchingSquares } from "../geometry/implicit.js";
 import { hexToThree } from "../geometry/three-helpers.js";
-import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU, complexExprToGLSL, _COMPLEX_HELPERS_GLSL, resolveUniformValue } from "../geometry/glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU, complexExprToGLSL, _COMPLEX_HELPERS_GLSL, resolveUniformValue, setComplexScopeSyms } from "../geometry/glsl.js";
 import { planeFrame, projectPt, projectPts } from "./project2d.js";
 import { advectSeeds } from "../geometry/flow.js";
 
@@ -695,6 +695,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
     {
       const fnTable=fnTableFromScope(pscope);             // (no fnDef inlining in complex GLSL yet)
       const uniforms=new Set();
+      setComplexScopeSyms(pscope);                          // complex sliders → re_/im_ uniforms
       const gz=fnTable? null : complexExprToGLSL(outs[0], uniforms, GLSL_UNIFORM_PREFIX);
       const ascope=pscope;
       const uniResolvable = gz!=null && [...uniforms].every(u=>Number.isFinite(resolveUniformValue(u,ascope)));
@@ -1221,7 +1222,7 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
             // composed curves inline fnDefs whose scalars live in the fnDef scope
             uScope=augmentScopeForGPU(uScope);
           }
-          for(const nm of names){ const u=o.material.uniforms[GLSL_UNIFORM_PREFIX+nm]; if(u) u.value=Number(uScope[nm])||0; }
+          for(const nm of names){ const u=o.material.uniforms[GLSL_UNIFORM_PREFIX+nm]; if(u) u.value=resolveUniformValue(nm, uScope); }
         }
         plotObjs.push(o);
       }

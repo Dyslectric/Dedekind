@@ -469,8 +469,16 @@ function complexExprToGLSL(expr, uniforms, prefix=""){
         if(node.name==="pi") return C(Math.PI,0);
         if(node.name==="e")  return C(Math.E,0);
         if(node.name==="tau")return C(2*Math.PI,0);
-        // a real uniform (slider) lifted to a complex value
-        if(/^[A-Za-z_]\w*$/.test(node.name)){ uniforms.add(node.name); return `vec2(${prefix}${node.name},0.0)`; }
+        // a slider/constant uniform. A COMPLEX-valued one (e.g. a complex slider)
+        // decomposes to two real uniforms re_<name>/im_<name> → vec2; a real one
+        // lifts to vec2(value, 0).
+        if(/^[A-Za-z_]\w*$/.test(node.name)){
+          if(_COMPLEX_SCOPE_SYMS.has(node.name)){
+            uniforms.add("re_"+node.name); uniforms.add("im_"+node.name);
+            return `vec2(${prefix}re_${node.name},${prefix}im_${node.name})`;
+          }
+          uniforms.add(node.name); return `vec2(${prefix}${node.name},0.0)`;
+        }
         return null;
       }
       case "OperatorNode": {

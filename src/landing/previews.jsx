@@ -1548,8 +1548,38 @@ function complexDomainScene(){
   return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 
-// A complex equation, done properly: z³ = 1. As a system this is {Re(z³−1)=0} ∩
-// {Im(z³−1)=0}; the two zero-contours are drawn in two hues and their three
+// Four complex sliders drive the coefficients of a cubic a·z³ + b·z² + c·z + d;
+// the domain-colouring portrait (same glow mode as the other ℂ demos) updates
+// live, and the three zeros — the solutions of the cubic — appear as the three
+// glow centres. Drag any coefficient's joysquare to watch the roots move. The
+// complex sliders decompose to re_/im_ float uniforms, so f(z) runs per pixel on
+// the GPU and the picture re-colours as you drag.
+function complexCubicScene(){
+  const project=makeProjectNode("preview");
+  const cam=previewCam(makeNode("camera2d",{x:980,y:317}));cam.label="a·z³ + b·z² + c·z + d";cam.props.showOpenBtn=false;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=true;cam.props.showTickLabels=false;
+  // four complex coefficient sliders, each a joysquare pad
+  const mk=(y,nm,lab,re,im)=>{const s=makeNode("slider",{x:20,y});s.name=nm;s.label=lab;
+    s.props.mode="complex";s.props.cmode="square";s.props.re=String(re);s.props.im=String(im);s.props.range="2";return s;};
+  const a=mk(180,"a","a (z³)",1,0);
+  const b=mk(330,"b","b (z²)",0,0);
+  const c=mk(480,"c","c (z¹)",-1,0);
+  const d=mk(630,"d","d (z⁰)",0,0);
+  const fn=makeNode("fnMap",{x:360,y:317});fn.label="a z³+b z²+c z+d";fn.color="#c4b5fd";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
+  // z = re + i·im
+  fn.props.out0="a*(re+i*im)^3 + b*(re+i*im)^2 + c*(re+i*im) + d";
+  const tr=makeNode("transformer",{x:720,y:317});tr.label="domain colouring";tr.color="#c4b5fd";
+  tr.props.cplxMode="domain";tr.props.domainStyle="glow";tr.props.res="140";
+  tr.props.aMin="-3";tr.props.aMax="3";tr.props.bMin="-3";tr.props.bMax="3";
+  tr.attachments=[fn.id,a.id,b.id,c.id,d.id];
+  cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr,
+    [a.id]:a,[b.id]:b,[c.id]:c,[d.id]:d},camId:cam.id,animated:false};
+}
+
+
 // intersections — the cube roots of unity — are marked. varA=Re z, varB=Im z.
 function complexEqScene(){
   const project=makeProjectNode("preview");
@@ -1861,6 +1891,7 @@ Object.assign(SCENES, {
   "metamorph": metamorphScene,
   "self-similar-zoom": selfSimilarZoomScene,
   "complex-domain": complexDomainScene,
+  "complex-cubic": complexCubicScene,
   "complex-eq": complexEqScene,
   "gpu-hsl": gpuHslSurfaceScene,
 });
