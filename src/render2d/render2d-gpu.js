@@ -746,6 +746,7 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
           side:THREE.DoubleSide,depthTest:false,depthWrite:false});
         mat._uniformNames=[...uniforms];
         const mesh=new THREE.Mesh(geo,mat); mesh.frustumCulled=false;
+        mesh._domainQuad=true;   // hit path moves the 4 corners on pan/zoom; no rebuild
         return [mesh];
       }
     }
@@ -1177,7 +1178,23 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     const color=rawNode.color||"#5b9cf6";
 
     // Build the per-plot signature: geometry + frame + (zoom?) + (view?).
-    const gsig=plotSignature(node,np,pscope,nodes,animVals||{}) ?? `${node.type}|raw`;
+    // For the GPU domain quad the wired slider/scalar VALUES become live uniforms
+    // (updated in the hit path), so they must NOT be in the cache key — otherwise
+    // dragging a coefficient recompiles the shader every frame. Compute its
+    // signature against a value-neutralised scope (keys preserved, numbers/complex
+    // flattened) so only STRUCTURAL changes (which exprs, how many) invalidate it.
+    let sigScope=pscope, isComplexDomainEarly=false;
+    if(rawNode.type==="transformer"){
+      const fnDep=(rawNode.attachments||[]).map(id=>nodes[id]).find(d=>d&&d.type==="fnMap");
+      if(fnDep && (fnDep.props.field||"real")==="complex"
+         && Math.round(Number(fnDep.props.inDim||"1"))===1
+         && Math.round(Number(fnDep.props.outDim||"1"))===1){
+        isComplexDomainEarly=true;
+        sigScope={}; for(const k in pscope){ const v=pscope[k];
+          sigScope[k]=(typeof v==="number"||v&&typeof v.re==="number") ? 0 : v; }
+      }
+    }
+    const gsig=plotSignature(node,np,sigScope,nodes,animVals||{}) ?? `${node.type}|raw`;
     const t=rawNode.type==="transformer"||rawNode.type==="flow"?rawNode.type:node.type;
     // Point sets and flows carry heavy geometry (instances / integrated trajectories)
     // and keep constant on-screen size, so they use the COARSE zoom bucket: they
@@ -1194,32 +1211,53 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
       const inD=fnDep?Math.round(Number(fnDep.props.inDim||"1")):1;
       camFollowGraph = inD===1;
     }
-    // A ℂ→ℂ map domain-colours the VISIBLE plane, so it re-samples on pan/zoom too.
+    // A ℂ→ℂ map domain-colours the VISIBLE plane. On the GPU path it's ONE quad
+    // with a fragment shader, so pan/zoom only needs the quad's corners moved (done
+    // in the hit path) — NOT a rebuild + shader recompile every frame. So we keep
+    // it out of the view-keyed set; isComplexDomain marks it for the in-place
+    // window update below.
+    let isComplexDomain=false;
     if(rawNode.type==="transformer"){
       const fnDep=(rawNode.attachments||[]).map(id=>nodes[id]).find(d=>d&&d.type==="fnMap");
       if(fnDep && (fnDep.props.field||"real")==="complex"
          && Math.round(Number(fnDep.props.inDim||"1"))===1
-         && Math.round(Number(fnDep.props.outDim||"1"))===1) camFollowGraph=true;
+         && Math.round(Number(fnDep.props.outDim||"1"))===1) isComplexDomain=true;
     }
+    // The GPU domain quad moves its corners in place on pan/zoom (handled in the
+    // hit path), so it must NOT be view-keyed — override the graph follow flag.
+    if(isComplexDomain) camFollowGraph=false;
     const vPart=(VIEW_FILLING.has(t)||camFollowGraph)?`|v${viewSig}`:"";
-    const sig=`${gsig}|fr${frameSig}${zPart}${vPart}|c${color}`;
+    // complex domain quad: drop the zoom bucket too (the shader is resolution-free)
+    const zPartEff = isComplexDomain ? "" : zPart;
+    const sig=`${gsig}|fr${frameSig}${zPartEff}${vPart}|c${color}`;
 
     live.add(childId);
     const cached=cache.get(childId);
-    if(cached && cached.sig===sig){
-      // cache hit — reuse existing objects. For GPU shader plots (the 2D implicit
-      // curve), refresh scalar uniforms from the current scope so slider-driven
-      // coefficients update live without rebuilding geometry. This is the 2D
-      // analogue of the 3D raymarch's updateGpuUniforms-on-hit.
+    // A complex domain plot is kept out of the view-keyed cache (sig has no
+    // viewSig), so on pan/zoom it stays a HIT. For the GPU quad we just move its 4
+    // corners in place — no rebuild, no shader recompile. If it fell back to the
+    // CPU grid (rare; non-transpilable map), the samples genuinely depend on the
+    // window, so force a rebuild when the window changed.
+    let cpuFallbackStale=false;
+    if(cached && cached.sig===sig && isComplexDomain && !cached.objs.some(o=>o._domainQuad)
+       && cached._viewSig!==undefined && cached._viewSig!==viewSig){
+      cpuFallbackStale=true;
+    }
+    if(cached && cached.sig===sig && !cpuFallbackStale){
+      // cache hit — reuse existing objects.
       let uScope=null;
       for(const o of cached.objs){
+        if(o._domainQuad){
+          const g=o.geometry, pos=g.attributes.position, ab=g.attributes.ab;
+          pos.setXYZ(0,wxMin,wyMin,0); pos.setXYZ(1,wxMax,wyMin,0); pos.setXYZ(2,wxMax,wyMax,0); pos.setXYZ(3,wxMin,wyMax,0);
+          ab.setXY(0,wxMin,wyMin); ab.setXY(1,wxMax,wyMin); ab.setXY(2,wxMax,wyMax); ab.setXY(3,wxMin,wyMax);
+          pos.needsUpdate=true; ab.needsUpdate=true;
+        }
         const names=o.material&&o.material._uniformNames;
         if(names&&names.length){
           if(!uScope){
             uScope=resolveScope(childId,nodes,animVals||{});
-            // fold in scalars from a wired equation (coefficients live there)
             for(const depId of (rawNode.attachments||[])){ const d=nodes[depId]; if(d&&d.type==="equation"){ Object.assign(uScope, resolveScope(d.id,nodes,animVals||{})); } }
-            // composed curves inline fnDefs whose scalars live in the fnDef scope
             uScope=augmentScopeForGPU(uScope);
           }
           for(const nm of names){ const u=o.material.uniforms[GLSL_UNIFORM_PREFIX+nm]; if(u) u.value=resolveUniformValue(nm, uScope); }
@@ -1257,7 +1295,7 @@ function build2DScene(camNode, nodes, scope, animVals, wxMin, wxMax, wyMin, wyMa
     }
 
     for(const o of built) o._plotId=childId;
-    cache.set(childId,{sig,objs:built});
+    cache.set(childId,{sig,objs:built,_viewSig:viewSig});
     for(const o of built) plotObjs.push(o);
   }
 
