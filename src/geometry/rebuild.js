@@ -5,7 +5,7 @@ import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/
 import { disposeObjs, addPlotObj, updateGpuUniforms, syncThreeLights } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
-  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, updatePointSeqGPUInPlace, buildQuiver3d, buildRawGeom3d, buildSegments3d
+  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, updatePointSeqGPUInPlace, buildQuiver3d, buildRawGeom3d, buildSegments3d, sampleRawGeom, rampRaw
 } from "./builders.js";
 import { buildFlowFromSeeds } from "./flow.js";
 import { buildTransformer, sampleParamSpace } from "./transformer.js";
@@ -190,6 +190,23 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         return;                              // reused in place — no dispose, no rebuild
       }
     }
+    // Same in-place fast path for a rawGeom whose primitive is points (migrated
+    // animated point demos): sample the points, and if the structure matches the
+    // cached InstancedMesh, update positions/colours in place.
+    if(node.type==="rawGeom" && (p.prim||"points")==="points" && prev && prev._structSig!=null){
+      const { verts, cols, rgb } = sampleRawGeom(p, "points", scope);
+      const ppts=verts.map(v=>v[0]);
+      let pcols=null;
+      if(rgb) pcols=rgb.map(g=>g[0]);
+      else if(cols){ const flat=[]; for(const g of cols) for(const cv of g) flat.push(cv);
+        const ramped=rampRaw(flat,p,scope); let idx=0; pcols=cols.map(g=>{const c=ramped[idx];idx+=g.length;return c;}); }
+      const structSig=`raw|${ppts.length}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines===true}|${node.color||""}|${!!pcols}`;
+      if(structSig===prev._structSig && updatePointSeqGPUInPlace(prev, ppts, pcols)){
+        prev._sig=sig;
+        if(prev._sequenced) applySequence(prev,node,scope);
+        return;
+      }
+    }
 
     // ── GPU fast path for analytic surfaces / curves / quivers ──────────────
     if(node.type==="surf3d"||node.type==="fn1d"||node.type==="paramsurf"||node.type==="quiver3d"||node.type==="glyphField"){
@@ -287,7 +304,18 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
     }
     if(node.type==="plane"){const c=[resolveNum(p.centerX,scope,0),resolveNum(p.centerY,scope,0),resolveNum(p.centerZ,scope,0)],n=[resolveNum(p.normalX,scope,0),resolveNum(p.normalY,scope,1),resolveNum(p.normalZ,scope,0)];objs=buildPlane3d(c,n,resolveNum(p.size,scope,8),node.color||"#52d47e");}
     if(node.type==="point")objs=buildPoint3d(resolveNum(p.x,scope,0),resolveNum(p.y,scope,0),resolveNum(p.z,scope,0),node.color||"#ff70bb",resolveNum(p.radius,scope,0.08));
-    if(node.type==="rawGeom")objs=buildRawGeom3d(p,scope,node.color||"#ff70bb");
+    if(node.type==="rawGeom"){
+      objs=buildRawGeom3d(p,scope,node.color||"#ff70bb");
+      // For the points primitive, tag a structural signature so an animated
+      // rebuild updates the InstancedMesh in place (matching the points node's
+      // fast path). Only when it's the plain InstancedMesh[+Line] shape.
+      if(objs && objs.length && (p.prim||"points")==="points"){
+        const { verts, cols, rgb } = sampleRawGeom(p,"points",scope);
+        const hasCol = !!(rgb||cols);
+        objs._structSig=`raw|${verts.length}|${resolveNum(p.radius,scope,0.08)}|${p.drawLines===true}|${node.color||""}|${hasCol}`;
+      }
+      if(p.sequenced){ objs._sequenced=true; applySequence(objs,node,scope); }
+    }
     if(node.type==="__scalarVol"){
       objs=buildScalarVolume(p,scope,node.color||"#6df");
     }
