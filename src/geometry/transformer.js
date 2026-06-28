@@ -445,7 +445,10 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       }
       rows[j]=pr; cols[j]=cr;
     }
-    return buildSurf(rows, color, cols, tp.showWire!==false && cm!=="domain");
+    // domain mode is a flat plane of pure colour → render unlit (MeshBasicMaterial)
+    // so the authored hue/brightness isn't dimmed by Phong shading. The explicit-
+    // height surfaces (modulus/re/im) keep lighting so their relief reads.
+    return buildSurf(rows, color, cols, tp.showWire!==false && cm!=="domain", cm==="domain");
   }
 
   const dom = sampleDomain(tp, scope, inDim, paramNode);

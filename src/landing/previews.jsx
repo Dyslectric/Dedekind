@@ -1291,32 +1291,10 @@ function texSchwarzScene(){
 }
 
 // ── Domain colouring of complex maps ─────────────────────────────────────────
-// A flat plane over the complex plane z = x + iy, coloured per pixel by f(z):
-// hue from the argument arg(f), brightness rising with the modulus |f| (so zeros
-// are black and the colours wind around them). f is supplied as its real and
-// imaginary parts in x,y — real expressions, so the whole thing runs on the GPU.
-// Phase → colour for domain colouring, given the argument expression A and the
-// modulus-brightness V. "spectrum" is the usual full hue wheel (three cosines 120°
-// apart). "rgbw" anchors four reference colours at the quarter-turns, red, green,
-// blue, and white, blended by squared-cosine weights, for a palette that reads as
-// red/green/blue and white rather than the cyan/magenta/yellow of the wheel.
-function _phaseColorExprs(A, V, palette){
-  if(palette==="rgbw"){
-    const w=(off)=>`(0.5+0.5*cos((${A})-${off}))^2`;
-    const wR=w("0"), wG=w("1.5708"), wB=w("3.14159"), wW=w("4.71239");
-    const den=`((${wR})+(${wG})+(${wB})+(${wW}))`;
-    return [
-      `(((${wR})+(${wW}))/${den})*${V}`,
-      `(((${wG})+(${wW}))/${den})*${V}`,
-      `(((${wB})+(${wW}))/${den})*${V}`,
-    ];
-  }
-  return [
-    `(0.5+0.5*cos((${A})))*${V}`,
-    `(0.5+0.5*cos((${A})-2.0944))*${V}`,
-    `(0.5+0.5*cos((${A})-4.18879))*${V}`,
-  ];
-}
+// A flat plane over the complex plane z = re + i·im, coloured per pixel by f(z):
+// hue from arg(f), brightness rising with |f| (zeros dark, the colours winding
+// around them). Handled by the transformer's dedicated cplxMode="domain" path
+// from a single complex fnMap — see domainColorScene above.
 
 // Glow domain colouring: a WHITE core at each zero, a saturated red/green/blue/white
 // halo coloured by the argument, and brightness that falls off as the modulus grows.
@@ -1338,37 +1316,33 @@ function _glowColorExprs(M, A){
   ];
 }
 
-function domainColorScene(label, re, im, R, palette){
+// Domain colouring via the dedicated ℂ→ℂ mode: a single complex fnMap f(z) wired
+// into a transformer in cplxMode="domain". The transformer colours the plane by
+// hue = arg f, lightness rising with |f| (zeros dark, poles bright) — no
+// hand-built RGB expressions, no separate Re/Im fnDefs. `fexpr` is f(z) written
+// in z = re + i·im.
+function domainColorScene(label, fexpr, R){
   const project=makeProjectNode("preview");
-  const cam=previewCam(makeNode("camera3d",{x:1160,y:120}));cam.label=label;
-  cam.props.projection="orthographic";cam.props.orthoSize=String(2.1*R);cam.props.orbRadius=String(3*R);
-  cam.props.orbTheta="0";cam.props.orbPhi="0.06";cam.props.showGrid=false;cam.props.showAxes=false;
-  const fn=makeNode("fnMap",{x:360,y:160});fn.label="plane";fn.color="#8aadf4";
-  fn.props.inDim="2";fn.props.outDim="1";fn.props.out0="0";   // flat z = 0
-  // The complex map is two reusable function nodes, Re f and Im f, wired into the
-  // colour transformer; they inline into the GPU shader (no per-pixel function call).
-  const fre=makeNode("fnDef",{x:360,y:300});fre.name="fre";fre.label="Re f(x,y)";fre.props.params="x,y";fre.props.expr=re;
-  const fim=makeNode("fnDef",{x:360,y:420});fim.name="fim";fim.label="Im f(x,y)";fim.props.params="x,y";fim.props.expr=im;
-  const tr=makeNode("transformer",{x:720,y:160});tr.label=label;tr.color="#8aadf4";
-  tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
-  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);tr.props.res="4";
-  tr.props.showWire=false;tr.props.shading="lit";tr.props.matColorMode="rgb";
-  if(palette==="glow") tr.props.matUnlit=true;             // pure colour, no lighting tint
-  const M=`hypot(fre(x,y),fim(x,y))`, A=`atan2(fim(x,y),fre(x,y))`;
-  const V=`(${M}/(${M}+1))`;                                   // 0 at a zero, →1 far out
-  const [r,g,b]= palette==="glow" ? _glowColorExprs(M, A) : _phaseColorExprs(A, V, palette);
-  tr.props.matR=r;tr.props.matG=g;tr.props.matB=b;
-  tr.attachments=[fn.id,fre.id,fim.id];cam.attachments=[tr.id];
-  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[fre.id]:fre,[fim.id]:fim,[tr.id]:tr},camId:cam.id,animated:false};
+  const cam=previewCam(makeNode("camera2d",{x:1160,y:120}));cam.label=label;
+  cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize=String(2*R);
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;
+  const fn=makeNode("fnMap",{x:360,y:200});fn.label=label;fn.color="#8aadf4";
+  fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
+  fn.props.out0=fexpr;                                       // f(z), z = re + i·im
+  const tr=makeNode("transformer",{x:720,y:200});tr.label=label;tr.color="#8aadf4";
+  tr.props.cplxMode="domain";tr.props.res="200";
+  tr.props.aMin=String(-R);tr.props.aMax=String(R);tr.props.bMin=String(-R);tr.props.bMax=String(R);
+  tr.attachments=[fn.id];cam.attachments=[tr.id];
+  return {scene:{[project.id]:project,[cam.id]:cam,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:false};
 }
 // z (identity): one hue cycle around the single zero at the origin.
-function dcIdentityScene(){ return domainColorScene("f(z) = z", "x", "y", 3); }
+function dcIdentityScene(){ return domainColorScene("f(z) = z", "re + i*im", 3); }
 // z² : a double zero at the origin, the hue winds twice.
-function dcSquareScene(){ return domainColorScene("f(z) = z²", "x^2-y^2", "2*x*y", 2.2); }
+function dcSquareScene(){ return domainColorScene("f(z) = z²", "(re + i*im)^2", 2.2); }
 // z⁵ − 1 : the five fifth-roots of unity, evenly spaced on the unit circle.
-function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "x^5-10*x^3*y^2+5*x*y^4-1", "5*x^4*y-10*x^2*y^3+y^5", 1.6, "glow"); }
+function dcRoots5Scene(){ return domainColorScene("f(z) = z⁵ − 1", "(re + i*im)^5 - 1", 1.6); }
 // z⁵ − z − 1 : five roots, but a quintic with no solution in radicals (Abel–Ruffini).
-function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "x^5-10*x^3*y^2+5*x*y^4-x-1", "5*x^4*y-10*x^2*y^3+y^5-y", 1.7, "glow"); }
+function dcQuinticScene(){ return domainColorScene("f(z) = z⁵ − z − 1", "(re + i*im)^5 - (re + i*im) - 1", 1.7); }
 
 // ── Littlewood polynomials: roots of every ±1-coefficient polynomial ─────────
 // All polynomials whose coefficients are +1 or -1 (leading coefficient fixed to
