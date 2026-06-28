@@ -542,6 +542,37 @@ function buildPointSeq3d(pts, color, r=0.07, drawLines=true) {
 // 0..1 or hex). The returned array carries _gpuPoints metadata so sequencing can
 // reveal points by setting instanceCount without rebuilding. World axis swap
 // (x, z, y) matches the rest of the renderer.
+// Update an existing buildPointSeqGPU result IN PLACE for new point positions
+// (and colours), when the structure is unchanged: same valid-point count and the
+// same object shape (InstancedMesh [+ Line]). Animated arrows (Frenet T/N/B) move
+// every frame but keep 2 points; rebuilding them allocates a fresh SphereGeometry
+// + InstancedMesh + Line and re-uploads to the GPU each frame. Updating the
+// instance matrices and line positions instead avoids all of that. Returns true on
+// success, false if the structure differs (caller should rebuild).
+function updatePointSeqGPUInPlace(prev, pts, cols){
+  if(!prev || !prev.length) return false;
+  const inst=prev.find(o=>o.isInstancedMesh);
+  if(!inst) return false;
+  const valid=[]; const validCols=[];
+  for(let i=0;i<pts.length;i++){ const p=pts[i];
+    if(p&&p.length>=3&&isFinite(p[0])&&isFinite(p[1])&&isFinite(p[2])){ valid.push(p); if(cols) validCols.push(cols[i]); } }
+  const n=valid.length;
+  // instance count is fixed at allocation; a changed count needs a real rebuild
+  if(n!==inst.count) return false;
+  const line=prev.find(o=>o.isLine);
+  const linePos = line && line.geometry?.attributes?.position;
+  if(line && (!linePos || linePos.count!==n)) return false;   // line vertex count fixed too
+  const m=new THREE.Matrix4();
+  for(let i=0;i<n;i++){ const [x,y,z]=valid[i]; m.makeTranslation(x,z,y); inst.setMatrixAt(i,m);
+    if(cols && inst.instanceColor){ const c=validCols[i];
+      const col=c==null?new THREE.Color(1,1,1):(Array.isArray(c)?new THREE.Color(c[0],c[1],c[2]):new THREE.Color(hexToThree(c)));
+      inst.setColorAt(i,col); } }
+  inst.instanceMatrix.needsUpdate=true;
+  if(cols && inst.instanceColor) inst.instanceColor.needsUpdate=true;
+  if(line && linePos){ for(let i=0;i<n;i++){ const [x,y,z]=valid[i]; linePos.setXYZ(i,x,z,y); } linePos.needsUpdate=true; }
+  return true;
+}
+
 function buildPointSeqGPU(pts, color, r=0.07, drawLines=true, cols=null){
   const valid=[]; const validCols=[];
   for(let i=0;i<pts.length;i++){
@@ -1294,5 +1325,5 @@ function parseRawRows(text, prim, scope){
 }
 
 export {
-  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume, buildRawGeom3d, buildMesh3d, meshDataFromGeometry, meshDataSig, parseRawRows, sampleRawGeom
+  buildSurfGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU, buildFn1dGPU, buildCurve3d, buildSegments3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, updatePointSeqGPUInPlace, buildQuiver3d, buildQuiver3dGPU, buildGlyphFieldGPU, buildSurfFromGridGPU, buildScalarVolume, buildRawGeom3d, buildMesh3d, meshDataFromGeometry, meshDataSig, parseRawRows, sampleRawGeom
 };

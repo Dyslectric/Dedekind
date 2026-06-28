@@ -5,7 +5,7 @@ import { resolveScope, plotDomain, geomSignature, plotSignature } from "../core/
 import { disposeObjs, addPlotObj, updateGpuUniforms, syncThreeLights } from "./three-helpers.js";
 import {
   buildSurfGPU, buildFn1dGPU, buildQuiver3dGPU, buildGlyphFieldGPU,
-  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, buildQuiver3d, buildRawGeom3d, buildMesh3d, buildSegments3d
+  buildCurve3d, buildSurf, buildPlane3d, buildPoint3d, buildPointSeq3d, buildPointSeqGPU, updatePointSeqGPUInPlace, buildQuiver3d, buildRawGeom3d, buildMesh3d, buildSegments3d
 } from "./builders.js";
 import { buildFlowFromSeeds } from "./flow.js";
 import { buildTransformer, sampleParamSpace } from "./transformer.js";
@@ -168,6 +168,27 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
       // sequencing reveal is cheap and may change every frame — apply it live
       if(prev._sequenced) applySequence(prev,node,scope);
       return;
+    }
+
+    // ── In-place update for animated point sets (Frenet T/N/B arrows, etc.) ──
+    // A points node whose positions move every frame (driven by an animator) misses
+    // the full signature, but its STRUCTURE — point count, radius, drawLines,
+    // colour — is unchanged. Rebuilding allocates a fresh SphereGeometry +
+    // InstancedMesh + Line and re-uploads to the GPU each frame; instead update the
+    // existing instance matrices / line vertices in place. Only the position data
+    // changes, so this is a structural-hit / data-miss.
+    if(node.type==="pointSeq" && prev && prev._structSig!=null){
+      const ps=node.props;
+      let ppts, pcols;
+      if(ps.__explicit){ const r=parsePointsExplicit(ps.__explicit,scope); ppts=r.pts;
+        pcols = ps.__useColor ? rampColors(r.cols,ps,scope) : pointGradientColors(ppts,ps,scope); }
+      else { ppts=parsePointSeq(ps.points,scope); pcols=pointGradientColors(ppts,ps,scope); }
+      const structSig=`${ppts.length}|${resolveNum(ps.radius,scope,0.07)}|${ps.drawLines!==false}|${node.color||""}|${!!ps.__useColor}`;
+      if(structSig===prev._structSig && updatePointSeqGPUInPlace(prev, ppts, pcols)){
+        prev._sig=sig;                       // accept the new (position-bearing) sig
+        if(prev._sequenced) applySequence(prev,node,scope);
+        return;                              // reused in place — no dispose, no rebuild
+      }
     }
 
     // ── GPU fast path for analytic surfaces / curves / quivers ──────────────
@@ -334,6 +355,13 @@ function rebuildOnePlot(scene,objMap,childId,node,p,scope,nodes,camNode,animVals
         }
       }
       if(p.sequenced){ objs._sequenced=true; applySequence(objs,node,scope); }
+      // Tag with a structural signature so an animated rebuild next frame can
+      // update positions in place (see the in-place fast path above) instead of
+      // re-allocating. Only when it's the plain InstancedMesh[+Line] shape (no
+      // index-edge segments, which would need their own update).
+      if(objs && objs.length && !(p.__explicit&&p.__explicit.edgeList && Array.isArray(scope[p.__explicit.edgeList]))){
+        objs._structSig=`${pts.length}|${resolveNum(p.radius,scope,0.07)}|${p.drawLines!==false}|${node.color||""}|${!!p.__useColor}`;
+      }
     }
     if(node.type==="quiver3d"){const gridN=Math.max(2,Math.min(48,resolveNum(p.gridN,scope,5)));objs=buildQuiver3d(p,p.exprX,p.exprY,p.exprZ,gridN,resolveNum(p.xMin,scope,-3),resolveNum(p.xMax,scope,3),resolveNum(p.yMin,scope,-3),resolveNum(p.yMax,scope,3),resolveNum(p.zMin,scope,-3),resolveNum(p.zMax,scope,3),node.color||"#5b9cf6",scope,p.normalize!==false);}
     if(node.type==="flow"){
