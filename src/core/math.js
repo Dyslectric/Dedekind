@@ -639,7 +639,24 @@ function makeFn(name, params, expr, sc, outField = undefined) {
   const compiled = compileExprScoped(expr, knownScope, false, outField);
   const iImaginary = !ft.freesI;
   const imag = iImaginary ? math.complex(0, 1) : null;
+  // Per-INSTANCE memo. makeFn is called fresh on every rebuild, so each fn closes
+  // over a fixed scope `sc` for its lifetime — meaning its result depends only on
+  // the call arguments. A shared helper chain (e.g. Frenet's SP/TX/D1X…) is
+  // otherwise re-evaluated many times for the SAME argument within one frame
+  // (every arrow re-derives the whole chain), and mathjs interpretation is ~26µs
+  // a call, so the redundant cascade dominated. Caching f(arg) collapses that to
+  // one evaluation per distinct argument. Keyed on the numeric args only (the
+  // closure is fixed); cleared implicitly when the instance is replaced next build.
+  const memo = new Map();
   const fn = function(...args) {
+    // memo only the common pure case: all-finite-number args (params bound by
+    // value). Non-numeric/complex args bypass the cache.
+    let key = null;
+    if (args.length && args.every(a => typeof a === "number" && Number.isFinite(a))) {
+      key = args.length === 1 ? args[0] : args.join(",");
+      const hit = memo.get(key);
+      if (hit !== undefined) return hit;
+    }
     if (fn._d === 0) fn._calls = 0;
     fn._calls = (fn._calls||0) + 1;
     if (fn._calls > 20000) return NaN;
@@ -652,7 +669,9 @@ function makeFn(name, params, expr, sc, outField = undefined) {
     let r = null;
     if (compiled) { try { const v = compiled.evaluate(ls); r = ft.coerce(v); } catch { r = null; } }
     fn._d--;
-    return r??NaN;
+    const out = r??NaN;
+    if (key !== null && memo.size < 4096) memo.set(key, out);
+    return out;
   };
   fn._d = 0; fn._calls = 0;
   // Identity metadata for cache invalidation. The geometry cache keys off a

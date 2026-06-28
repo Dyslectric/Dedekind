@@ -129,9 +129,17 @@ function collectScalarDeps(nodeId, nodes, acc, guard){
 
 // Build the value of a single named scalar/function node, resolved against its
 // OWN direct-attachment scope. `building` guards against attachment cycles.
-// Returns undefined for node types that don't contribute a named value.
-function resolveNodeValue(node, nodes, animVals, building){
+// `memo` (optional) is a per-traversal cache keyed by node id: a node always
+// resolves against its own direct scope regardless of which consumer asked, and
+// values are frame-stable within one resolveScope, so a node reached via many
+// paths (e.g. a shared derivative in a Frenet chain) is resolved ONCE instead of
+// refanning over the dependency DAG. Returns undefined for non-value node types.
+function resolveNodeValue(node, nodes, animVals, building, memo){
   if(!node) return undefined;
+  // Reuse an already-resolved value for this node in the current traversal. Not
+  // applied while the node is mid-resolution (cycle path) — the guard handles that.
+  if(memo && memo.has(node.id)) return memo.get(node.id);
+  let out;
   switch(node.type){
     case "slider": {
       // Complex mode binds a Complex(re, im) so consuming expressions get a real
@@ -139,13 +147,13 @@ function resolveNodeValue(node, nodes, animVals, building){
       // mode binds the scalar `value` as before.
       if(node.props?.mode==="complex"){
         const re=Number(node.props.re)||0, im=Number(node.props.im)||0;
-        return math.complex(re, im);
+        out=math.complex(re, im); break;
       }
-      return typeof node.value==="number"?node.value:0;
+      out=typeof node.value==="number"?node.value:0; break;
     }
-    case "animator": return animVals?.[node.id] ?? (typeof node.value==="number"?node.value:0);
-    case "constant": return resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building), 0, node.props?.field||"real");
-    case "expr":     return resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building), 0, node.props?.field||"real");
+    case "animator": out=animVals?.[node.id] ?? (typeof node.value==="number"?node.value:0); break;
+    case "constant": out=resolveNum(node.props?.value, ownScope(node.id,nodes,animVals,building,memo), 0, node.props?.field||"real"); break;
+    case "expr":     out=resolveNum(node.props?.expr,  ownScope(node.id,nodes,animVals,building,memo), 0, node.props?.field||"real"); break;
     // A list binds its name to an ARRAY value (numbers, or rows like [x,y,z] for a
     // vector/point list). It's the one scope value that isn't a number; downstream
     // expressions index it (L[k]) or fold it (sum(L)). Empty/invalid → [].
@@ -156,14 +164,14 @@ function resolveNodeValue(node, nodes, animVals, building){
       // on the node, keyed by the expr (reference-stable while unedited) and a
       // small fingerprint of its own-scope scalars. Invalidates when either changes.
       const expr=node.props?.expr;
-      if(expr==null) return [];
+      if(expr==null){ out=[]; break; }
       const field=node.props?.field||"real";
-      const sc=ownScope(node.id,nodes,animVals,building);
+      const sc=ownScope(node.id,nodes,animVals,building,memo);
       let sk=field+"|"; for(const key in sc){ const val=sc[key]; if(typeof val==="number") sk+=key+":"+val+";"; }
-      if(node._lcExpr===expr && node._lcKey===sk) return node._lcVal;
+      if(node._lcExpr===expr && node._lcKey===sk){ out=node._lcVal; break; }
       const v=evalArray(expr, sc, field) || [];
       node._lcExpr=expr; node._lcKey=sk; node._lcVal=v;
-      return v;
+      out=v; break;
     }
     case "fnDef": {
       if(!node.name || !node.props?.expr) return undefined;
@@ -171,17 +179,19 @@ function resolveNodeValue(node, nodes, animVals, building){
       // The function closes over its OWN direct scope (computed lazily at call
       // time via makeFn's captured scope object). We pass a snapshot built now;
       // makeFn keeps a reference, and the values are frame-stable within a build.
-      const fnScope=ownScope(node.id,nodes,animVals,building);
-      return makeFn(node.name, params, node.props.expr, fnScope, node.props.outField||"real");
+      const fnScope=ownScope(node.id,nodes,animVals,building,memo);
+      out=makeFn(node.name, params, node.props.expr, fnScope, node.props.outField||"real"); break;
     }
     default: return undefined;
   }
+  if(memo) memo.set(node.id, out);
+  return out;
 }
 
 // Build a {name: value|fn} scope from a node's DIRECT attachments only. This is
 // the scope a node's own expressions are evaluated against. Functions/exprs in
 // the result are themselves resolved against their own direct scopes.
-function ownScope(consumerId, nodes, animVals, building){
+function ownScope(consumerId, nodes, animVals, building, memo){
   const consumer=nodes[consumerId]; if(!consumer) return {};
   // Cycle guard: if we're already resolving this node further up the stack,
   // stop — a node cannot directly depend on itself through a finite chain.
@@ -199,7 +209,7 @@ function ownScope(consumerId, nodes, animVals, building){
   for(const dep of direct){
     if(!dep.name) continue;
     if(dep.type==="expr") continue; // handled below in dependency order
-    const v=resolveNodeValue(dep,nodes,animVals,guard);
+    const v=resolveNodeValue(dep,nodes,animVals,guard,memo);
     if(v!==undefined) sc[dep.name]=v;
   }
   // expr nodes attached directly to this consumer, evaluated in dependency
@@ -215,7 +225,7 @@ function ownScope(consumerId, nodes, animVals, building){
       const dep=exprById.get(depId);
       if(dep) evalExpr(dep);
     }
-    const v=resolveNodeValue(n,nodes,animVals,guard);
+    const v=resolveNodeValue(n,nodes,animVals,guard,memo);
     if(v!==undefined) sc[n.name]=v;
   }
   for(const n of exprNodes) evalExpr(n);
@@ -225,7 +235,10 @@ function ownScope(consumerId, nodes, animVals, building){
 
 // Build a {name: value|fn} scope for a consumer node from its DIRECT deps only.
 function resolveScope(consumerId, nodes, animVals){
-  return ownScope(consumerId, nodes, animVals, new Set());
+  // A fresh per-traversal memo lets a node shared by many consumers (e.g. the
+  // derivative fnDefs feeding T, N, B in a Frenet frame) resolve once instead of
+  // refanning over the DAG every frame.
+  return ownScope(consumerId, nodes, animVals, new Set(), new Map());
 }
 // A camera's own scope = union of the scopes of the plots it shows, plus any
 // scalars attached directly to the camera (for camera props that depend on a

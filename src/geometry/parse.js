@@ -1,4 +1,4 @@
-import { safeEval, splitTopLevel } from "../core/math.js";
+import { safeEval, makeFastEval, splitTopLevel } from "../core/math.js";
 
 // ── Point sequence parser ────────────────────────────────────────────────────
 // Four input modes, auto-detected from the text:
@@ -449,14 +449,23 @@ function pointsIndex(props, scope, useColor){
   const ni=a;
   const nj = counts[1]!=null ? clampCount(safeEval(counts[1], scope), a) : 1;
   const nk = counts[2]!=null ? clampCount(safeEval(counts[2], scope), a) : 1;
+  // Compile each component ONCE and reuse a single scope object, mutating only the
+  // per-point index keys. safeEval re-parses AND re-resolves the whole wired
+  // fnDef chain on every call — for an index expression like `cos(s)+i*TX(s)`
+  // that drags in 20+ derivative fnDefs, recompiling per point per frame was the
+  // dominant cost (≈16 ms/frame per arrow). makeFastEval compiles once.
+  const sc={}; for(const k in scope) sc[k]=scope[k]; sc.i=0; sc.j=0; sc.k=0; sc.n=0;
+  const fx=makeFastEval(xE,sc,true), fy=makeFastEval(yE,sc,true), fz=zE?makeFastEval(zE,sc,true):null;
+  const fc=useColor?makeFastEval(colE,{...sc,x:0,y:0,z:0},true):null;
+  const ev=(fn,e)=>{ if(fn){ const v=fn(sc); return (v==null||!isFinite(v))?null:v; } const v=safeEval(e,sc,true); return (v==null||!isFinite(v))?null:v; };
   const pts=[], cols=useColor?[]:null;
   for(let i=0;i<ni;i++) for(let j=0;j<nj;j++) for(let k=0;k<nk;k++){
     const idx=(i*nj+j)*nk+k;
-    const sc={...scope, i, j, k, n:idx};
-    const x=safeEval(xE, sc, true), y=safeEval(yE, sc, true), z=zE?safeEval(zE, sc, true)??0:0;
-    if(x==null||y==null||!isFinite(x)||!isFinite(y)) continue;
+    sc.i=i; sc.j=j; sc.k=k; sc.n=idx;
+    const x=ev(fx,xE), y=ev(fy,yE), z=zE?(ev(fz,zE)??0):0;
+    if(x==null||y==null) continue;
     pts.push([x,y,z]);
-    if(useColor){ const c=safeEval(colE,{...sc,x,y,z},true); cols.push(c==null||!isFinite(c)?0:c); }
+    if(useColor){ sc.x=x; sc.y=y; sc.z=z; const c=fc?fc(sc):safeEval(colE,sc,true); cols.push(c==null||!isFinite(c)?0:c); }
   }
   return { pts, cols };
 }
