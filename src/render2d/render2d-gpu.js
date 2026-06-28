@@ -686,8 +686,12 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
       for(let i=0;i<N;i++){
         sc.re=reVals[i];
         const w=fn(sc);
-        const p=projectPt(fr, reVals[i], 0, imVals[j]);   // plane point → screen
-        pos.push(p[0], p[1], 0);
+        // reVals/imVals already span the visible window in the camera PLANE's own
+        // (u,v) coordinates, so they ARE the screen-plane position — projecting
+        // them back through the frame as a world (re,0,im) point dropped the
+        // imaginary axis under the default +Z camera (v collapsed to 0, the whole
+        // picture flattened to a line). Place them directly.
+        pos.push(reVals[i], imVals[j], 0);
         if(w){ const mod=Math.hypot(w.re,w.im); const hue=Math.atan2(w.im,w.re)/(2*Math.PI); const l=1-1/(1+mod*0.5); const c=hsl2rgb2d(hue,0.95,0.12+0.76*l); col.push(c[0],c[1],c[2]); }
         else col.push(0.12,0.12,0.15);
       }
