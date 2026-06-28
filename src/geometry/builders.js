@@ -1207,6 +1207,86 @@ function sampleRawGeom(p, prim, scope){
     return { verts, cols, rgb, alpha };
   }
 
+  if((p.src||"list")==="recursive"){
+    // Each primitive is defined from the previous one. recInit holds the first
+    // primitive as literal coordinates; recStep is the recurrence, written in the
+    // previous primitive's vertex slots: vertex 1 = x[n-1],y[n-1],z[n-1]; vertex 2
+    // = x2[n-1],y2[n-1],z2[n-1]; vertex 3 = x3…; a glyph's vector = vx[n-1] etc.
+    // (mirrors the points node's recursive mode, generalised to every primitive).
+    const initField = prim==="points" ? p.recPoints : prim==="segments" ? p.recSegments
+                    : prim==="glyphs" ? p.recGlyphs : p.recTris;
+    const stepField = prim==="points" ? p.recPointsStep : prim==="segments" ? p.recSegmentsStep
+                    : prim==="glyphs" ? p.recGlyphsStep : p.recTrisStep;
+    const initLine=String(initField||"").split(/\n+/).map(s=>s.trim()).find(s=>s.length);
+    const stepLine=String(stepField||"").split(/\n+/).map(s=>s.trim()).find(s=>s.length);
+    if(!initLine||!stepLine) return { verts, cols, rgb, alpha };
+    const initParts=initLine.split("|").map(t=>t.trim());
+    const stepParts=stepLine.split("|").map(t=>t.trim());
+    if(initParts.length!==want || stepParts.length!==want) return { verts, cols, rgb, alpha };
+    // evaluate the initial primitive (literal coords; scalars/fnDefs allowed)
+    const cur=[];
+    for(let part=0;part<want;part++){
+      const nums=splitCoords(initParts[part]).map(t=>safeEval(t,scope));
+      const v=[nums[0]??0, nums[1]??0, nums[2]??0];
+      if(v.some(x=>!isFinite(x))) return { verts, cols, rgb, alpha };
+      cur.push(v);
+    }
+    // for glyphs/segments the "vector" or second endpoint is named with prev-slot
+    // variables — substitute x[n-1]→__x1p etc. Vertex slot var prefixes:
+    //   part 0 → x/y/z (+ vx/vy/vz alias for the glyph base for symmetry)
+    //   part 1 → x2/y2/z2 (segments end / triangle v2) AND vx/vy/vz (glyph vector)
+    //   part 2 → x3/y3/z3 (triangle v3)
+    const slotVars=[["x","y","z"],["x2","y2","z2"],["x3","y3","z3"]];
+    const subStep=(expr,part)=>{
+      let s=String(expr||"");
+      // glyph vector slot can also use vx/vy/vz; map those to the part-1 history
+      s=s.replace(/\bvx\s*\[\s*n\s*-\s*1\s*\]/g,"__x1p").replace(/\bvy\s*\[\s*n\s*-\s*1\s*\]/g,"__y1p").replace(/\bvz\s*\[\s*n\s*-\s*1\s*\]/g,"__z1p");
+      for(let pp=0;pp<want;pp++){
+        const [vx,vy,vz]=slotVars[pp];
+        s=s.replace(new RegExp(`\\b${vx}\\s*\\[\\s*n\\s*-\\s*1\\s*\\]`,"g"),`__x${pp}p`)
+           .replace(new RegExp(`\\b${vy}\\s*\\[\\s*n\\s*-\\s*1\\s*\\]`,"g"),`__y${pp}p`)
+           .replace(new RegExp(`\\b${vz}\\s*\\[\\s*n\\s*-\\s*1\\s*\\]`,"g"),`__z${pp}p`);
+      }
+      return splitCoords(s);
+    };
+    const stepExprs=stepParts.map((sp,part)=>subStep(sp,part));
+    // recursive color
+    const c0=(useCol&&!rgbMode)?(safeEval(p.colRecInit||"0",scope)??0):0;
+    const cStep=(useCol&&!rgbMode)? String(p.colRecStep||"__cp").replace(/\bc\s*\[\s*n\s*-\s*\d+\s*\]/g,"__cp").replace(/\bc_prev\b/g,"__cp") : null;
+    const count=clampRawCount(safeEval(p.recCount||"64",scope));
+    let cprev=c0;
+    const pushPrim=(group,nidx)=>{
+      verts.push(want===1?[group[0]]:group.map(v=>v.slice()));
+      if(anyPerVertex){
+        const cg=cols?[]:null, rg=rgb?[]:null, ag=alpha?[]:null;
+        for(let part=0;part<want;part++){ const v=group[part];
+          if(rgbMode) evalColor({...scope,i:nidx,n:nidx,x:v[0],y:v[1],z:v[2],part},null,rg,ag);
+          else { if(cols) cg.push(cprev); if(alpha) evalColor({...scope,i:nidx,n:nidx,x:v[0],y:v[1],z:v[2],part},null,null,ag); }
+        }
+        if(cols) cols.push(cg); if(rgb) rgb.push(rg); if(alpha) alpha.push(ag);
+      }
+    };
+    pushPrim(cur,0);
+    let prev=cur;
+    for(let n=1;n<count;n++){
+      const sc={...scope, n};
+      for(let pp=0;pp<want;pp++){ sc[`__x${pp}p`]=prev[pp][0]; sc[`__y${pp}p`]=prev[pp][1]; sc[`__z${pp}p`]=prev[pp][2]; }
+      sc.__cp=cprev;
+      const next=[]; let bad=false;
+      for(let part=0;part<want;part++){
+        const e=stepExprs[part];
+        const v=[safeEval(e[0]??"0",sc,true)??0, safeEval(e[1]??"0",sc,true)??0, safeEval(e[2]??"0",sc,true)??0];
+        if(v.some(x=>x==null||!isFinite(x))){ bad=true; break; }
+        next.push(v);
+      }
+      if(bad) break;
+      if(cStep){ const nc=safeEval(cStep,sc,true); cprev=(nc==null||!isFinite(nc))?cprev:nc; }
+      pushPrim(next,n);
+      prev=next;
+    }
+    return { verts, cols, rgb, alpha };
+  }
+
   // list mode — literal numbers, but still evaluated (so constants/scalars work).
   let row=0;
   for(const ln of String(field||"").split(/\n+/)){

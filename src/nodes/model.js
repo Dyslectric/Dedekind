@@ -210,17 +210,37 @@ function makeNode(type,pos){
       idxGlyphs:"cos(i*0.4), sin(i*0.4), 0 | -sin(i*0.4), cos(i*0.4), 0",
       idxTris:"cos(i*0.5), sin(i*0.5), 0 | cos((i+1)*0.5), sin((i+1)*0.5), 0 | 0, 0, 0",
       idxCount:"16",
+      // ── recursive templates: each primitive defined from the previous via
+      //   x[n-1],y[n-1],z[n-1] (and, for multi-vertex prims, the matching prev
+      //   slot of each vertex). recInit = the first primitive (literal coords);
+      //   recStep = the recurrence; recCount = how many. Mirrors the points node's
+      //   recursive mode, extended to every primitive kind.
+      recPoints:"1, 0, 0",
+      recPointsStep:"x[n-1]*0.99 - y[n-1]*0.12, y[n-1]*0.99 + x[n-1]*0.12, z[n-1]",
+      recSegments:"1, 0, 0 | 1.3, 0, 0",
+      recSegmentsStep:"x[n-1]*0.99 - y[n-1]*0.12, y[n-1]*0.99 + x[n-1]*0.12, 0 | (x[n-1]*0.99 - y[n-1]*0.12)*1.3, (y[n-1]*0.99 + x[n-1]*0.12)*1.3, 0",
+      recGlyphs:"1, 0, 0 | 0, 0.3, 0",
+      recGlyphsStep:"x[n-1]*0.99 - y[n-1]*0.12, y[n-1]*0.99 + x[n-1]*0.12, 0 | vx[n-1], vy[n-1], 0",
+      recTris:"0, 0, 0 | 1, 0, 0 | 0, 1, 0",
+      recTrisStep:"x[n-1], y[n-1], z[n-1] | x2[n-1]*0.9, y2[n-1]*0.9, z2[n-1] | x3[n-1]*0.9, y3[n-1]*0.9, z3[n-1]",
+      recCount:"80",
       // ── per-vertex color ──
       //   colorMode "ramp" — a scalar (colorExpr) mapped through the lo→hi ramp
       //   colorMode "rgb"  — three expressions, each 0..1024 (10-bit per channel)
       colorOn:false, colorMode:"ramp",
       colorExpr:"i", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
       colorR:"512", colorG:"512", colorB:"512",
+      // recursive color: initial scalar + recurrence in c[n-k]
+      colRecInit:"0", colRecStep:"c[n-1]+1",
       // ── per-vertex alpha (0..1024 → opacity), independent of color mode ──
       alphaOn:false, colorA:"1024",
       radius:"0.08", drawLines:false,                   // points
       arrowLen:"0.5", normalize:false, lenMode:"raw",   // glyphs
       showWire:true,                                    // triangles
+      // sequencing reveal (ported from points):
+      sequenced:false, seqFrac:"1", seqVar:"",
+      // GPU instancing for the points primitive (ported from the points node):
+      gpuPoints:true,
     },attachments:[]},
 
     // ── Function / transformer model ───────────────────────────────────────
