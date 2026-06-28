@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { resolveNum } from "../core/math.js";
-import { augmentScopeForGPU } from "./glsl.js";
+import { augmentScopeForGPU, resolveUniformValue } from "./glsl.js";
 
 // ── THREE helpers ────────────────────────────────────────────────────────────
 function disposeObjs(scene,objs){for(const o of objs){ (o.parent||scene).remove(o); if(o.geometry&&!o._sharedGeometry)o.geometry.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else if(o.material)o.material.dispose();}}
@@ -58,7 +58,7 @@ function makeSurfaceShader(body, uniformNames, scope, color, wireframe, opts, do
   const uniforms = { uColor:{value:new THREE.Color(hexToThree(color))} };
   // User scalar uniforms are declared/keyed as prefix+name (the body references
   // them prefixed) but their values come from scope[name].
-  for(const u of uniformNames) uniforms[uPrefix+u] = { value: Number(scope[u]) || 0 };
+  for(const u of uniformNames) uniforms[uPrefix+u] = { value: resolveUniformValue(u, scope) };
   // Domain bounds as uniforms (uDomU = [min,max] for the first param, uDomV for
   // the second). When the body references them, animating a bound is a uniform
   // write — no shader rebuild. Default to the unit range if not supplied.
@@ -353,7 +353,7 @@ function updateGpuUniforms(objs, scope){
     // collide with shader internals. The scope is keyed on the ORIGINAL name; the
     // shader uniform is keyed on prefix+name.
     const pfx=info.uPrefix||"";
-    for(const u of info.uNames){ const k=pfx+u; if(mat.uniforms[k]) mat.uniforms[k].value = Number(sc[u])||0; }
+    for(const u of info.uNames){ const k=pfx+u; if(mat.uniforms[k]) mat.uniforms[k].value = resolveUniformValue(u, sc); }
     const dom=info.domain;
     if(dom && dom.expr && mat.uniforms.uDomU && mat.uniforms.uDomV){
       const d=dom.defs||{};

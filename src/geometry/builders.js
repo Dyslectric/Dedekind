@@ -6,7 +6,7 @@ import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { resolveNum, safeEval, linspace, splitTopLevel, derivativeExpr } from "../core/math.js";
 import { compileToJS } from "../core/jit.js";
-import { exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "./glsl.js";
+import { exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU, setComplexScopeSyms, resolveUniformValue } from "./glsl.js";
 import { hexToThree, makeSurfaceShader } from "./three-helpers.js";
 
 // Target on-screen thickness for 1-space curves in 3D cameras (CSS pixels).
@@ -22,7 +22,7 @@ const _normMV = new THREE.Matrix4();
 // with a missing (zeroed) coefficient. Only applied when fnDefs are present, so
 // plain surfaces keep their exact existing behavior.
 function gpuUniformsResolvable(uniforms, ascope){
-  for(const u of uniforms){ if(!Number.isFinite(Number(ascope[u]))) return false; }
+  for(const u of uniforms){ if(!Number.isFinite(resolveUniformValue(u, ascope))) return false; }
   return true;
 }
 
@@ -236,6 +236,7 @@ function buildTransformerGraphGPU(tp, outs, inDim, outDim, scope, color, colorIn
   const res=Math.max(2,Math.min(512,Math.round(resolveNum(tp.res,scope,40))));
   const fnTable=fnTableFromScope(scope);
   const ascope=fnTable?augmentScopeForGPU(scope):scope;
+  setComplexScopeSyms(ascope);    // so re()/im() of complex sliders transpile to re_/im_ uniforms
   const uniforms=new Set();
   // input grid coords in map symbols: x=a, y=b
   const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];

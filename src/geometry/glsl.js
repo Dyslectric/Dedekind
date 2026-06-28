@@ -12,6 +12,16 @@ const _GLSL_FN1 = { sin:1,cos:1,tan:1,asin:1,acos:1,atan:1,sinh:1,cosh:1,tanh:1,
   asinh:1,acosh:1,atanh:1,trunc:"trunc",exp2:"exp2",log2:"log2",radians:"radians",degrees:"degrees" };
 const _GLSL_FN2 = { pow:"pow",atan2:"atan",mod:"mod",min:"min",max:"max",step:"step" };
 const _GLSL_CONST = { pi:"3.141592653589793",e:"2.718281828459045",tau:"6.283185307179586",phi:"1.618033988749895" };
+// Symbols currently bound to a COMPLEX scope value. exprToGLSL emits re()/im() of
+// these as decomposed re_<name>/im_<name> uniforms (a complex uniform is two
+// floats). The builder sets this from the live scope just before transpiling.
+const _COMPLEX_SCOPE_SYMS = new Set();
+function setComplexScopeSyms(scope){
+  _COMPLEX_SCOPE_SYMS.clear();
+  if(!scope) return;
+  for(const k in scope){ const v=scope[k];
+    if(v && typeof v==="object" && typeof v.re==="number" && typeof v.im==="number") _COMPLEX_SCOPE_SYMS.add(k); }
+}
 // Greek glyph → ASCII, mirroring core/math.js so the GPU path normalizes the
 // same way (π/τ/φ are the constants; the rest are conventional variable names).
 const _GREEK_GLSL = {
@@ -276,6 +286,19 @@ function exprToGLSL(expr, vars, uniforms, prefix="", fnTable=null, field=undefin
             case "cot":    return `(cos(${a})/sin(${a}))`;
           }
         }
+        // re(z)/im(z) of a bare symbol bound to a COMPLEX scope value: the GPU has
+        // no complex type, but a complex uniform is just two floats. Emit dedicated
+        // uniforms re_<name> / im_<name> and register the original name so the
+        // uniform resolver splits the Complex into those two float uniforms. This
+        // lets a complex-slider value (read via re()/im()) drive a GPU surface.
+        if((n==="re"||n==="im") && node.args.length===1 && node.args[0].type==="SymbolNode"){
+          const sym=node.args[0].name;
+          if(!vars.has(sym) && _COMPLEX_SCOPE_SYMS.has(sym)){
+            const u = (n==="re"?"re_":"im_")+sym;
+            uniforms.add(u);           // resolver maps this back to <name>.re / .im
+            return prefix+u;
+          }
+        }
         if(node.args.length===2){
           const a=walk(node.args[0], depth),b=walk(node.args[1], depth); if(a==null||b==null)return null;
           switch(n){
@@ -387,6 +410,17 @@ function augmentScopeForGPU(scope){
 // (single letters, camelCase) or the app's own uniforms (uSteps, uColor, …).
 const GLSL_UNIFORM_PREFIX = "usr_";
 
+// Resolve a uniform NAME to its float value from scope, handling the decomposed
+// complex uniforms re_<name>/im_<name> emitted for re()/im() of complex sliders.
+function resolveUniformValue(name, scope){
+  if(!scope) return 0;
+  let m;
+  if((m=/^re_(.+)$/.exec(name))){ const v=scope[m[1]]; return (v&&typeof v.re==="number")?v.re:(Number(v)||0); }
+  if((m=/^im_(.+)$/.exec(name))){ const v=scope[m[1]]; return (v&&typeof v.im==="number")?v.im:0; }
+  return Number(scope[name])||0;
+}
+
 export {
-  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, fnTableSig, augmentScopeForGPU, fractalHelpersFor
+  exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, fnTableSig, augmentScopeForGPU, fractalHelpersFor,
+  setComplexScopeSyms, resolveUniformValue
 };

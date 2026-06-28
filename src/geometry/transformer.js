@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { resolveNum, safeEval, makeFastComplexEval, linspace } from "../core/math.js";
+import { resolveNum, safeEval, makeFastEval, makeFastComplexEval, linspace } from "../core/math.js";
 import { hexToThree } from "./three-helpers.js";
 import { buildCurve3d, buildSegments3d, buildSurf, buildGlyphFieldGPU, buildTransformerGraphGPU, buildTransformerSphericalGPU } from "./builders.js";
 import { marchingSquares, complexEquationCurves, marchingCubes, intersectionCurve3d } from "./implicit.js";
@@ -140,41 +140,50 @@ function colorStyleOf(tp){
 // Does the active style produce RGB directly (bypassing the scalar→ramp pass)?
 function styleIsDirect(tp){ const s=colorStyleOf(tp); return s==="rgb"||s==="hsl"||s==="huemag"||s==="cyclic"; }
 
-// Build a scope with the sample's inputs/outputs bound for a colour expression.
-function _colorScope(scope, inVec, outVec, param, i){
-  const sc={...scope};
-  const inN=["x","y","z","w"]; for(let k=0;k<inVec.length;k++) sc[inN[k]]=inVec[k];
-  for(let k=0;k<outVec.length;k++) sc[`out${k}`]=outVec[k];
-  sc.t=param; sc.u=param; sc.v=param; sc.n=i;
-  return sc;
-}
-// Direct per-sample RGB for the rgb / hsl / huemag / cyclic styles. Returns
-// [r,g,b] in 0..1. (ramp is handled by colorScalar + rampColors instead.)
-function directColorRGB(tp, scope, inVec, outVec, param, i){
+// Compile-once direct-colour evaluator. directColorRGB recompiles every colour
+// expression on EVERY sample (safeEval re-parses each call) and allocates a fresh
+// scope per vertex — fatal for a dense surface dragged live (25k verts × 3 exprs
+// × recompiled = tens of thousands of compiles per frame). This builds the fast
+// path: compile each needed expression ONCE, reuse a single scope object, mutate
+// only the per-sample keys. Returns (inVec, outVec, param, i) => [r,g,b].
+function makeDirectColorFn(tp, scope){
   const style=colorStyleOf(tp);
-  const sc=_colorScope(scope, inVec, outVec, param, i);
-  const ev=(e,d)=>{ const v=safeEval(e,sc,true); return (v==null||!isFinite(v))?d:v; };
+  // one reusable scope, pre-seeded with the sample keys so the compiled forms see
+  // them as bound symbols.
+  const sc={}; for(const k in scope) sc[k]=scope[k];
+  sc.x=0; sc.y=0; sc.z=0; sc.w=0; sc.out0=0; sc.out1=0; sc.out2=0; sc.out3=0; sc.t=0; sc.u=0; sc.v=0; sc.n=0;
+  const compile=(e)=> (e!=null&&e!=="") ? makeFastEval(e, sc, true) : null;
+  const setScope=(inVec,outVec,param,i)=>{
+    sc.x=inVec[0]??0; sc.y=inVec[1]??0; sc.z=inVec[2]??0; sc.w=inVec[3]??0;
+    for(let k=0;k<outVec.length;k++) sc["out"+k]=outVec[k];
+    sc.t=param; sc.u=param; sc.v=param; sc.n=i;
+  };
+  const run=(fn,d)=>{ if(!fn) return d; const v=fn(sc); return (v==null||!isFinite(v))?d:v; };
   if(style==="rgb"){
+    const fR=compile(tp.colorR), fG=compile(tp.colorG), fB=compile(tp.colorB);
     const cl=(v)=>v<0?0:v>1?1:v;
-    return [cl(ev(tp.colorR,0)), cl(ev(tp.colorG,0)), cl(ev(tp.colorB,0))];
+    return (inVec,outVec,param,i)=>{ setScope(inVec,outVec,param,i); return [cl(run(fR,0)), cl(run(fG,0)), cl(run(fB,0))]; };
   }
   if(style==="hsl"){
-    return hsl2rgb(ev(tp.colorH,0), Math.max(0,Math.min(1,ev(tp.colorS,0.9))), Math.max(0,Math.min(1,ev(tp.colorL,0.5))));
+    const fH=compile(tp.colorH), fS=compile(tp.colorS), fL=compile(tp.colorL);
+    return (inVec,outVec,param,i)=>{ setScope(inVec,outVec,param,i); return hsl2rgb(run(fH,0), Math.max(0,Math.min(1,run(fS,0.9))), Math.max(0,Math.min(1,run(fL,0.5)))); };
   }
   if(style==="cyclic"){
-    // an angle-like scalar (the source) → hue wheel; full sat, mid lightness
-    const a=colorScalar(tp, scope, inVec, outVec, param, i, 0);
-    return hsl2rgb(a/(2*Math.PI), 0.9, 0.5);
+    const src=tp.colorSource||""; const m=/^out(\d+)$/.exec(src);
+    const fE = (src==="expr") ? compile(tp.colorExpr) : null;
+    return (inVec,outVec,param,i)=>{ setScope(inVec,outVec,param,i);
+      let a=0; if(m) a=outVec[+m[1]]??0; else if(fE) a=run(fE,0);
+      return hsl2rgb(a/(2*Math.PI), 0.9, 0.5); };
   }
   if(style==="huemag"){
-    // a 2-D source → (angle, magnitude): hue=angle, brightness rises with |·|
     const src=tp.colorSource||"";
-    let re, im;
-    if(src==="complexOut"){ const w=outVec.__cplx; if(w){re=w.re;im=w.im;} else {re=outVec[0]||0;im=0;} }
-    else { re=outVec[0]||0; im=outVec[1]||0; }     // outPair / default: out0,out1
-    return complexColorRGB(re, im);
+    return (inVec,outVec,param,i)=>{
+      let re,im;
+      if(src==="complexOut"){ const w=outVec.__cplx; if(w){re=w.re;im=w.im;} else {re=outVec[0]||0;im=0;} }
+      else { re=outVec[0]||0; im=outVec[1]||0; }
+      return complexColorRGB(re,im); };
   }
-  return [1,1,1];
+  return ()=>[1,1,1];
 }
 
 
@@ -456,6 +465,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
     // color-axis fallback). Outputs bound to a spatial axis form the vector.
     const useColor = colorOn(tp, outDim);
     const directF = useColor && styleIsDirect(tp);
+    const dcFnF = directF ? makeDirectColorFn(tp, scope) : null;
     const inAx=[tp.inAxis0,tp.inAxis1,tp.inAxis2];
     const outAx=[tp.outAxis0,tp.outAxis1,tp.outAxis2,tp.outAxis3];
     const pairs=[]; const cvals=useColor?[]:null;
@@ -466,7 +476,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       for(let k=0;k<inDim;k++){ const ax=AXIS_INDEX[inAx[k]??"none"]; if(ax>=0) posM[ax]=inVec[k]??0; }
       for(let k=0;k<outDim;k++){ const ax=AXIS_INDEX[outAx[k]??"none"]; if(ax>=0) vecM[ax]=outVec[k]??0; }
       pairs.push({ pos:posM, vec:vecM });   // glyph builder applies its own axis swap
-      if(useColor){ const p=s/Math.max(1,dom.pts.length-1); cvals.push(directF ? directColorRGB(tp,scope,inVec,outVec,p,s) : colorScalar(tp,scope,inVec,outVec,p,s)); }
+      if(useColor){ const p=s/Math.max(1,dom.pts.length-1); cvals.push(directF ? dcFnF(inVec,outVec,p,s) : colorScalar(tp,scope,inVec,outVec,p,s)); }
     }
     const opts={ arrowLen:resolveNum(tp.arrowLen,scope,0.5), normalize:tp.normalize!==false, anim:"none", speed:1 };
     if(useColor) opts.cols = directF ? cvals : rampColors(cvals,tp,scope);
@@ -530,12 +540,13 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
   const direct1=gradient && styleIsDirect(tp);
   if(inDim===1){
     const n=dom.pts.length;
+    const dcFn1 = direct1 ? makeDirectColorFn(tp, scope) : null;
     const pts=new Array(n); const vals=gradient?new Array(n):null;
     for(let i=0;i<n;i++){
       const inVec=dom.pts[i];
       const outVec=evalMap(outs,scope,inVec,field);
       pts[i]=placeGraph(tp,inVec,outVec,inDim,outDim);
-      if(gradient){ vals[i]= direct1 ? directColorRGB(tp,scope,inVec,outVec,n>1?i/(n-1):0,i) : colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i); }
+      if(gradient){ vals[i]= direct1 ? dcFn1(inVec,outVec,n>1?i/(n-1):0,i) : colorScalar(tp,scope,inVec,outVec,n>1?i/(n-1):0,i); }
     }
     return buildCurve3d(pts, color, gradient?(direct1?vals:rampColors(vals,tp,scope)):null);
   }
@@ -561,6 +572,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
       if(gpu && gpu.length){ gpu._gpu=true; return gpu; }
     }
     const useCol = surfGradient || direct;
+    const dcFn = direct ? makeDirectColorFn(tp, scope) : null;
     const nu=dom.nu, nv=dom.nv, rows=[], colRows=useCol?[]:null, flatVals=surfGradient?[]:null;
     let idx=0;
     for(let j=0;j<nv;j++){
@@ -569,7 +581,7 @@ function buildTransformer(tNode, fnNode, paramNode, scope, color, eqNode, eqNode
         const inVec=dom.pts[idx++];
         const outVec=evalMap(outs,scope,inVec,field);
         row.push(placeGraph(tp,inVec,outVec,inDim,outDim));
-        if(direct){ crow.push(directColorRGB(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1)); }
+        if(direct){ crow.push(dcFn(inVec,outVec, nu>1?i/(nu-1):0, idx-1)); }
         else if(surfGradient){ const s=colorScalar(tp,scope,inVec,outVec, nu>1?i/(nu-1):0, idx-1); crow.push(s); flatVals.push(s); }
       }
       rows.push(row); if(useCol) colRows.push(crow);

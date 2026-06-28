@@ -1,7 +1,7 @@
 import { catOf } from "./taxonomy.js";
 import { resolveNum, safeEval, evalArray, makeFn, splitTopLevel } from "./math.js";
 import * as math from "mathjs";
-import { exprToGLSL, fnTableFromScope, fnTableSig } from "../geometry/glsl.js";
+import { exprToGLSL, fnTableFromScope, fnTableSig, setComplexScopeSyms } from "../geometry/glsl.js";
 
 // Memoized check: will an equation's lhs/rhs transpile to GLSL (→ GPU raymarch
 // path)? If so, its sliders/animators become live shader uniforms and must NOT
@@ -75,7 +75,12 @@ function graphTranspiles(p, fnMapNode, scope){
   const fnTable=fnTableFromScope(scope), fnSig=fnTableSig(fnTable);
   const outs=[]; if(fnMapNode){ const od=Math.max(1,+(fnMapNode.props?.outDim||1)); for(let k=0;k<od;k++) outs.push(fnMapNode.props?.["out"+k] ?? ""); }
   const mats=[p.matColor,p.matR,p.matG,p.matB,p.matSpec,p.matEmit].filter(e=>e!=null&&e!=="");
-  const key=`${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${outs.join("~")}|${mats.join("~")}|${fnSig}`;
+  // re()/im() of a complex scope value transpile to re_/im_ uniforms, so the
+  // SET of complex symbols affects transpilability — fold it into the cache key
+  // and publish it to the transpiler before testing.
+  setComplexScopeSyms(scope);
+  const cplxSyms=[]; for(const k in scope){ const v=scope[k]; if(v&&typeof v==="object"&&typeof v.re==="number"&&typeof v.im==="number") cplxSyms.push(k); }
+  const key=`${p.inAxis0}|${p.inAxis1}|${p.inAxis2}|${outs.join("~")}|${mats.join("~")}|${fnSig}|c:${cplxSyms.sort().join(",")}`;
   const hit=_graphGlslCache.get(key); if(hit!==undefined) return hit;
   let ok=true;
   try{
@@ -374,20 +379,12 @@ function plotSignature(node, p, scope, nodes, animVals){
     // transpile; then its position/colour scalars are live uniforms. Gated to this
     // pattern so the CPU-sampled 2-D graph transformers (curves) are untouched.
     // A complex (or any non-real) fnMap can't ride the GPU graph path — GLSL has
-    // no complex numbers — so it stays on the CPU evaluator, which handles the
-    // field correctly. Only real maps are eligible for transpilation.
+    // no complex numbers — so it stays on the CPU evaluator. (Complex SCOPE values
+    // read via re()/im() ARE fine on the GPU now: they transpile to decomposed
+    // re_/im_ float uniforms, so no scope-level guard is needed.)
     const fnFieldReal = !fnMapNode || (fnMapNode.props.field||"real")==="real";
-    // Likewise, if any expression references a COMPLEX scope value (e.g. a
-    // complex-mode slider read via re()/im()), GLSL can't represent it — force CPU.
-    const exprsBlob = [p.out0,p.out1,p.out2,p.out3,p.matColor,p.matR,p.matG,p.matB,p.matSpec,p.matEmit,
-                       fnMapNode&&fnMapNode.props.out0,fnMapNode&&fnMapNode.props.out1,
-                       fnMapNode&&fnMapNode.props.out2,fnMapNode&&fnMapNode.props.out3].filter(Boolean).join(" ");
-    let usesComplexScope=false;
-    for(const k in sigScope){ const v=sigScope[k];
-      if(v && typeof v==="object" && typeof v.re==="number" && typeof v.im==="number"
-         && new RegExp("(^|[^A-Za-z0-9_])"+escapeRe(k)+"([^A-Za-z0-9_]|$)").test(exprsBlob)){ usesComplexScope=true; break; } }
     const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
-      && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal && !usesComplexScope
+      && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal
       && graphTranspiles(p, fnMapNode, sigScope);
     pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU,__fnDefSig:fnTableSig(fnTableFromScope(sigScope))};
   }
