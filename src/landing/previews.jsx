@@ -155,6 +155,48 @@ const SCENES = { surface:surfaceScene, field:fieldScene, flow:flowScene, lattice
 // shows its normal HUD, while previews stay clean. The scalar overlay (slider /
 // animator controls) is kept ON, though — the front-page demos are meant to be
 // driven, so the sliders and animators need to be visible and interactive.
+// ── points/glyphs → rawGeom authoring helpers ────────────────────────────────
+// The points and glyphField node types were folded into rawGeom (which always
+// supported raw primitives; recursive/fromlist/edgeList/sequencing were ported
+// in). These build a rawGeom node from the same authoring intent the old points
+// node took, so the demos read clearly. `o` carries the per-mode fields:
+//   list:      { list }                              (literal rows, points-only)
+//   index:     { idx, count }                        (template + count)
+//   recursive: { init, step, count }                 (recurrence)
+//   fromlist:  { ptsList, edgeList }                 (wired list[+edges])
+//   glyphs:    set kind:"glyphs" + the matching field, arrowLen/normalize/lenMode
+// plus shared: color (#hex), radius, drawLines, and optional colour ramp via
+//   { colorExpr, colorLo, colorHi, colorMin, colorMax }  (→ colorOn ramp).
+function rawPts(pos, o={}){
+  const n=makeNode("rawGeom",pos);
+  n.props.prim = o.kind==="glyphs" ? "glyphs" : "points";
+  if(o.color) n.color=o.color;
+  if(o.label) n.label=o.label;
+  if(o.list!=null){ n.props.src="list"; n.props.rawPoints=o.list; }
+  else if(o.idx!=null){ n.props.src="index"; n.props.idxPoints=o.idx; if(o.count!=null) n.props.idxCount=String(o.count); }
+  else if(o.init!=null){ n.props.src="recursive"; n.props.recPoints=o.init; n.props.recPointsStep=o.step; if(o.count!=null) n.props.recCount=String(o.count); }
+  else if(o.ptsList!=null){ n.props.src="fromlist"; n.props.ptsList=o.ptsList; if(o.edgeList) n.props.edgeList=o.edgeList; }
+  if(o.glyphList!=null){ n.props.prim="glyphs"; n.props.src="list"; n.props.rawGlyphs=o.glyphList; }
+  if(o.glyphIdx!=null){ n.props.prim="glyphs"; n.props.src="index"; n.props.idxGlyphs=o.glyphIdx; if(o.count!=null) n.props.idxCount=String(o.count); }
+  if(o.glyphInit!=null){ n.props.prim="glyphs"; n.props.src="recursive"; n.props.recGlyphs=o.glyphInit; n.props.recGlyphsStep=o.glyphStep; if(o.count!=null) n.props.recCount=String(o.count); }
+  if(o.radius!=null) n.props.radius=String(o.radius);
+  if(o.drawLines!=null) n.props.drawLines=o.drawLines;
+  if(o.arrowLen!=null) n.props.arrowLen=String(o.arrowLen);
+  if(o.normalize!=null) n.props.normalize=o.normalize;
+  if(o.lenMode!=null) n.props.lenMode=o.lenMode;
+  // colour ramp (the old gradient / useColor mode → rawGeom ramp)
+  if(o.colorExpr!=null||o.colorLo!=null||o.useColor){
+    n.props.colorOn=true; n.props.colorMode="ramp";
+    if(o.colorExpr!=null) n.props.colorExpr=o.colorExpr;
+    if(o.colorLo!=null) n.props.colorLo=o.colorLo;
+    if(o.colorHi!=null) n.props.colorHi=o.colorHi;
+    if(o.colorMin!=null) n.props.colorMin=String(o.colorMin);
+    if(o.colorMax!=null) n.props.colorMax=String(o.colorMax);
+  }
+  if(o.sequenced){ n.props.sequenced=true; if(o.seqFrac!=null) n.props.seqFrac=String(o.seqFrac); if(o.seqVar) n.props.seqVar=o.seqVar; }
+  return n;
+}
+
 function previewCam(cam){
   cam.props.showCamLabel=false;cam.props.showResetBtn=false;cam.props.showShareBtn=false;
   cam.props.showScalarOverlay=true;
@@ -966,9 +1008,7 @@ function listCubeScene(){
   V.props.expr=_cubeVertsExpr(1.4);
   const E=makeNode("list",{x:360,y:340});E.name="E";E.label="edges";E.color="#f7d9a0";
   E.props.expr="[[1,2],[2,3],[3,4],[4,1],[5,6],[6,7],[7,8],[8,5],[1,5],[2,6],[3,7],[4,8]]";
-  const pts=makeNode("points",{x:740,y:200});pts.label="cube";pts.color="#8aadf4";
-  pts.props.kind="points";pts.props.mode="fromlist";pts.props.ptsList="V";pts.props.edgeList="E";
-  pts.props.drawLines=false;pts.props.radius="0.1";
+  const pts=rawPts({x:740,y:200},{label:"cube",color:"#8aadf4",ptsList:"V",edgeList:"E",drawLines:false,radius:"0.1"});
   pts.attachments=[V.id,E.id];cam.attachments=[pts.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[V.id]:V,[E.id]:E,[pts.id]:pts},camId:cam.id,animated:false};
 }
