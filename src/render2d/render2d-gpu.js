@@ -10,7 +10,7 @@ import { normalizedNode } from "../nodes/normalize.js";
 import { sampleParamSpace } from "../geometry/transformer.js";
 import { marchingSquares } from "../geometry/implicit.js";
 import { hexToThree } from "../geometry/three-helpers.js";
-import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU } from "../geometry/glsl.js";
+import { exprToGLSL, GLSL_UNIFORM_PREFIX, fnTableFromScope, augmentScopeForGPU, complexExprToGLSL, _COMPLEX_HELPERS_GLSL, resolveUniformValue } from "../geometry/glsl.js";
 import { planeFrame, projectPt, projectPts } from "./project2d.js";
 import { advectSeeds } from "../geometry/flow.js";
 
@@ -674,6 +674,52 @@ function build2DTransformer(tNode, fnNode, paramNode, pscope, color, wxMin, wxMa
   // (camera-follow): hue = arg f, brightness = |f|. Other complex sub-modes are
   // surfaces (3-D) and fall through to the flat domain picture here.
   if((fnNode.props.field||"real")==="complex" && inDim===1 && outDim===1){
+    // ── GPU fast path: evaluate f(z) per fragment over a window-covering quad ──
+    // The whole picture is one quad with a fragment shader that computes f(z) and
+    // maps it to the domain colour, so pan/zoom is free (no CPU re-sampling).
+    // Falls back to the CPU grid below if f can't transpile to complex GLSL.
+    {
+      const fnTable=fnTableFromScope(pscope);             // (no fnDef inlining in complex GLSL yet)
+      const uniforms=new Set();
+      const gz=fnTable? null : complexExprToGLSL(outs[0], uniforms, GLSL_UNIFORM_PREFIX);
+      const ascope=pscope;
+      const uniResolvable = gz!=null && [...uniforms].every(u=>Number.isFinite(resolveUniformValue(u,ascope)));
+      if(gz!=null && uniResolvable){
+        // quad spanning the visible window, placed directly in plane (u,v) space.
+        const wpos=[wxMin,wyMin,0, wxMax,wyMin,0, wxMax,wyMax,0, wxMin,wyMax,0];
+        const ab=[wxMin,wyMin, wxMax,wyMin, wxMax,wyMax, wxMin,wyMax];
+        const geo=new THREE.BufferGeometry();
+        geo.setAttribute("position",new THREE.Float32BufferAttribute(wpos,3));
+        geo.setAttribute("ab",new THREE.Float32BufferAttribute(ab,2));
+        geo.setIndex([0,1,2, 0,2,3]);
+        const uobj={};
+        for(const u of uniforms) uobj[GLSL_UNIFORM_PREFIX+u]={value:resolveUniformValue(u,ascope)};
+        const decls=[...uniforms].map(u=>`uniform float ${GLSL_UNIFORM_PREFIX}${u};`).join("\n");
+        const vert=`attribute vec2 ab; varying vec2 vAb;
+          void main(){ vAb=ab; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+        const frag=`precision highp float;
+          ${decls}
+          varying vec2 vAb;
+          ${_COMPLEX_HELPERS_GLSL}
+          vec3 _hsl(float h,float s,float l){ h=fract(h); float a=s*min(l,1.0-l);
+            vec3 k=mod(vec3(0.0,8.0,4.0)+h*12.0,12.0);
+            return vec3(l)-a*max(-vec3(1.0),min(min(k-3.0,9.0-k),vec3(1.0))); }
+          vec2 _f(vec2 _z){ return ${gz}; }
+          void main(){
+            vec2 w=_f(vAb);
+            float mod=length(w);
+            float hue=atan(w.y,w.x)/6.283185307179586;
+            float l=1.0-1.0/(1.0+mod*0.5);
+            gl_FragColor=vec4(_hsl(hue,0.95,0.12+0.76*l),1.0);
+          }`;
+        const mat=new THREE.ShaderMaterial({uniforms:uobj,vertexShader:vert,fragmentShader:frag,
+          side:THREE.DoubleSide,depthTest:false,depthWrite:false});
+        mat._uniformNames=[...uniforms];
+        const mesh=new THREE.Mesh(geo,mat); mesh.frustumCulled=false;
+        return [mesh];
+      }
+    }
+    // ── CPU fallback: sample f(z) on a grid (kept for non-transpilable maps) ──
     const sc={}; for(const k in pscope){ if(k!=="pi"&&k!=="e"&&k!=="i") sc[k]=pscope[k]; }
     const fn=makeFastComplexEval(outs[0], {...sc, re:0, im:0});
     if(!fn) return [];

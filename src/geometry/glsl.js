@@ -420,7 +420,94 @@ function resolveUniformValue(name, scope){
   return Number(scope[name])||0;
 }
 
+// ── Complex → GLSL (vec2 = re,im) ────────────────────────────────────────────
+// GLSL has no complex type, but a complex number is a vec2 (x=re, y=im) and the
+// arithmetic decomposes into real ops. complexExprToGLSL transpiles an
+// expression over the complex plane — where `re`/`im` are the real/imag parts of
+// the input z (provided as vec2 locals) and `i` is the imaginary unit — into a
+// vec2-valued GLSL expression, so a ℂ→ℂ map can be evaluated per fragment.
+// Returns null if anything can't be expressed. Uniforms (sliders) are collected
+// as real floats and lifted to vec2(u,0.0). `_COMPLEX_HELPERS_GLSL` must be
+// prepended to the shader.
+const _COMPLEX_HELPERS_GLSL = `
+vec2 _cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+vec2 _cdiv(vec2 a, vec2 b){ float d=b.x*b.x + b.y*b.y; return vec2((a.x*b.x + a.y*b.y)/d, (a.y*b.x - a.x*b.y)/d); }
+vec2 _cexp(vec2 a){ float e=exp(a.x); return vec2(e*cos(a.y), e*sin(a.y)); }
+vec2 _clog(vec2 a){ return vec2(0.5*log(a.x*a.x + a.y*a.y), atan(a.y, a.x)); }
+vec2 _cpow(vec2 a, vec2 b){ // a^b = exp(b * log a); a=0 → 0
+  if(a.x==0.0 && a.y==0.0) return vec2(0.0);
+  return _cexp(_cmul(b, _clog(a))); }
+vec2 _cpowi(vec2 a, int n){ // integer power by repeated multiply (exact, fast)
+  if(n==0) return vec2(1.0,0.0);
+  bool inv = n<0; if(inv) n=-n;
+  vec2 r=vec2(1.0,0.0), base=a;
+  for(int k=0;k<32;k++){ if(k>=n) break; r=_cmul(r,base); }
+  return inv ? _cdiv(vec2(1.0,0.0), r) : r; }
+vec2 _csin(vec2 a){ return vec2(sin(a.x)*cosh(a.y), cos(a.x)*sinh(a.y)); }
+vec2 _ccos(vec2 a){ return vec2(cos(a.x)*cosh(a.y), -sin(a.x)*sinh(a.y)); }
+vec2 _csqrt(vec2 a){ float r=length(a); return vec2(sqrt(max(0.0,(r+a.x)*0.5)), sign(a.y==0.0?1.0:a.y)*sqrt(max(0.0,(r-a.x)*0.5))); }
+`;
+
+function complexExprToGLSL(expr, uniforms, prefix=""){
+  let text = String(expr);
+  for(const g in _GREEK_GLSL) if(text.indexOf(g)>=0) text = text.split(g).join(_GREEK_GLSL[g]);
+  let root; try { root = math.parse(text); } catch { return null; }
+  // known symbols: the input parts re,im and the imaginary unit i. Everything else
+  // single-letter or named is a (real) uniform.
+  const vars = new Set(["re","im","i"]);
+  root = _glslSplitJux(root, vars);
+  const C = (re,im)=>`vec2(${_glslNum(re)},${_glslNum(im)})`;
+  const walk = (node, depth) => {
+    if(depth>64) return null;
+    switch(node.type){
+      case "ConstantNode": return typeof node.value==="number" ? C(node.value,0) : null;
+      case "ParenthesisNode": { const c=walk(node.content,depth); return c==null?null:"("+c+")"; }
+      case "SymbolNode": {
+        if(node.name==="re") return "vec2(_z.x,0.0)";
+        if(node.name==="im") return "vec2(_z.y,0.0)";
+        if(node.name==="i")  return "vec2(0.0,1.0)";
+        if(node.name==="pi") return C(Math.PI,0);
+        if(node.name==="e")  return C(Math.E,0);
+        if(node.name==="tau")return C(2*Math.PI,0);
+        // a real uniform (slider) lifted to a complex value
+        if(/^[A-Za-z_]\w*$/.test(node.name)){ uniforms.add(node.name); return `vec2(${prefix}${node.name},0.0)`; }
+        return null;
+      }
+      case "OperatorNode": {
+        if(node.fn==="unaryMinus"){ const a=walk(node.args[0],depth); return a==null?null:`(-(${a}))`; }
+        if(node.fn==="unaryPlus") return walk(node.args[0],depth);
+        if(node.op==="+"||node.op==="-"){ const a=walk(node.args[0],depth),b=walk(node.args[1],depth); return (a==null||b==null)?null:`(${a}${node.op}${b})`; }
+        if(node.op==="*"){ const a=walk(node.args[0],depth),b=walk(node.args[1],depth); return (a==null||b==null)?null:`_cmul(${a},${b})`; }
+        if(node.op==="/"){ const a=walk(node.args[0],depth),b=walk(node.args[1],depth); return (a==null||b==null)?null:`_cdiv(${a},${b})`; }
+        if(node.op==="^"){
+          const a=walk(node.args[0],depth); if(a==null) return null;
+          // integer exponent → exact repeated multiply; else general cpow
+          const en=node.args[1];
+          if(en.type==="ConstantNode" && typeof en.value==="number" && Number.isInteger(en.value) && Math.abs(en.value)<=32)
+            return `_cpowi(${a},${en.value})`;
+          const b=walk(en,depth); return b==null?null:`_cpow(${a},${b})`;
+        }
+        return null;
+      }
+      case "FunctionNode": {
+        const n=node.fn.name;
+        if(node.args.length===1){
+          const a=walk(node.args[0],depth); if(a==null) return null;
+          switch(n){ case "exp":return `_cexp(${a})`; case "log":case "ln":return `_clog(${a})`;
+            case "sin":return `_csin(${a})`; case "cos":return `_ccos(${a})`;
+            case "sqrt":return `_csqrt(${a})`;
+            case "conj":return `vec2((${a}).x,-(${a}).y)`; }
+        }
+        if(n==="pow" && node.args.length===2){ const a=walk(node.args[0],depth),b=walk(node.args[1],depth); return (a==null||b==null)?null:`_cpow(${a},${b})`; }
+        return null;
+      }
+      default: return null;
+    }
+  };
+  return walk(root, 0);
+}
+
 export {
   exprToGLSL, _glslNum, GLSL_UNIFORM_PREFIX, fnTableFromScope, fnTableSig, augmentScopeForGPU, fractalHelpersFor,
-  setComplexScopeSyms, resolveUniformValue
+  setComplexScopeSyms, resolveUniformValue, complexExprToGLSL, _COMPLEX_HELPERS_GLSL
 };
