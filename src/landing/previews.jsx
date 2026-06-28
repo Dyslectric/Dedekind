@@ -1325,7 +1325,7 @@ function domainColorScene(label, fexpr, R){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:1160,y:120}));cam.label=label;
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize=String(2*R);
-  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;cam.props.showTickLabels=false;
   const fn=makeNode("fnMap",{x:360,y:200});fn.label=label;fn.color="#8aadf4";
   fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
   fn.props.out0=fexpr;                                       // f(z), z = re + i·im
@@ -1535,7 +1535,7 @@ function complexDomainScene(){
   const project=makeProjectNode("preview");
   const cam=previewCam(makeNode("camera2d",{x:837,y:317}));cam.label="(z²−1)/(z²+1)";
   cam.props.mode="2d";cam.props.normalZ="1";cam.props.orthoSize="3";
-  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;
+  cam.props.showGrid=false;cam.props.showAxes=false;cam.props.showScalarOverlay=false;cam.props.showTickLabels=false;
   const fn=makeNode("fnMap",{x:97,y:317});fn.label="(z²−1)/(z²+1)";fn.color="#c4b5fd";
   fn.props.inDim="1";fn.props.outDim="1";fn.props.field="complex";
   // z = re + i·im
