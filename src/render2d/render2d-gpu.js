@@ -453,7 +453,10 @@ function build2DRawGeom(np, pscope, color, px, fr){
   const applyA=(objs)=>{ if(alpha) for(const o of objs){ if(o&&o.material){ o.material.transparent=true; o.material.opacity=(o.material.opacity??1)*meanAlpha; } } return objs; };
 
   if(prim==="points"){
-    const r=px(Math.max(2, resolveNum(np.radius,pscope,0.08)*60));
+    // radius is in PIXELS (constant on-screen size), matching the points node this
+    // primitive replaced — px() maps it to world units at the current zoom. (The
+    // old build2DPointSeq used radius directly as px with default 4.)
+    const r=px(resolveNum(np.radius,pscope,4));
     const objs=verts.map((v,i)=>{ const [u,vv]=projectPt(fr,v[0][0],v[0][1],v[0][2]); return buildDisk2D(u,vv,r,rampGroups?rampGroups[i][0]:color); });
     if(np.drawLines===true){ const proj=verts.map(v=>projectPt(fr,v[0][0],v[0][1],v[0][2])); objs.unshift(...buildThickLine2D(proj,color,px(LINE_PX)/2)); }
     return applyA(objs);

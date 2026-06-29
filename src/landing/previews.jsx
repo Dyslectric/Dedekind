@@ -40,7 +40,7 @@ function surfaceScene(){
   const tr=makeNode("transformer",{x:620,y:160});tr.color="#4a90d0";
   tr.props.mode="graph";tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.outAxis0="z";
   tr.props.aMin="-4.5";tr.props.aMax="4.5";tr.props.bMin="-4.5";tr.props.bMax="4.5";tr.props.res="44";
-  tr.props.colorOn=true;tr.props.colorMode="ramp";tr.props.colorExpr="out0";tr.props.colorLo="#1b3a8f";tr.props.colorHi="#ff5ea8";
+  tr.props.colorMode="gradient";tr.props.colorExpr="out0";tr.props.colorLo="#1b3a8f";tr.props.colorHi="#ff5ea8";
   tr.attachments=[fn.id];fn.attachments=[anim.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[fn.id]:fn,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -57,7 +57,7 @@ function fieldScene(){
   const fn=makeNode("fnMap",{x:300,y:160});fn.props.inDim="3";fn.props.outDim="4";
   fn.props.out0="-y + 0.3*sin(t)";fn.props.out1="x";fn.props.out2="0.35*z";fn.props.out3="sqrt(x*x+y*y+z*z)";
   const tr=makeNode("transformer",{x:620,y:160});tr.color="#ffb454";
-  tr.props.mode="field";tr.props.colorOn=true;tr.props.colorMode="ramp";tr.props.colorLo="#5be0c0";tr.props.colorHi="#ff5ea8";
+  tr.props.mode="field";tr.props.colorMode="gradient";tr.props.colorLo="#5be0c0";tr.props.colorHi="#ff5ea8";
   tr.props.inAxis0="x";tr.props.inAxis1="y";tr.props.inAxis2="z";
   tr.props.outAxis0="x";tr.props.outAxis1="y";tr.props.outAxis2="z";
   tr.props.aMin="-2.4";tr.props.aMax="2.4";tr.props.bMin="-2.4";tr.props.bMax="2.4";tr.props.cMin="-2.4";tr.props.cMax="2.4";
@@ -272,7 +272,7 @@ function barthScene(){
   const tr=makeNode("transformer",{x:700,y:160});tr.label="Depth";tr.color="#ff6ec7";
   tr.props.mode="graph";
   tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-2.2";tr.props.cMax="2.2";
-  tr.props.res="240";tr.props.colorOn=true;tr.props.colorMode="ramp";
+  tr.props.res="240";tr.props.colorMode="gradient";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[anim.id]:anim,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -374,7 +374,7 @@ function whitneyScene(){
   const tr=makeNode("transformer",{x:700,y:160});tr.label="Whitney";tr.color="#7ad7ff";
   tr.props.mode="graph";
   tr.props.aMin="-2";tr.props.aMax="2";tr.props.bMin="-2";tr.props.bMax="2";tr.props.cMin="-0.5";tr.props.cMax="2.5";
-  tr.props.res="240";tr.props.colorOn=true;tr.props.colorMode="ramp";
+  tr.props.res="240";tr.props.colorMode="gradient";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:true};
 }
@@ -2566,7 +2566,7 @@ function tutTorusLevelScene(){
   const tr=makeNode("transformer",{x:700,y:160});tr.label="surface";tr.color="#ffcf6e";
   tr.props.mode="graph";
   tr.props.aMin="-2.2";tr.props.aMax="2.2";tr.props.bMin="-2.2";tr.props.bMax="2.2";tr.props.cMin="-1";tr.props.cMax="1";
-  tr.props.res="160";tr.props.colorOn=true;tr.props.colorMode="ramp";
+  tr.props.res="160";tr.props.colorMode="gradient";
   tr.attachments=[eq.id];cam.attachments=[tr.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[eq.id]:eq,[tr.id]:tr},camId:cam.id,animated:false};
 }
@@ -3568,7 +3568,7 @@ function tutGaussCurvatureScene(){
   surf.props.exprZ="0.6*sin(v)";
   surf.props.uMin="0";surf.props.uMax="6.2832";surf.props.vMin="0";surf.props.vMax="6.2832";
   surf.props.uRes="120";surf.props.vRes="60";
-  surf.props.colorOn=true;surf.props.colorMode="ramp";surf.props.colorExpr="cos(v)";surf.props.colorLo="#ff5ea8";surf.props.colorHi="#5ad1e6";
+  surf.props.colorMode="gradient";surf.props.colorExpr="cos(v)";surf.props.colorLo="#ff5ea8";surf.props.colorHi="#5ad1e6";
   surf.props.colorMin="-1";surf.props.colorMax="1";
   cam.attachments=[surf.id];
   return {scene:{[project.id]:project,[cam.id]:cam,[surf.id]:surf},camId:cam.id,animated:true};
