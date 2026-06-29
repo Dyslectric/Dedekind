@@ -454,11 +454,31 @@ function build2DRawGeom(np, pscope, color, px, fr){
 
   if(prim==="points"){
     // radius is in PIXELS (constant on-screen size), matching the points node this
-    // primitive replaced — px() maps it to world units at the current zoom. (The
-    // old build2DPointSeq used radius directly as px with default 4.)
+    // primitive replaced — px() maps it to world units at the current zoom.
     const r=px(resolveNum(np.radius,pscope,4));
-    const objs=verts.map((v,i)=>{ const [u,vv]=projectPt(fr,v[0][0],v[0][1],v[0][2]); return buildDisk2D(u,vv,r,rampGroups?rampGroups[i][0]:color); });
-    if(np.drawLines===true){ const proj=verts.map(v=>projectPt(fr,v[0][0],v[0][1],v[0][2])); objs.unshift(...buildThickLine2D(proj,color,px(LINE_PX)/2)); }
+    const proj=verts.map(v=>projectPt(fr,v[0][0],v[0][1],v[0][2]));
+    const objs=[];
+    if(np.drawLines===true) objs.push(...buildThickLine2D(proj,color,px(LINE_PX)/2));
+    // All disks render as ONE InstancedMesh of a shared unit-circle geometry — a
+    // single draw call instead of one Mesh per point, so a big root cloud (18k+
+    // points) stays smooth on zoom/pan. (Matches build2DPointSeq.)
+    const nPts=proj.length;
+    if(nPts>0){
+      const useCol=!!rampGroups;
+      const unit=_unitDiskGeo();
+      const mat=new THREE.MeshBasicMaterial({color: useCol?0xffffff:hexToThree(color), depthTest:false});
+      const inst=new THREE.InstancedMesh(unit, mat, nPts);
+      const m=new THREE.Matrix4();
+      for(let i=0;i<nPts;i++){
+        const [u,vv]=proj[i];
+        m.makeScale(r,r,1); m.setPosition(u,vv,0); inst.setMatrixAt(i,m);
+        if(useCol){ const hex=rampGroups[i][0]; const rgb=hexRGB(hex); inst.setColorAt(i,new THREE.Color(rgb[0],rgb[1],rgb[2])); }
+      }
+      inst.instanceMatrix.needsUpdate=true;
+      if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+      inst.frustumCulled=false;
+      objs.push(inst);
+    }
     return applyA(objs);
   }
   if(prim==="segments"){
