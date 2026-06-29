@@ -10,7 +10,7 @@
 const ADDABLE_KINDS = [
   ["constant","expr","slider","animator","fnDef","list"],      // inputs
   ["fnMap","equation","transformer"],                          // functions + how to plot them
-  ["paramSpace","points","rawGeom"],                          // manifolds / point sets / raw primitives
+  ["paramSpace","rawGeom"],                          // manifolds / point sets / raw primitives
   // NOTE (ded-mathcore): texture / video / light kinds are intentionally NOT
   // offered in this build — it's the lean math-visualization branch without
   // custom lighting or image/video texturing. The kinds still EXIST (model,
@@ -40,7 +40,6 @@ const KIND_HOTKEYS = {
   q: "equation",     // e(q)uation
   t: "transformer",
   p: "paramSpace",   // (p)arametric space
-  o: "points",       // p(o)ints
   g: "rawGeom",      // raw (g)eometry
   // l (light) hotkey removed in ded-mathcore — light nodes aren't addable here.
   w: "flow",         // (w) ~ flow

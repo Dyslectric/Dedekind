@@ -23,12 +23,12 @@ const CATEGORY = {
   fnDef:"function",
   domain:"domain",
   curve3d:"plot", fn1d:"plot", surf3d:"plot", paramsurf:"plot", paramvol:"plot", plane:"plot",
-  point:"plot", pointSeq:"plot", quiver2d:"plot", quiver3d:"plot", flow:"plot", glyphField:"plot",
+  point:"plot", pointSeq:"plot", quiver2d:"plot", quiver3d:"plot", flow:"plot",
   // Unified plot kinds (replace the granular legacy kinds above in the UI):
   //   scalarFn   — scalar-valued function of 1/2/3 spatial inputs
   //   paramSpace — parameterized manifold (curve=degree 1, surface=degree 2)
   //   points     — points / glyphs / sequences, plane or space, optional vectors
-  paramSpace:"plot", points:"plot", rawGeom:"plot",
+  paramSpace:"plot", rawGeom:"plot",
   // New function/transformer model:
   //   fnMap      — a pure map ℝᵐ→ℝⁿ (no spatial meaning on its own). Category
   //                "map": it attaches to a transformer (or domain source), never
@@ -82,7 +82,7 @@ function canAttach(srcType, dstType){
   // discrete seed points → one stream curve each). No other plot→plot edges.
   if(s==="plot" && d==="plot"){
     if(dstType==="transformer") return srcType==="paramSpace";
-    if(dstType==="flow") return srcType==="paramSpace" || srcType==="points";
+    if(dstType==="flow") return srcType==="paramSpace" || srcType==="rawGeom";
     return false;
   }
   return true;

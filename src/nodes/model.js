@@ -32,13 +32,11 @@ const TYPE_META={
   quiver2d: {tag:"Q2D",  tc:"#ffa",   bg:"#181806",hdr:"#202006"},
   quiver3d: {tag:"Q3D",  tc:"#fca",   bg:"#181206",hdr:"#201806"},
   flow:     {tag:"FLW",  tc:"#9ff",   bg:"#061818",hdr:"#082020"},
-  glyphField:{tag:"GLY", tc:"#5ec",   bg:"#06180f",hdr:"#0a2418"},
   // ── Unified kinds ──
   texture:   {tag:"TEX",  tc:"#f5bde6",bg:"#1c1018",hdr:"#241420"},
   video:     {tag:"VID",  tc:"#f5a97f",bg:"#1c1410",hdr:"#241a12"},
   light:     {tag:"LGT",  tc:"#ffe08a",bg:"#1c1808",hdr:"#24200a"},
   paramSpace:{tag:"PRM",  tc:"#b4f",   bg:"#11101c",hdr:"#181226"},
-  points:    {tag:"PTS",  tc:"#f9a",   bg:"#1c0e16",hdr:"#221018"},
   rawGeom:   {tag:"RAW",  tc:"#9fd6a0",bg:"#0e1810",hdr:"#122218"},
   fnMap:     {tag:"ƒ→",   tc:"#7ec8ff",bg:"#0a1622",hdr:"#0e1f30"},
   equation:  {tag:"EQ=",  tc:"#ffd479",bg:"#1c1606",hdr:"#241d08"},
@@ -101,10 +99,6 @@ function makeNode(type,pos){
       volSlices:"6",
       gradient:false, gradA:"#5b9cf6", gradB:"#f74fa0",
     },attachments:[]},
-    glyphField:{label:"Glyphs",color:"__AUTO__",props:{
-      pairs:"-2, 0, 0 | 0, 1, 0\n0, 0, 0 | 1, 0.5, 0\n2, 0, 0 | 0, -1, 0",
-      arrowLen:"0.5",normalize:true,anim:"crest",speed:"1",crestColor:"#ffffff"},attachments:[]},
-
     // ── Unified kinds ──────────────────────────────────────────────────────
     // texture: a static image source (uploaded file → data-URI, or a URL),
     // sampled by a surface's shader as a material channel. Defaults to the cute
@@ -145,49 +139,9 @@ function makeNode(type,pos){
       // volume coloring (optional gradient over the cloud):
       volColorMode:"off",volColorExpr:"u",volColorLo:"#3a6aff",volColorHi:"#ff5ea8",volColorMin:"",volColorMax:"",
     },attachments:[]},
-    // points: points / glyphs / sequences.
-    //   kind   "points" | "glyphs"           (top dropdown)
-    //   mode   "list" | "index" | "recursive" (second dropdown)
-    //   useColor  adds a trailing color slot to every tuple (recursible)
-    // Each (kind, mode) pair has its own dedicated input field(s) so the authoring
-    // form is explicit rather than auto-detected from text syntax. normalize.js
-    // assembles these into the canonical text the parsers consume.
-    points:{label:"Points",color:"__AUTO__",props:{
-      kind:"points",            // points | glyphs
-      mode:"list",              // list | index | recursive
-      useColor:false,           // extra trailing color slot in each tuple
-      // ── points · list ─ comma/newline separated ordered pairs or triples
-      listPoints:"0, 0\n1, 1\n2, 0\n3, 1\n4, 0",
-      // ── points · index ─ one tuple in i,j,k,n + a count
-      idxPoint:"cos(i*0.3), sin(i*0.3)",
-      idxCount:"64",
-      // ── points · recursive ─ initial tuple, recurrence, count
-      recInit:"1, 0",
-      recStep:"x[n-1]*0.99, y[n-1]+0.1",
-      recCount:"80",
-      // ── glyphs · list ─ "seed | vector" pairs of pairs/triples per line
-      listGlyphs:"0, 0 | 1, 0\n1, 1 | 0, 1\n2, 0 | 1, 0",
-      // ── glyphs · index ─ "seed | vector" in i,j,k,n + a count
-      idxGlyph:"cos(i), sin(i) | -sin(i), cos(i)",
-      idxGlyphCount:"48",
-      // ── glyphs · recursive ─ initial, recurrence (x[n-k],vx[n-k]…), count
-      recGlyphInit:"4, 4 | 0, 1",
-      recGlyphStep:"x[n-1]*0.97 - y[n-1]*0.12, y[n-1]*0.97 + x[n-1]*0.12 | vx[n-1], vy[n-1]",
-      recGlyphCount:"120",
-      // ── color slot expressions (only used when useColor) ─ a scalar per tuple,
-      //    mapped onto the colorLo→colorHi ramp. Recursible via c[n-k].
-      colListPoints:"i",   // appended as the trailing slot in list rows (see UI)
-      colExpr:"i",         // index / recursive color expression
-      colRecInit:"0",      // recursive: initial color scalar
-      colRecStep:"c[n-1]+1",
-      radius:"4",drawLines:true,
-      // glyph styling (used for glyphs):
-      arrowLen:"0.5",normalize:true,lenMode:"uniform",anim:"crest",speed:"1",crestColor:"#ffffff",
-      // gradient ramp endpoints + range for the color slot / legacy gradient:
-      colorMode:"off", colorExpr:"i", colorLo:"#3a6aff", colorHi:"#ff5ea8", colorMin:"", colorMax:"",
-      // sequencing reveal:
-      sequenced:false,seqFrac:"1",seqVar:"",
-    },attachments:[]},
+    // points/glyphs were folded into rawGeom (which gained recursive/fromlist/
+    // edgeList/sequencing + GPU instancing); the dedicated points & glyphField node
+    // types were retired.
 
     // rawGeom: explicit primitives typed in directly (no formula/transformer).
     //   prim "points" | "segments" | "glyphs" | "triangles"

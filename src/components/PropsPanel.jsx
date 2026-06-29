@@ -12,12 +12,11 @@ import { ConstantEditor, ExprEditor, SliderEditor, AnimatorEditor, FnDefEditor, 
 import { FnMapEditor, EquationEditor, ParamSpaceEditor } from "./propspanel/FunctionEditors.jsx";
 import { TextureEditor, VideoEditor, LightEditor } from "./propspanel/MediaEditors.jsx";
 import { TransformerEditor } from "./propspanel/TransformerEditor.jsx";
-import { PointsEditor } from "./propspanel/PointsEditor.jsx";
 import { RawGeomEditor } from "./propspanel/RawGeomEditor.jsx";
 import { FlowEditor } from "./propspanel/FlowEditor.jsx";
 import { CameraEditor } from "./propspanel/CameraEditor.jsx";
 import {
-  PointEditor, PointSeqEditor, GlyphFieldEditor, Quiver2dEditor, Quiver3dEditor,
+  PointEditor, PointSeqEditor, Quiver2dEditor, Quiver3dEditor,
   Fn1dEditor, Curve3dEditor, Surf3dEditor, ParamSurfEditor,
 } from "./propspanel/LegacyEditors.jsx";
 
@@ -108,8 +107,6 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Transformer ── */}
         {node.type==="transformer"&&<TransformerEditor {...ed}/>}
 
-        {/* ── Unified: points / glyphs / sequences ── */}
-        {node.type==="points"&&<PointsEditor {...ed}/>}
         {node.type==="rawGeom"&&<RawGeomEditor {...ed}/>}
 
         {/* ── Flow ── */}
@@ -118,7 +115,6 @@ function PropsPanelImpl({ node, nodes, scope, onChange, onAttach, onAddNode, onD
         {/* ── Geometry nodes (legacy, still rendered for older projects) ── */}
         {node.type==="point"&&<PointEditor {...ed}/>}
         {node.type==="pointSeq"&&<PointSeqEditor {...ed}/>}
-        {node.type==="glyphField"&&<GlyphFieldEditor {...ed}/>}
         {node.type==="quiver2d"&&<Quiver2dEditor {...ed}/>}
         {node.type==="quiver3d"&&<Quiver3dEditor {...ed}/>}
         {node.type==="fn1d"&&<Fn1dEditor {...ed}/>}
