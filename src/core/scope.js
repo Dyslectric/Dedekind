@@ -358,7 +358,7 @@ function geomSignature(node, scope){
       // scalars are live uniforms, so only the baked domain bounds / colour ranges
       // fold into the signature; the rest ride uniforms (no per-drag re-transpile).
       p.__eqRaymarch ? scopeSigFns(node,scope)
-        : p.cplxMode==="domain"
+        : p.__complexDomain
           // The complex domain-colouring quad evaluates f(z) per fragment with the
           // wired coefficient sliders as live re_/im_ uniforms (refreshed on a cache
           // hit), so their VALUES must not fold into the geometry signature — else
@@ -429,7 +429,16 @@ function plotSignature(node, p, scope, nodes, animVals){
     const graphGPU = node.type==="transformer" && !eqDeps.length && !hasParam && !hasPoints
       && p.shading==="lit" && p.matColorMode==="rgb" && fnFieldReal
       && graphTranspiles(p, fnMapNode, sigScope);
-    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU,__fnDefSig:fnTableSig(fnTableFromScope(sigScope))};
+    // The complex domain-colouring quad (live re_/im_ uniforms) only exists when a
+    // complex 1→1 fnMap is wired AND the transformer is in domain mode — NOT for
+    // every transformer carrying the cplxMode="domain" default. Detect the real
+    // case here (we have the fnMap dependency) so the signature only drops slider
+    // values for the genuine domain quad, not ordinary graph transformers.
+    const complexDomain = node.type==="transformer" && p.cplxMode==="domain"
+      && !!fnMapNode && (fnMapNode.props.field||"real")==="complex"
+      && Math.round(Number(fnMapNode.props.inDim||"1"))===1
+      && Math.round(Number(fnMapNode.props.outDim||"1"))===1;
+    pSig={...p,__fnSig:fnSig,__paramSig:paramSig,__eqSig:eqSig,__texSig:texSig,__eqRaymarch:eqRaymarch,__graphGPU:graphGPU,__complexDomain:complexDomain,__fnDefSig:fnTableSig(fnTableFromScope(sigScope))};
   }
   return geomSignature({...node,props:pSig},sigScope);
 }
@@ -563,6 +572,11 @@ function nodeExprText(node){
     p.out0,p.out1,p.out2,p.out3,p.data,p.colorExpr,p.colorMin,p.colorMax,p.aMin,p.aMax,p.bMin,p.bMax,p.cMin,p.cMax,p.dMin,p.dMax,
     p.exprXu,p.exprYu,p.exprZu,p.exprXw,p.exprYw,p.exprZw,p.wMin,p.wMax,p.volColorExpr,p.__colExpr,p.__colRecInit,p.__colRecStep,p.__fnSig,p.__paramSig,p.__eqSig,
     p.idxPoints,p.idxSegments,p.idxGlyphs,p.idxTris,p.idxCount,p.rawPoints,p.rawSegments,p.rawGlyphs,p.rawTris,p.colorR,p.colorG,p.colorB,p.colorA,
+    // rawGeom recursive templates (per primitive) + recursive colour, and the
+    // count — without these, scopeSig can't see a slider/animator referenced only
+    // in a recurrence (e.g. d,w in `d*(x[n-1]*cos(w)…)`), so the plot's signature
+    // wouldn't change as the slider is dragged and it would wrongly stay cached.
+    p.recPoints,p.recPointsStep,p.recSegments,p.recSegmentsStep,p.recGlyphs,p.recGlyphsStep,p.recTris,p.recTrisStep,p.recCount,p.colRecInit,p.colRecStep,
     // Index/recursive authoring props are SINGULAR (idxPoint, idxGlyph, recInit…)
     // — without these, scopeSig can't see an animator/slider referenced only in a
     // point-index expression (e.g. a Frenet arrow's `cos(s)+i*TX(s)`), so the
