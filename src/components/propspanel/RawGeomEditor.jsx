@@ -160,7 +160,15 @@ export function RawGeomEditor({ node, scope, onChange }){
     {prim==="glyphs" && <Sec title="Style">
       <PR label="arrow scale"><EI v={p.arrowLen??"0.5"} sc={scope} onChange={v=>set("arrowLen",v)}/></PR>
       <PR label="normalize"><Toggle v={p.normalize===true} onChange={v=>set("normalize",v)}/></PR>
-      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3}}>Off: length follows the vector magnitude. On: every arrow is the same length.</div>
+      <PR label="length">
+        <select value={p.lenMode||""} onChange={e=>set("lenMode",e.target.value)} style={{...S.inp,width:"100%"}}>
+          <option value="">auto (follow normalize)</option>
+          <option value="uniform">uniform — every arrow = scale</option>
+          <option value="scaled">scaled — scale · |v| / max</option>
+          <option value="raw">raw — the vector's own |v|</option>
+        </select>
+      </PR>
+      <div style={{fontSize:13,color:ui.uiFaint,marginTop:3}}>Normalize off: length follows the vector magnitude. On: every arrow is the same length. The length mode overrides this when set — e.g. <em>raw</em> keeps true magnitudes even with normalize on.</div>
     </Sec>}
 
     {prim==="triangles" && <Sec title="Display">

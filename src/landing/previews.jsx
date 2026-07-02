@@ -2206,7 +2206,7 @@ function _rawNode(pos,label,color,overrides){
     idxPoints:"cos(i),sin(i),0",idxSegments:"0,0,0 | 1,0,0",idxGlyphs:"0,0,0 | 1,0,0",idxTris:"0,0,0 | 1,0,0 | 0,1,0",
     idxCount:"16",
     colorOn:false,colorExpr:"i",colorLo:"#3a6aff",colorHi:"#ff5ea8",colorMin:"",colorMax:"",
-    radius:"0.08",drawLines:false,arrowLen:"0.5",normalize:false,lenMode:"raw",showWire:true,
+    radius:"0.08",drawLines:false,arrowLen:"0.5",normalize:false,lenMode:"",showWire:true,
     lineMode:"px",lineWidth:"",
     ...overrides,
   };

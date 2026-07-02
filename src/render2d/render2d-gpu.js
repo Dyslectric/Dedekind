@@ -492,20 +492,22 @@ function build2DRawGeom(np, pscope, color, px, fr){
     return applyA(buildThickSegments2D(segs, color, half));
   }
   if(prim==="glyphs"){
-    // Arrowheads (not bare segments). Length follows the SAME rule the rawGeom
-    // glyph path always used: normalize=true ⇒ every arrow drawn at the fixed
-    // arrowLen (direction only); normalize=false ⇒ the vector's own magnitude.
-    // (lenMode is honoured only when explicitly "scaled" — relative to field max.)
+    // Arrowheads (not bare segments). Length rule matches the 3-D glyph path: an
+    // EXPLICIT lenMode wins ("raw" = the vector's own magnitude, "scaled" =
+    // arrowLen scaled by field max, "uniform" = fixed arrowLen); when lenMode is
+    // unset, normalize decides — true ⇒ uniform arrowLen, false ⇒ raw magnitude.
+    // (The glyph spiral sets lenMode="raw" with normalize=true so its arrows keep
+    // shrinking with the recurrence; the sampled-field demo sets only
+    // normalize=true and gets fixed-length direction arrows.)
     const alen=resolveNum(np.arrowLen,pscope,0.5);
-    const norm=np.normalize===true;
-    const scaled=np.lenMode==="scaled";
-    let maxMag=0; if(scaled){ for(const [,vec] of verts){ const m=Math.hypot(vec[0],vec[1],vec[2]||0); if(m>maxMag)maxMag=m; } maxMag=maxMag||1; }
+    const mode=np.lenMode || (np.normalize===true ? "uniform" : "raw");
+    let maxMag=0; if(mode==="scaled"){ for(const [,vec] of verts){ const m=Math.hypot(vec[0],vec[1],vec[2]||0); if(m>maxMag)maxMag=m; } maxMag=maxMag||1; }
     const head=px(16), thick=px(LINE_PX);
     const ab=ArrowBatch2D();
     for(let gi=0;gi<verts.length;gi++){
       const [pos,vec]=verts[gi];
       const m=Math.hypot(vec[0],vec[1],vec[2]||0); if(m<1e-9) continue;
-      const L = scaled ? alen*Math.min(1,m/maxMag) : norm ? alen : m;
+      const L = mode==="raw" ? m : mode==="scaled" ? alen*Math.min(1,m/maxMag) : alen;
       const b=projectPt(fr,pos[0],pos[1],pos[2]||0);
       const tip=projectPt(fr,pos[0]+vec[0]/m*L,pos[1]+vec[1]/m*L,(pos[2]||0)+(vec[2]||0)/m*L);
       ab.add(b[0],b[1],tip[0]-b[0],tip[1]-b[1],Math.min(head,L*0.5),thick, rampGroups?hexRGB(rampGroups[gi][0]):null);

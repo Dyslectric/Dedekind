@@ -1019,7 +1019,9 @@ function buildRawGeom3d(p, scope, color){
     const pairs = verts.map(([pos,vec])=>({pos, vec}));
     const opts = {
       arrowLen: resolveNum(p.arrowLen,scope,0.5),
-      lenMode: p.lenMode || "raw",
+      // explicit lenMode wins; otherwise normalize picks the rawGeom default —
+      // true ⇒ every arrow at arrowLen, false ⇒ the vector's own magnitude.
+      lenMode: p.lenMode || (p.normalize===true ? "uniform" : "raw"),
       normalize: p.normalize===true,
       anim: "none",
     };

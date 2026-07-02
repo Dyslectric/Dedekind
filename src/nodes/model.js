@@ -194,7 +194,12 @@ function makeNode(type,pos){
       // ── per-vertex alpha (0..1024 → opacity), independent of color mode ──
       alphaOn:false, colorA:"1024",
       radius:"0.08", drawLines:false,                   // points
-      arrowLen:"0.5", normalize:false, lenMode:"raw",   // glyphs
+      // glyphs: arrowLen + normalize set the DEFAULT length rule (normalize=true ⇒
+      // every arrow drawn at arrowLen; false ⇒ the vector's own magnitude). An
+      // EXPLICIT lenMode ("uniform"|"scaled"|"raw") overrides that; empty means
+      // "follow normalize". (A hardcoded default here would make an author's
+      // normalize choice unreadable — see the glyph-spiral vs field-demo conflict.)
+      arrowLen:"0.5", normalize:false, lenMode:"",      // glyphs
       showWire:true,                                    // triangles
       // sequencing reveal (ported from points):
       sequenced:false, seqFrac:"1", seqVar:"",
