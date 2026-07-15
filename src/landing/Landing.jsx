@@ -59,6 +59,7 @@ function Landing({ onOpen, closing }){
             <a href="#dk-render">Rendering</a>
             <a href="#dk-features">Features</a>
             <a href="#tutorials">Tutorials</a>
+            <a href="https://mm.davig01.net">Community</a>
             <a href="https://github.com/Dyslectric/Dedekind">Source</a>
           </nav>
           {!isMobile && <button className="dk-btn" onClick={open}>Open the editor →</button>}
